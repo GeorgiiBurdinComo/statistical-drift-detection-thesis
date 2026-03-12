@@ -1,42 +1,3 @@
-% !TeX root = thesis.tex
-\documentclass[
-  language=english,
-  thesis=bachelor,
-  faculty=cb,
-  nosecondtitle,
-  onesided,
-  compactlistof,
-  fancy,
-  open=any
-]{hsmw-thesis}
-
-\title{Benchmarking Large Language Models for Binary Classification under Model Drift}
-\author{Georgii}{Burdin}
-\submissiondate{2026}[04][01]
-\defensedate{2026}[05][10]
-\courseofstudy{B.Sc. Applied Mathematics}
-\seminargroup{MA22w1-B}
-\examiner[Prof <Name>]{<First Examiner>}
-\addexaminer*{<Second Examiner>}[]
-\abstract{%
-%
-}
-\email{\href{mailto:georgii.burdin@hs-mittweida.de}{georgii.burdin@hs-mittweida.de}}
-\location{Mittweida}
-\date{\today}
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%% Bibliography
-\usepackage[bibstyle=ieee,citestyle=numeric-comp,natbib=true,sorting=none,dashed=false]{biblatex}
-\addbibresource{literature.bib}
-
-\begin{document}
-
-\tableofcontents
-
-\end{document}
-
-% !TeX root = thesis.tex
 \documentclass[
   language=english,
   thesis=bachelor,
@@ -57,225 +18,228 @@
 \examiner[Prof <Name>]{<First Examiner>}
 \addexaminer*{<Second Examiner>}[]
 \abstract{%
-Large language model APIs are silently updated by their providers, causing \emph{model drift}---measurable changes in output quality over time without prior notice to downstream users.
-Chen et al.\ (2023) demonstrated significant performance degradation in ChatGPT across several tasks within months.
-This thesis builds a lightweight, reproducible benchmarking framework that periodically evaluates multiple LLM APIs (OpenAI, Gemini, Claude) on a fixed campaign-relevance classification dataset, detects drift via disagreement-based sampling, and quantifies accuracy--cost trade-offs across providers.%
+Large language model (LLM) APIs are subject to frequent, silent updates by providers, leading to \emph{model drift}---a phenomenon where the performance of a fixed prompt on a downstream task degrades over time without notice. This thesis develops a statistically grounded framework for monitoring and adapting black-box LLM APIs in a production-oriented binary classification pipeline for social-media relevance detection. 
+
+We propose a methodology to derive a high-sensitivity 300-sample monitoring subset from a larger 1200-sample reference benchmark by selecting instances characterized by model disagreement. This informative sampling approach maximizes the statistical power to detect performance shifts while significantly reducing periodic evaluation costs. The framework integrates a statistical alerting rule with a multi-objective decision criterion that balances predictive accuracy against inference cost. Furthermore, we investigate prompt optimization via reflective evolutionary methods (GEPA) as a mechanism to recover performance following detected drift. 
+
+The resulting system, implemented with Langfuse and automated batch processing, provides a reproducible architecture for maintaining stable LLM deployments. Our results demonstrate that disagreement-based monitoring offers a cost-effective leading indicator of model degradation, allowing for timely adaptation in business-critical environments.
 }
-\email{\href{mailto:georgii.burdin@hs-mittweida.de}{georgii.burdin@hs-mittweida.de}}
+\email{\href{mailto:gburdin@hs-mittweida.de}{gburdin@hs-mittweida.de}}
 \location{Mittweida}
 \date{\today}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Bibliography
 \usepackage[bibstyle=ieee,citestyle=numeric-comp,natbib=true,sorting=none,dashed=false]{biblatex}
+\usepackage{bm}
 \addbibresource{literature.bib}
 
 \begin{document}
 
 \chapter{Introduction}
 
-Most commercially available large language models are deployed as continuously updated API services. Consequently, their behaviour and task-specific performance may change over time even when the public API interface remains unchanged. Empirical evidence indicates that such updates may lead either to improvements or to degradation on individual tasks. This phenomenon, commonly described as \emph{model drift} or \emph{update regression}, necessitates continuous benchmarking and monitoring in production settings.
+\section{Context and Motivation}
+Industrial classification pipelines increasingly rely on Large Language Model (LLM) APIs, which operate as non-stationary black-box functions $f(x; \theta_t)$. Unlike static machine learning models, LLM-as-a-Service (LLMaaS) providers frequently update underlying parameters $\theta_t$ without notice. This temporal instability, or \textbf{model drift}, poses a significant risk to production systems: a model optimized at $t_0$ may exhibit regressive behavior at $t_1$.
 
-Chen et al.~\cite{chen2023chatgpt} reported substantial changes in the behaviour of GPT-3.5 and GPT-4 across several tasks between March and June 2023. In particular, the authors observed a pronounced decline in GPT-4 performance on prime-number classification during that period. For production systems that rely on LLM APIs as classification components, such silent changes constitute an operational risk, since downstream business metrics may become unstable without explicit notification from the model provider.
+In the case of Gocomo's social-media relevance detection, where high-volume data is processed in batches, manual verification is not scalable. However, full-scale benchmarking on a reference dataset $\mathcal{D}_N$ ($N=1200$) is economically prohibitive for frequent monitoring. This creates a need for a statistically sensitive yet cost-effective surveillance framework.
 
-Against this background, the central problem is the absence of a lightweight and reproducible procedure that allows API consumers to monitor whether the model behind a deployed endpoint continues to satisfy task-specific quality requirements over time.
-
-The following research questions are addressed:
+\section{Problem Statement}
+This thesis addresses the design of a monitoring system for black-box LLMs under non-stationary conditions. The core challenge is a dual-objective optimization:
 \begin{enumerate}
-  \item To what extent does the classification accuracy of selected LLM APIs vary over time when evaluated on a fixed campaign-relevance dataset?
-  \item Can disagreement-based sampling reduce evaluation costs while preserving sensitivity to performance changes?
-  \item How do the considered models compare with respect to the trade-off between predictive quality and evaluation cost?
+    \item \textbf{Statistical Efficiency:} Deriving a monitoring subset $\mathcal{D}_n$ ($n=300$) that maximizes the Fisher information regarding model drift, thereby retaining the statistical power to detect degradation while minimizing evaluation cost.
+    \item \textbf{Decision Utility:} Formulating a selection rule that balances classification accuracy against inference expenditure through multi-objective optimization.
+\end{enumerate}
+By integrating importance sampling with automated prompt adaptation (GEPA), this work provides a methodology for maintaining stable classification services in a provider-controlled API landscape.
+
+\section{Research Questions}
+This thesis answers the following research questions:
+\begin{enumerate}
+    \item[\textbf{RQ1:}] How can the relevance detection task be formally represented as a binary classification problem in a non-stationary black-box environment?
+    \item[\textbf{RQ2:}] Can a disagreement-based subset $\mathcal{D}_n$ preserve the statistical sensitivity to model drift relative to a larger reference benchmark $\mathcal{D}_N$?
+    \item[\textbf{RQ3:}] What statistical criteria and hypothesis testing frameworks effectively detect significant performance degradation in a temporal loop?
+    \item[\textbf{RQ4:}] How should the model selection rule be formulated to optimize the trade-off between empirical risk and inference cost?
+    \item[\textbf{RQ5:}] To what extent can reflective prompt evolution (GEPA) serve as an adaptive recovery mechanism following a detected drift event?
 \end{enumerate}
 
-The main contribution is a reproducible benchmarking pipeline that integrates a labelled multimodal dataset in Langfuse, dispatches evaluation batches to multiple model providers, records accuracy and cost metrics over time, and enables the detection of statistically relevant performance changes.
+\section{Thesis Structure}
+The remainder of this thesis is organized as follows: Chapter 2 establishes the formal mathematical setup and justifies the sampling methodology. Chapter 3 develops the statistical monitoring and model selection rules. Chapter 4 explores the theoretical foundations of prompt optimization. Chapter 5 details the experimental implementation and results, followed by concluding remarks in Chapter 6.
+\chapter{Data and Evaluation Setup}
 
+\section{Formal Problem Definition}
 
-\chapter{Theoretical Background}
+To evaluate model drift rigorously, we must first define the classification task within a probabilistic framework. 
 
-\section{Model Drift and Concept Drift}
-In the literature on learning systems, \emph{concept drift} denotes a change in the conditional distribution $P(Y \mid X)$ over time. In practical terms, this means that the relationship between inputs and target labels is no longer stable. The primary object of interest here is not concept drift in the incoming data stream, but \emph{model drift}: changes in model behaviour caused by updates to the underlying model while the evaluation data remain fixed. This distinction allows observed performance changes to be attributed to the model side rather than to changes in the task distribution.
+\subsection{The Probability Space}
+Let $\mathcal{X}$ denote the input space of social-media posts (textual content and associated metadata) and let $\mathcal{Y} = \{0, 1\}$ be the label space, where $1$ indicates relevance to a campaign and $0$ indicates irrelevance. We assume that pairs $(x, y)$ are drawn from a joint distribution $P_t$ on $\mathcal{X} \times \mathcal{Y}$. The subscript $t$ signifies that this distribution or the underlying labeling function may evolve over time.
 
-Chen et al.~\cite{chen2023chatgpt} provide empirical evidence that the behaviour of GPT-3.5 and GPT-4 changed substantially over time on tasks such as mathematical reasoning, code generation and sensitive-question handling. Their findings motivate the use of fixed reference datasets when the objective is to measure temporal changes in the performance of continuously updated LLM APIs.
-
-\section{LLM Performance Degradation}
-Performance degradation in LLM APIs may arise for several reasons, including changes in the underlying model weights, quantisation, distillation, renewed post-training alignment, or provider-side system adjustments. Regardless of the technical cause, such interventions may alter the effective input--output mapping of the deployed system. In contrast to many classical machine learning deployments, users of commercial LLM APIs typically do not have access to a fixed checkpoint and therefore cannot directly control model versioning at the parameter level. The remaining practical option is to monitor outputs and evaluate whether task-specific performance remains stable over time.
-
-\section{Drift Detection Methods}
-Common approaches to drift detection include statistical process control procedures, such as CUSUM and ADWIN, distributional monitoring based on measures such as the population stability index, and supervised comparison methods based on labelled outcomes. Since the present study evaluates repeated model predictions against fixed ground-truth labels, the most relevant tools are interval-based monitoring of accuracy estimates and paired significance tests for binary outcomes. Accordingly, the empirical analysis relies primarily on confidence intervals for accuracy and on McNemar's test for paired comparisons between models or between repeated evaluations of the same model.
-
-\section{LLM-as-a-Judge and Evaluation Frameworks}
-The experimental framework combines batch inference APIs provided by OpenAI, Google Gemini and Anthropic with Langfuse as the central platform for dataset management, trace collection and score logging. This setup enables repeated evaluation in a reproducible manner and supports the joint analysis of predictive performance and token-based costs.
-
-
-\chapter{Data and Task Definition}
-
-\section{Business Task}
-
-The application scenario arises in the context of Instagram-based advertising campaigns for a brand. During such campaigns, users publish posts containing images and captions, some of which are directly related to the promoted brand, products or campaign creatives, while others are only weakly related or entirely unrelated. From a business perspective, the objective is to determine whether a user-generated post should be counted as part of the effective campaign reach.
-
-This problem is formalised as a binary classification task. Given a post consisting of an image and an associated caption, the classifier predicts the label \texttt{campaign\_relevant}~$\in \{\texttt{true}, \texttt{false}\}$. Reliable classification is important because the resulting labels enter downstream analyses such as reach estimation, noise filtering and campaign reporting. Since the task requires joint interpretation of visual and textual content, LLM APIs constitute a suitable modelling choice. At the same time, their use complicates evaluation, because silent provider-side model updates may alter classification quality and thereby affect business conclusions.
-
-\section{Dataset Collection}
-
-The dataset is derived from real Instagram posts associated with a brand-related advertising context. Each example consists of:
+\subsection{LLM as a Parameterized Conditional Distribution}
+In the context of LLM-as-a-Service, the model is a "black box." We define the classifier as a function $f$:
+\begin{equation}
+    f(x; \pi, \theta_t) \to \hat{y} \in \{0, 1\}
+\end{equation}
+where:
 \begin{itemize}
-  \item an image referenced via a content-delivery network (CDN) URL of the form \texttt{https://d3lbkpzyekd5xi.cloudfront.net/ig/post/\dots},
-  \item the corresponding post caption,
-  \item a human-provided binary label \texttt{campaign\_relevant}~$\in\{\texttt{true},\texttt{false}\}$.
+    \item $\pi \in \mathcal{P}$ represents the \textbf{prompt}, a discrete string chosen from the space of all possible instructions $\mathcal{P}$.
+    \item $\theta_t$ represents the \textbf{frozen model weights} provided by the API at time $t$. We do not have access to $\theta_t$, but we observe its outputs.
 \end{itemize}
+The model's output can be viewed as an approximation of the conditional probability $P(Y|X, \pi; \theta_t)$.
 
-Human annotators were instructed to assign the positive label when a post clearly referred to the campaign's brand, product or official visual identity, and the negative label otherwise. Ambiguous cases were resolved either through majority voting or through escalation to an expert annotator. This annotation procedure was intended to produce a stable reference set for repeated comparative evaluation.
+\subsection{Loss Function and Risk}
+To quantify performance, we define a loss function $\mathcal{L}: \mathcal{Y} \times \mathcal{Y} \to \mathbb{R}$. For this binary classification task, we utilize the zero-one loss:
+\begin{equation}
+    \mathcal{L}(\hat{y}, y) = \mathbb{I}(\hat{y} \neq y) = 
+    \begin{cases} 
+      1 & \text{if } \hat{y} \neq y \\
+      0 & \text{if } \hat{y} = y 
+    \end{cases}
+\end{equation}
 
-For integration into the benchmarking pipeline, the dataset is stored in Langfuse. Each item contains a unique \texttt{custom\_id}, a \texttt{body} field encoding the multimodal prompt input, and the ground-truth label \texttt{campaign\_relevant}. After collection and cleaning, the dataset is held fixed throughout the experimental period: no new items are introduced and no labels are modified. This design decision is essential for the interpretation of the results, because it allows observed changes in accuracy to be attributed to model drift rather than to changes in the data-generating process.
+The \textbf{Expected Risk} (or generalization error) at time $t$ for a fixed prompt $\pi$ is:
+\begin{equation}
+    R(f_{\pi, \theta_t}) = \mathbb{E}_{(x,y) \sim P_t} [\mathcal{L}(f(x; \pi, \theta_t), y)]
+\end{equation}
 
-\section{Dataset Size and Distribution}
+Since $P_t$ is unknown, we estimate the risk using the \textbf{Empirical Risk} $\hat{R}$ over a finite dataset $\mathcal{D}$ of size $n$:
+\begin{equation}
+    \hat{R}(f_{\pi, \theta_t}; \mathcal{D}) = \frac{1}{n} \sum_{i=1}^{n} \mathcal{L}(f(x_i; \pi, \theta_t), y_i)
+\end{equation}
+Model drift is therefore defined as a statistically significant increase in $R(f_{\pi, \theta_t})$ over time $t$ for a fixed prompt $\pi$.
 
-The final dataset contains $N = 1{,}200$ labelled examples. Of these, $682$ are labelled as campaign relevant and $518$ as not relevant, corresponding to class proportions of approximately $56.8\,\%$ and $43.2\,\%$, respectively. This moderate class imbalance is plausible in the present application, where a substantial share of user-generated content is related to the campaign, while a non-negligible portion remains off-topic.
+\section{The 1200-Example Reference Benchmark}
+We formalize the task as a mapping $g: \mathcal{X} \to \{0,1\}$. The reference benchmark consists of $N = 1200$ manually labelled examples, establishing the ground truth for initial model selection. However, evaluating all candidate models against $N$ examples weekly is economically prohibitive.
 
-This collection of $1{,}200$ labelled posts is treated as the fixed reference population against which all evaluations are defined. Consequently, temporal changes in predictive performance refer to changes with respect to the same underlying set of examples.
+\section{The 300-Example Monitoring Subset}
+To reduce operational costs, we construct a monitoring subset of $n = 300$ examples. Crucially, this is not a naive uniform random sample. It is an \emph{informative} subset heavily weighted towards instances where models historically disagreed. Because it over-indexes on edge cases, it acts as a stress test. While it may not provide an unbiased estimate of global accuracy, it is highly sensitive to model drift. 
+\section{Statistical Justification of the Monitoring Subset}
 
-\section{Evaluation Subset Selection}
+The reduction from the reference benchmark ($N=1200$) to the monitoring subset ($n=300$) is justified by a shift from \emph{population estimation} to \emph{change detection}. 
 
-Evaluating every model on all $1{,}200$ items in every run would be too costly. Instead, the benchmark uses a fixed evaluation subset of size $n = 300$, chosen once to concentrate budget on informative items.
+\subsection{Informative Sampling via Model Disagreement}
+The monitoring subset was constructed by selecting instances where at least one model in the initial benchmark exhibited disagreement. Let $y_i$ be the ground truth and $\hat{y}_{i,m}$ be the prediction of model $m \in \mathcal{M}$. The subset $\mathcal{D}_{300}$ is defined as:
+\begin{equation}
+    \mathcal{D}_{300} \subset \{ x_i \in \mathcal{D}_{1200} \mid \exists m_j, m_k \in \mathcal{M} : \hat{y}_{i,m_j} \neq \hat{y}_{i,m_k} \}
+\end{equation}
 
-All $N = 1{,}200$ examples are first evaluated once by all models. For each item $i$, the binary predictions $\hat{y}_{i1},\dots,\hat{y}_{iK}$ from $K$ models are mapped to $\{0,1\}$ and summarised by the disagreement score
-\[
-  s_i = \sigma(\hat{y}_i)\cdot H(p_i),
-\]
-where $\sigma(\hat{y}_i)$ denotes the standard deviation of the $K$ binary predictions and
-\[
-  H(p_i) = -\,p_i\log p_i - (1-p_i)\log(1-p_i)
-\]
-is the binary entropy associated with the proportion $p_i$ of positive predictions. Items are partitioned by the percentile of $s_i$ into high-disagreement (above the 80th percentile), medium-disagreement (between the 50th and 80th percentiles) and low-disagreement (below the 50th percentile) groups.
+This approach is grounded in the principles of \emph{Active Learning}, specifically \emph{Uncertainty Sampling}. By focusing on the disagreement region, we sample from the portion of the manifold where the models' posterior probabilities $P(Y|X)$ are closest to the decision threshold.
 
-From these three strata, a one-time sample of $n = 300$ is drawn using fixed allocation weights of approximately $67\,\%$ (high disagreement), $23\,\%$ (medium disagreement) and $10\,\%$ (low disagreement). This subset is stored as a dedicated evaluation dataset and remains unchanged for all subsequent benchmark runs.
+\subsection{Sensitivity and Statistical Power}
+From a hypothesis testing perspective, the goal of weekly monitoring is to reject the null hypothesis $H_0: \Delta A = 0$ (no drift). The statistical power of a test—the probability of detecting drift when it exists—is higher on instances with high prediction variance. 
 
-\section{Statistical Justification of the Subset Size}
-\label{sec:statistical-subset-size}
+In the full dataset ($N=1200$), a large portion of instances are "easy" cases with $P(Y=1|X) \approx 1$ or $0$. On these instances, the Bernoulli variance $p(1-p)$ is minimal, making them "robust" to small model drifts. In contrast, the disagreement subset ($n=300$) centers the evaluation on the "hard" cases where $p \approx 0.5$. 
 
-The choice $n = 300$ is derived from two complementary statistical requirements imposed on the experimental design.
+While $\hat{A}_{300}$ is a biased estimator of the global population accuracy, it serves as a \textbf{proxy metric} with higher sensitivity. A performance drop of $5\%$ on the hard 300-sample subset is a leading indicator of degradation that would require a much larger (and more expensive) sample to detect on the full 1200-sample distribution. Thus, $n=300$ provides an optimal balance between inference cost and the statistical power to detect model updates.
+\section{Theoretical Justification of Disagreement Sampling}
 
-\subsection{Precision of Single-Model Accuracy Estimates}
+The construction of the monitoring subset $\mathcal{D}_{300}$ via model disagreement represents a deliberate departure from simple random sampling (SRS). In this section, we formalise this approach through the lenses of \emph{importance sampling} and \emph{active learning}.
 
-First, the evaluation subset must yield an estimate of single-model accuracy with sufficiently high precision. Let $\hat{p}$ denote the observed accuracy on a subset of size $n$. Under the standard normal approximation to the binomial distribution, a two-sided $(1-\alpha)$ confidence interval for $p$ is given by
-\[
-  \hat{p} \pm z_{1-\alpha/2}\sqrt{\frac{\hat{p}(1-\hat{p})}{n}},
-\]
-where $z_{1-\alpha/2}$ denotes the corresponding standard normal quantile. Requiring a target half-width $h$ implies
-\[
-  h \approx z_{1-\alpha/2}\sqrt{\frac{p(1-p)}{n}},
-\]
-which leads to the sample-size condition
-\[
-  n \geq \frac{z_{1-\alpha/2}^2\,p(1-p)}{h^2}.
-\]
+\subsection{Selection Bias and the Sampling Indicator}
 
-To obtain a conservative bound, $p=0.5$ is used, since this maximises the variance term $p(1-p)$. With $\alpha = 0.05$ and target half-width $h = 0.06$, the resulting lower bound is approximately $n \geq 267$. The selected subset size therefore satisfies the required precision criterion.
+Let $S_i \in \{0, 1\}$ be a Bernoulli random variable indicating whether the $i$-th instance from the reference benchmark $\mathcal{D}_{N}$ is included in the monitoring subset $\mathcal{D}_{n}$. Under SRS, $P(S_i = 1) = n/N$. In our framework, the inclusion probability is conditioned on the disagreement of a model ensemble $\mathcal{M}$:
+\begin{equation}
+    P(S_i = 1 \mid x_i, \mathcal{M}) = q_i,
+\end{equation}
+where $q_i$ is high if the models in $\mathcal{M}$ yield conflicting predictions $\hat{y}_{i,m}$.
 
-\subsection{Power to Detect Accuracy Differences Between Models}
+Consequently, the empirical accuracy on the subset, $\hat{A}_n$, is a \textbf{biased estimator} of the population accuracy $A_N$:
+\begin{equation}
+    \mathbb{E}[\hat{A}_n] \neq A_N.
+\end{equation}
+This bias arises because $\mathcal{D}_n$ intentionally over-represents ``hard'' cases near the decision boundary, for which the expected accuracy is lower than the population average.
 
-Second, the subset must provide sufficient statistical power to detect practically relevant performance differences between two models evaluated on the same examples. Let $\delta$ denote the minimum accuracy difference of interest and let $q$ denote the probability that the two models differ in correctness on a given item, that is, that one model is correct while the other is not. For paired binary outcomes, a standard approximation yields the sample-size requirement
-\[
-  n \geq \frac{(z_{1-\alpha/2} + z_{1-\beta})^2\,q}{\delta^2}.
-\]
+\subsection{Change of Measure and the Horvitz--Thompson Estimator}
 
-In the present study, $\alpha = 0.05$, the desired power is set to $1-\beta = 0.8$, the minimum relevant difference is $\delta = 0.05$, and the empirical discordance rate is approximately $q = 0.2$. Substituting these values gives a lower bound of roughly $n \geq 251$. Hence, the chosen subset size also satisfies the power requirement for paired comparisons.
+To reconcile the subset performance with the population mean, we can apply a \textbf{change of measure}. From the theory of \emph{importance sampling}, an unbiased estimate of $A_N$ can be recovered by weighting each observation by the inverse of its inclusion probability.
 
-Taken together, these calculations show that a subset size of $n = 300$ provides a reasonable compromise between statistical precision, sensitivity to relevant performance changes, and the practical cost constraints associated with repeated API-based evaluation. In the present study, this subset size characterises the fixed evaluation set that is used across all benchmark runs.
+Let $q_i = P(S_i = 1 \mid x_i, \mathcal{M})$ denote the (possibly model-dependent) inclusion probability. The Horvitz--Thompson estimator of the population accuracy is
+\begin{equation}
+    \hat{A}_{\mathrm{HT}} = \frac{1}{N} \sum_{i \in \mathcal{D}_n} \frac{\mathbb{I}(\hat{y}_i = y_i)}{q_i},
+\end{equation}
+where the factor $1/q_i$ serves as an \textbf{importance weight}. In principle, this restores unbiasedness with respect to the original reference distribution. In practice, our production pipeline treats $\hat{A}_n$ primarily as a \emph{monitoring signal}, but the existence of $\hat{A}_{\mathrm{HT}}$ clarifies the statistical relationship between the curated subset and the underlying data-generating distribution.
 
-\chapter{Methodology}
+\subsection{Bias–Power Trade-off in Drift Detection}
 
-\section{Disagreement-Based Sampling}
-The disagreement-based scheme described above is used once to construct the fixed evaluation subset. A preliminary full run over all $1{,}200$ examples assigns each item a disagreement score $s_i$ and a stratum (high, medium or low disagreement). The subset of size $n = 300$ is then drawn from these strata using the fixed $67/23/10$ allocation and materialised as a separate dataset.
+The motivation for accepting selection bias lies in a deliberate \textbf{bias–power trade-off}. For drift detection, the primary objective is not to obtain a perfectly calibrated estimate of global accuracy, but to maximise the \emph{power} of a test for changes over time.
 
-This concentrates the subset on items where model decisions are unstable, while still retaining coverage of the broader reference population.
+By concentrating on the high-entropy region around the decision boundary, we sample from those $x \in \mathcal{X}$ where the classifier is intrinsically uncertain and where small perturbations of the underlying model parameters $\theta_t$ are most likely to flip predictions. Intuitively, these are the points where the gradient of the loss with respect to $\theta_t$ is largest; small, otherwise imperceptible shifts in $\theta_t$ that would be masked by ``easy'' examples in $\mathcal{D}_{N}$ are amplified in $\mathcal{D}_n$.
 
-\subsection{Methodological Note: Benchmarking and Sampling Design}
+Formally, we trade interpretability of $\hat{A}_n$ as a population accuracy for increased sensitivity of the drift signal:
+\begin{enumerate}
+    \item \textbf{Bias Increase:} $\hat{A}_n$ systematically underestimates $A_N$ because it is evaluated on a stress-test subset.
+    \item \textbf{Power Increase:} For a fixed evaluation budget $n$, the test statistic based on $\mathcal{D}_n$ has higher power to detect changes in accuracy than one based on an SRS of the same size, since it concentrates mass on inputs with high prediction variance.
+\end{enumerate}
+In this sense, $\mathcal{D}_n$ is designed as an optimised \emph{diagnostic instrument} for temporal instability, rather than as a representative sample of day-to-day traffic.
+\chapter{Drift Monitoring and Model Selection Methodology}
 
-Using a reduced subset is compatible with a fixed benchmark when one distinguishes between a fixed \emph{reference population} and a fixed \emph{evaluation design}. The population consists of all $1{,}200$ labelled posts; the subset of size $n = 300$ is derived once from this population by the disagreement-based rule and then held fixed.
+\section{Formalisation of Temporal Evaluation}
+Let $t \in \{1, \dots, T\}$ represent weekly evaluation intervals. For each model $m$, we track the empirical accuracy $\hat{A}_t$ on the monitoring subset $\mathcal{D}_{300}$. Because $\mathcal{D}_{300}$ consists of high-disagreement cases, $\hat{A}_t$ will be lower than the accuracy on the full benchmark, but it serves as our primary monitoring signal $S_t$.
 
-Repeated evaluations therefore estimate accuracy under the evaluation distribution induced by this design. The confidence-interval and power calculations in Section~\ref{sec:statistical-subset-size} remain applicable, since they describe the properties of samples of size $n = 300$ drawn under the same design; the realised subset is one such sample that is reused across runs.
+\section{Statistical Framework for Drift Detection}
+To distinguish between random performance fluctuation and genuine model drift, we utilize a threshold-based alerting rule. 
 
-Several related sample-selection strategies have been discussed in the literature. Uniform random sampling aims at unbiased coverage of the reference population but may allocate excessive budget to easy examples that contribute little to change detection. Uncertainty sampling selects items near the decision threshold of a single model. Query-by-committee and related disagreement-based procedures select observations for which several models disagree, thereby concentrating attention on regions of epistemic uncertainty or instability \cite{settles2009active}. Dynamic benchmark approaches, such as Dynabench, further argue that informative evaluation may require targeted and evolving test sets rather than a purely static benchmark \cite{kiela2021dynabench}.
+\subsection{Standard Error on the Informative Subset}
+Given that $n=300$, the standard error of our accuracy estimate $\hat{A}_t$ is:
+\begin{equation}
+    SE(\hat{A}_t) = \sqrt{\frac{\hat{A}_t(1 - \hat{A}_t)}{n}}
+\end{equation}
+For a model with an expected accuracy of $0.70$ on the hard subset, $SE \approx 0.026$ ($2.6\%$). 
 
-The adopted method is most closely related to query-by-committee. This choice is motivated by the structure of the task and by the empirical label distribution. Since the objective is not merely to estimate average accuracy, but to detect changes in model behaviour under a constrained evaluation budget, it is advantageous to over-represent observations near the empirical disagreement boundary. At the same time, the inclusion of medium- and low-disagreement strata prevents the evaluation from collapsing onto a narrow subset of highly contentious examples. The chosen $67/23/10$ allocation should therefore be interpreted as a design decision that balances detection sensitivity with population coverage, rather than as a claim of statistical optimality.
+\subsection{The Alerting Rule}
+We define a performance drop as statistically significant if the difference between the current accuracy and the baseline accuracy $\hat{A}_0$ exceeds a confidence interval. However, for production stability, we use a \textbf{Practical Drift Threshold} $\tau_{\mathrm{drift}}$. An alert is triggered if:
+\begin{equation}
+    \hat{A}_t < \hat{A}_{0} - k \cdot SE(\hat{A}_0) - \tau_{\mathrm{drift}}
+\end{equation}
+where $k$ is a scaling factor (typically $k=2$ for a $\approx 95\%$ confidence interval) and $\tau_{\mathrm{drift}}$ is the minimum degradation the business is willing to tolerate before intervening.
 
-\section{Batch Evaluation Pipeline}
-For each provider, the evaluation workflow consists of constructing a JSONL batch request, submitting it to the corresponding batch API, polling until completion, parsing the returned predictions, computing accuracy with respect to the ground-truth labels, and storing the resulting traces and scores in Langfuse.
+\section{Accuracy--Cost Trade-off Modeling}
+Model selection is formulated as a multi-objective optimization problem. We define the \textbf{Operational Value Score} $V_t(m)$:
+\begin{equation}
+    V_t(m) = \frac{\hat{A}_t(m)}{C(m)^\alpha}
+\end{equation}
+where $C(m)$ is the cost per 1,000 requests and $\alpha$ is a sensitivity parameter. 
+\begin{itemize}
+    \item If $\alpha=0$, we select purely based on accuracy.
+    \item If $\alpha=1$, we select based on "accuracy per dollar."
+\end{itemize}
+In our workflow, we set $\alpha$ based on the current budget constraints of the Gocomo pipeline.
 
-\section{Drift Detection}
-Drift detection is based on changes in accuracy across successive runs on the fixed subset of $n = 300$ examples. The monitoring dashboard raises an operational alert when the absolute accuracy difference between two runs exceeds one percentage point, that is, about three items out of 300.
+\section{Decision Logic for Model Switching}
+The system follows a three-step decision tree each week:
+\begin{enumerate}
+    \item \textbf{Monitor:} Calculate $V_t$ for all candidate models.
+    \item \textbf{Detect:} Check if the currently deployed model $m_{curr}$ has triggered a drift alert.
+    \item \textbf{Act:} If drift is detected, calculate if another model $m_{alt}$ provides a significantly higher $V_t$. If no model satisfies the threshold, trigger the \textbf{Prompt Optimisation} loop (Chapter 4).
+\end{enumerate}
+\section{Statistical Drift Detection}
+Let $\widehat{A}_t$ be the empirical accuracy of a model on the monitoring subset at week $t$. We define the temporal performance delta as $D_t = \widehat{A}_t - \widehat{A}_{t-1}$. An alert is triggered if the degradation exceeds a practical operational threshold $\tau_{\mathrm{drift}}$:
+\begin{equation}
+    D_t < -\tau_{\mathrm{drift}}
+\end{equation}
+This threshold must account for the natural variance of the 300-sample subset to avoid false-positive alerts.
 
-Statistical relevance is assessed separately: a change is treated as statistically relevant when the confidence interval of the accuracy difference excludes zero or when McNemar's test on the paired contingency table yields a $p$-value below the chosen significance level. The sample-size calculations in Section~\ref{sec:statistical-subset-size} show that $n = 300$ offers sufficient precision and power to detect practically meaningful accuracy differences while keeping evaluation costs manageable.
+\section{Cost-Aware Model Selection}
+Predictive accuracy cannot be isolated from inference cost in a production environment. Let $C_t(m)$ be the inference cost and $A_t(m)$ be the accuracy for model $m$. We define a deployment utility function $J_t$ that penalizes high costs:
+\begin{equation}
+    J_t(m) = A_t(m) - \lambda C_t(m)
+\end{equation}
+where $\lambda > 0$ represents the business's willingness to pay for marginal accuracy improvements. The system dynamically selects the model $m^\star = \arg\max_{m} J_t(m)$ each week.
 
+\chapter{Prompt Optimisation as an Adaptive Mechanism}
+\section{Integrating Optimisation into the Monitoring Loop}
+When a deployed model triggers a drift alert ($D_t < -\tau_{\mathrm{drift}}$), switching to a more expensive model is not the only recourse. We can attempt to recover performance via prompt optimization.
 
-\chapter{Experimental Setup}
+\section{Pareto-Based Prompt Search (GEPA)}
+We utilize a reflective evolutionary method (GEPA) for prompt adaptation. Because prompt space is discrete and non-convex, greedy selection often fails. Instead, we maintain a candidate pool of prompts and evaluate their per-instance score vectors $\bm{s}(\Pi) = (s_1(\Pi), \dots, s_n(\Pi))$. 
 
-The experimental comparison covers a mixture of frontier and lightweight models from the OpenAI, Gemini and Claude families. Concretely, the evaluated set comprises the OpenAI models \texttt{gpt-5.4-2026-03-05}, \texttt{gpt-5.2}, \texttt{gpt-5.1}, \texttt{gpt-5}, \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, \texttt{gpt-4.1}, \texttt{gpt-4.1-mini}, and \texttt{gpt-4.1-nano}; the Gemini models \texttt{gemini-2.5-flash}, \texttt{gemini-2.5-flash-preview-09-2025}, \texttt{gemini-2.0-flash}, \texttt{gemini-3-flash-preview}, and \texttt{gemini-3-pro-preview}; and, where available, recent Claude sonnet and haiku variants. All providers are evaluated using an identical system prompt and a common structured-output schema. The benchmark is repeated periodically over $N$ runs, and evaluation cost is recorded on the basis of input and output token counts together with batch-API prices as listed in the configuration file.
+We retain prompts based on Pareto dominance to preserve search diversity. A prompt $\Pi^{(a)}$ dominates $\Pi^{(b)}$ if it performs at least as well on all instances and strictly better on at least one. By mutating prompts on the Pareto frontier using natural-language reflections from execution traces, we can systematically search for a prompt $\Pi^\star$ that maximizes $J_t(m)$ without altering the underlying API model.
 
+\chapter{System Architecture and Experiments}
+\section{Pipeline Implementation}
+The evaluation framework is orchestrated via GitHub Actions, running batch jobs against external LLM APIs. Prompts, predictions, and ground-truth labels are logged in Langfuse, allowing for full observability and dashboard integration.
 
-\chapter{Results}
+\section{Results: Monitoring, Costs, and Savings}
+\textit{[Placeholder for experimental results: Prove how much money is saved using the 300-subset vs 1200-subset, demonstrate a captured instance of model drift, and show the before/after accuracy of applying GEPA.]}
 
-The results chapter presents temporal accuracy curves for each model together with $95\,\%$ Wilson confidence intervals, pairwise disagreement heatmaps, and the observed accuracy--cost trade-off across providers. A baseline run on $n = 300$ examples serves as the reference point for the subsequent time series; its aggregate accuracy and cost figures per model are summarised in Table~\ref{tab:accuracy-cost-per-model}. Detected drift events are reported together with their estimated effect sizes and corresponding significance measures. In addition, the chapter refers to the Streamlit dashboard developed for continuous monitoring.
-
-\section{Aggregate Accuracy and Cost per Model}
-
-Table~\ref{tab:accuracy-cost-per-model} reports accuracy and batch-evaluation cost per model for the baseline run of the benchmark. The evaluation subset contains $n = 300$ examples drawn according to the disagreement-based sampling design described in Chapter~\textit{Methodology}. Costs correspond to the realised batch charges per run and are rounded to two decimal places.
-
-\begin{table}[t]
-  \centering
-  \caption{Accuracy and batch-evaluation cost per model on the campaign-relevance classification subset ($n = 300$). Costs are rounded to two decimal places.}
-  \label{tab:accuracy-cost-per-model}
-  \begin{tabular}{lrr}
-    \hline
-    Model & Accuracy & Cost per run (USD) \\
-    \hline
-    \texttt{gemini-2.0-flash}                    & 0.6297 &  1.69 \\
-    \texttt{gemini-2.5-flash}                    & 0.9408 &  0.73 \\
-    \texttt{gemini-2.5-flash-preview-09-2025}    & 0.9331 &  0.25 \\
-    \texttt{gemini-2.5-pro}                      & 0.9216 &  2.86 \\
-    \texttt{gemini-3-flash-preview}              & 0.6564 &  7.97 \\
-    \texttt{gemini-3-pro-preview}                & 0.8190 & 17.42 \\
-    \texttt{gpt-4.1}                             & 0.9440 &  9.86 \\
-    \texttt{gpt-4.1-mini}                        & 0.8471 &  2.44 \\
-    \texttt{gpt-4.1-nano}                        & 0.7648 &  0.67 \\
-    \texttt{gpt-4o}                              & 0.8672 & 12.02 \\
-    \texttt{gpt-4o-mini}                         & 0.8329 & 16.32 \\
-    \texttt{gpt-5}                               & 0.9758 & 12.70 \\
-    \texttt{gpt-5-mini}                          & 0.9682 &  1.73 \\
-    \texttt{gpt-5-nano}                          & 0.9464 &  0.46 \\
-    \texttt{gpt-5.1}                             & 0.9365 &  5.81 \\
-    \texttt{gpt-5.2}                             & 0.9670 &  8.29 \\
-    \hline
-  \end{tabular}
-\end{table}
-
-Within the OpenAI family, \texttt{gpt-5} attains the highest observed accuracy ($0.9758$), closely followed by \texttt{gpt-5.2} and \texttt{gpt-5-mini}. From a cost-adjusted perspective, \texttt{gpt-5-mini} and \texttt{gpt-5-nano} dominate the older \texttt{gpt-4.1} variants, offering substantially better accuracy at comparable or lower batch costs, while \texttt{gpt-4o} and \texttt{gpt-4o-mini} are clearly dominated both in terms of accuracy and cost.
-
-Among the Gemini models, \texttt{gemini-2.5-flash} and its preview snapshot outperform \texttt{gemini-2.0-flash} by a wide margin while remaining inexpensive in absolute terms. The \texttt{gemini-3-*} previews, by contrast, are less accurate and substantially more costly, and therefore do not lie on the empirical accuracy--cost Pareto frontier for this task.
-
-Taken together, the baseline run suggests that, for campaign-relevance classification under a constrained evaluation budget, the most attractive operating points are achieved by \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, \texttt{gemini-2.5-flash} and \texttt{gemini-2.5-flash-preview-09-2025}. Frontier models such as \texttt{gpt-5} and \texttt{gpt-5.2} deliver the highest absolute accuracy, but the incremental gains over the best lightweight models must be weighed against a several-fold increase in batch cost.
-
-
-\chapter{Discussion}
-
-The discussion interprets the observed drift patterns, or the absence thereof, in relation to the findings reported by Chen et al.~\cite{chen2023chatgpt}. Particular attention is given to the question of whether disagreement-based sampling reduced evaluation costs without materially weakening the ability to detect performance changes. The limitations of the study include the restriction to a single binary classification task, the finite observation window, and the absence of provider-side information about internal model updates.
-
-
-\chapter{Conclusion and Outlook}
-
-The concluding chapter summarises the answers to the research questions and formulates practical recommendations for the use of LLM APIs in monitoring scenarios. In particular, it discusses the importance of version pinning where available and of periodic benchmark evaluations where such control is absent. Possible directions for future work include extensions to multi-class settings, automated alerting mechanisms, and longer-term monitoring over extended time horizons.
-
-
-\appendix
-
-\chapter{Implementation Details}
-This appendix documents the main implementation components of the benchmarking pipeline, including the scripts \texttt{sample.py}, \texttt{run\_eval.py}, \texttt{batch\_openai.py}, \texttt{batch\_gemini.py}, \texttt{batch\_claude.py}, \texttt{poll\_and\_ingest.py} and \texttt{report.py}. It also summarises the Streamlit monitoring application in \texttt{streamlit\_app/app.py} and the relevant configuration files, in particular \texttt{config/models.yaml}.
-
-In the deployed setup, the fixed evaluation subset of $n = 300$ items is materialised as a dedicated dataset in Langfuse and, where convenient, as a local CSV file. The script \texttt{run\_eval.py} always operates on this subset, either by loading the corresponding Langfuse dataset or by reading the CSV, so that all reported runs are directly comparable.
-
-\chapter{Additional Plots and Tables}
-This appendix contains extended accuracy tables, additional visualisations, alternative drift-detection thresholds and detailed token-cost breakdowns that complement the results discussed in the main text.
+\chapter{Conclusion}
+This thesis provides a statistically grounded, cost-aware framework for the continuous evaluation of LLMs in production. By decoupling the initial reference benchmark from an informative monitoring subset, and pairing statistical drift detection with automated prompt optimization, organizations can maintain high classification performance despite the inherent instability of black-box LLM APIs.
 
 \end{document}
-
