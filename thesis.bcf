@@ -2380,7 +2380,10 @@
     <bcf:citekey order="1" intorder="1">chen2023chatgpt</bcf:citekey>
     <bcf:citekey order="1" intorder="2">tu2023chatlog</bcf:citekey>
     <bcf:citekey order="1" intorder="3">echterhoff2024muscle</bcf:citekey>
-    <bcf:citekey order="2" intorder="1">gepa2025</bcf:citekey>
+    <bcf:citekey order="2" intorder="1">cayton2005</bcf:citekey>
+    <bcf:citekey order="2" intorder="2">fefferman2016</bcf:citekey>
+    <bcf:citekey order="3" intorder="1">bengio2013</bcf:citekey>
+    <bcf:citekey order="4" intorder="1">gepa2025</bcf:citekey>
   </bcf:section>
   <!-- SORTING TEMPLATES -->
   <bcf:sortingtemplate name="none">

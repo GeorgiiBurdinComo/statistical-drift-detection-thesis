@@ -48,6 +48,11 @@ Therefore, a framework is needed that can:
 \usepackage{listings}
 \addbibresource{literature.bib}
 
+% Theorem-style environments used in the formalisation
+\theoremstyle{plain}
+\newtheorem{assumption}{Assumption}
+\newtheorem{proposition}{Proposition}
+
 \begin{document}
 
 \chapter{Introduction}
@@ -87,7 +92,6 @@ The problem stated above is investigated through the following research question
     \item[\textbf{RQ5:}] To what extent can prompt optimisation improve or recover task performance after drift has been detected, and how can such optimisation be integrated into the monitoring loop?
 \end{enumerate}
 
-\chapter{Data and Evaluation Setup}
 
 \section{Task Definition}
 \subsection{What do we do?}
@@ -145,65 +149,97 @@ including captions, transcriptions, hashtags, and selected video frames. Results
 
 
 To evaluate model drift rigorously, we must first define the classification task within a probabilistic framework. 
+\chapter{Data and Evaluation Setup}
 
-\section{Formal Task Definition}
+\section{Formal Problem Definition}
+To evaluate model drift rigorously, we must first define the classification task within a probabilistic framework. Let $\mathcal{X} \subset \mathbb{R}^d$ denote the high-dimensional input space of social-media posts (comprising text, metadata, and visual features) and $\mathcal{Y} = \{0, 1\}$ the binary label space, where $1$ indicates relevance to a campaign. 
 
-\subsection{The Probability Space}
-Let $\mathcal{X}$ denote the input space of social-media posts (textual content and associated metadata) and let $\mathcal{Y} = \{0, 1\}$ be the label space, where $1$ indicates relevance to a campaign and $0$ indicates irrelevance. We assume that pairs $(x, y)$ are drawn from a joint distribution $P_t$ on $\mathcal{X} \times \mathcal{Y}$. The subscript $t$ signifies that this distribution or the underlying labeling function may evolve over time.
+In the context of LLM-as-a-Service, the model is a non-stationary black box. We define the classifier as a function $f(x; \pi, \theta_t) \to \hat{y} \in \{0, 1\}$, where $\pi$ is a fixed prompt and $\theta_t$ represents the hidden, time-varying model weights. 
 
-\subsection{LLM as a Parameterized Conditional Distribution}
-In the context of LLM-as-a-Service, the model is a "black box." We define the classifier as a function $f$:
+Under the zero-one loss function $\mathcal{L}(\hat{y}, y) = \mathbb{I}(\hat{y} \neq y)$, the \textbf{Expected Risk} (or true error rate) at time $t$ is:
 \begin{equation}
-    f(x; \pi, \theta_t) \to \hat{y} \in \{0, 1\}
+    R_t(f) = \mathbb{E}_{(x,y) \sim P_t} [\mathbb{I}(f(x; \pi, \theta_t) \neq y)]
 \end{equation}
-where:
-\begin{itemize}
-    \item $\pi \in \mathcal{P}$ represents the \textbf{prompt}, a discrete string chosen from the space of all possible instructions $\mathcal{P}$.
-    \item $\theta_t$ represents the \textbf{frozen model weights} provided by the API at time $t$. We do not have access to $\theta_t$, but we observe its outputs.
-\end{itemize}
-The model's output can be viewed as an approximation of the conditional probability $P(Y|X, \pi; \theta_t)$.
+Since the true data-generating distribution $P_t$ is unknown, we must estimate this risk empirically.
 
-\subsection{Loss Function and Risk}
-To quantify performance, we define a loss function $\mathcal{L}: \mathcal{Y} \times \mathcal{Y} \to \mathbb{R}$. For this binary classification task, we utilize the zero-one loss:
+\section{The Reference Benchmark vs. Operational Constraints}
+Let $\mathcal{D}_N$ be the reference benchmark consisting of $N = 1200$ manually labelled examples, establishing the ground truth. Evaluating all candidate models against $\mathcal{D}_N$ yields a highly precise empirical risk $\hat{R}_N$. 
+
+However, running inference on $N=1200$ instances weekly across multiple candidate models is economically prohibitive. We require a monitoring subset $\mathcal{D}_n \subset \mathcal{D}_N$ of size $n \ll N$. The central mathematical challenge is to select $\mathcal{D}_n$ such that it remains highly sensitive to temporal shifts in the parameters $\theta_t$, despite the significantly reduced sample size.
+
+\section{Informative Sampling via Model Disagreement}
+A simple random sample (SRS) of size $n$ would yield an unbiased estimator of $R_t$. However, the vast majority of social-media posts are "easy" instances located far from the model's decision boundary, where the conditional probability $P(Y=1|X) \approx 1$ or $0$. These instances exhibit low prediction variance and are highly robust to small parameter shifts in $\theta_t$. 
+
+To maximize the sensitivity of our monitoring subset, we abandon uniform sampling in favor of \textbf{Uncertainty Sampling}. We construct $\mathcal{D}_n$ exclusively from instances where an initial ensemble of distinct models $\mathcal{M} = \{f_1, f_2, \dots, f_K\}$ exhibited disagreement:
 \begin{equation}
-    \mathcal{L}(\hat{y}, y) = \mathbb{I}(\hat{y} \neq y) = 
-    \begin{cases} 
-      1 & \text{if } \hat{y} \neq y \\
-      0 & \text{if } \hat{y} = y 
-    \end{cases}
+    \mathcal{D}_{n} = \{ x_i \in \mathcal{D}_{N} \mid \exists f_j, f_k \in \mathcal{M} : \hat{y}_{i,j} \neq \hat{y}_{i,k} \}
 \end{equation}
 
-The \textbf{Expected Risk} (or generalization error) at time $t$ for a fixed prompt $\pi$ is:
+To understand why this maximizes detection power, we must formalize the geometry of the classifier's decision space and prove that disagreement isolates instances of maximal statistical variance.
+
+\subsection{Geometry of the Decision Boundary}
+In modern representation learning, it is standard to assume the \emph{Manifold Hypothesis}: the tenet that nominally high-dimensional data are in fact concentrated near a lower-dimensional submanifold \cite{cayton2005,fefferman2016}. This assumption serves as a primary inductive bias for deep learning architectures \cite{bengio2013}, as it allows models to circumvent the curse of dimensionality by focusing on the intrinsic geometric structure of the data rather than the ambient space. 
+
+\begin{assumption}[Data Manifold]
+Let the input space $\mathcal{X} \subset \mathbb{R}^d$ be a smooth, compact Riemannian manifold.
+\end{assumption}
+
+For any ensemble $\mathcal{M}$, let $\bar{p}: \mathcal{X} \to [0, 1]$ be the continuous consensus probability function, where $\bar{p}(x)$ represents the ensemble's expected probability that $Y=1$.
+
+\begin{definition}[Consensus Decision Boundary]
+The decision boundary $\mathcal{B}$ of the ensemble is the pre-image of the classification threshold:
 \begin{equation}
-    R(f_{\pi, \theta_t}) = \mathbb{E}_{(x,y) \sim P_t} [\mathcal{L}(f(x; \pi, \theta_t), y)]
+    \mathcal{B} = \bar{p}^{-1}(0.5) = \left\{ x \in \mathcal{X} \mid \bar{p}(x) = 0.5 \right\}
 \end{equation}
+\end{definition}
 
-Since $P_t$ is unknown, we estimate the risk using the \textbf{Empirical Risk} $\hat{R}$ over a finite dataset $\mathcal{D}$ of size $n$:
+\begin{proposition}
+If $0.5$ is a regular value of the function $\bar{p}$ (i.e., the gradient $\nabla \bar{p}(x) \neq 0$ for all $x \in \mathcal{B}$), then by the \textbf{Regular Level Set Theorem}, the decision boundary $\mathcal{B}$ is a smooth submanifold of $\mathcal{X}$ of codimension $1$.
+\end{proposition}
+
+This establishes $\mathcal{B}$ as a formal geometric hypersurface dividing the data manifold $\mathcal{X}$ into two distinct classification regions.
+
+\subsection{Proof of Maximal Uncertainty via Disagreement}
+We now prove that sampling instances where models disagree mathematically confines the sample to a tight neighborhood around the submanifold $\mathcal{B}$.
+
+\begin{assumption}[Bounded Ensemble Divergence]
+Assume the models in $\mathcal{M}$ represent competent classifiers approximating the same underlying logic, such that their individual scoring functions $p_m(x)$ diverge from the consensus $\bar{p}(x)$ by no more than $\epsilon$:
 \begin{equation}
-    \hat{R}(f_{\pi, \theta_t}; \mathcal{D}) = \frac{1}{n} \sum_{i=1}^{n} \mathcal{L}(f(x_i; \pi, \theta_t), y_i)
+    \sup_{x \in \mathcal{X}} |p_m(x) - \bar{p}(x)| \leq \epsilon \quad \text{for all } m \in \{1, \dots, K\}
 \end{equation}
-Model drift is therefore defined as a statistically significant increase in $R(f_{\pi, \theta_t})$ over time $t$ for a fixed prompt $\pi$.
-The expected risk \(R(f_{\pi,\theta_t})\) represents the true average loss of the classifier under the unknown data-generating distribution \(P_t\). In the present binary classification setting with zero-one loss, this quantity is equal to the probability of misclassification. Since the underlying distribution \(P_t\) is not directly observable, the expected risk cannot be computed exactly in practice.
+\end{assumption}
 
-Instead, performance is estimated through the empirical risk \(\hat{R}(f_{\pi,\theta_t};\mathcal{D})\), which is the average loss over a finite labelled dataset \(\mathcal{D}\). Under zero-one loss, the empirical risk is simply the fraction of incorrectly classified examples in the dataset. Thus, empirical risk serves as a sample-based approximation of expected risk and forms the basis for all practical evaluation and monitoring procedures in this thesis.
+\begin{proposition}[Disagreement Bounds Distance to $\mathcal{B}$]
+If there exists a disagreement within the ensemble $\mathcal{M}$ for a given instance $x$ (i.e., $p_j(x) < 0.5$ and $p_k(x) \geq 0.5$), then the consensus probability $\bar{p}(x)$ is strictly bounded within an $\epsilon$-neighborhood of $0.5$.
+\end{proposition}
 
-\section{The Reference Benchmark}
-The reference benchmark consists of $N = 1200$ manually labelled examples, establishing the ground truth for initial model selection. It was used to evaluate the interesting models once and obtain their accuracy estimates. However, evaluating all candidate models against $N$ examples on a weekly basis is economically prohibitive.
- \textcolor{red}{\textbf{NB!:} how much?. Show accuracy estimates for the interesting models.}
-\section{The Monitoring Subset}
-To reduce operational costs, we construct a monitoring subset. Crucially, this is not a naive uniform random sample. It is an \emph{informative} subset heavily weighted towards instances where models historically disagreed. Because it over-indexes on edge cases, it acts as a stress test. While it may not provide an unbiased estimate of global accuracy, it is highly sensitive to model drift. 
+\begin{proof}
+Applying the bounded divergence assumption to the disagreeing models:
+\begin{align}
+    \bar{p}(x) - \epsilon &\leq p_j(x) < 0.5 \implies \bar{p}(x) < 0.5 + \epsilon \\
+    \bar{p}(x) + \epsilon &\geq p_k(x) \geq 0.5 \implies \bar{p}(x) \geq 0.5 - \epsilon
+\end{align}
+Thus, it strictly follows that $\bar{p}(x) \in [0.5 - \epsilon,\ 0.5 + \epsilon]$.
+\end{proof}
 
-\subsection{Sample Size Determination via Annotation Noise Floor}
-The exact size of the monitoring subset, $n=300$, is not arbitrary but is derived from the inherent noise floor of the human annotation process. In complex subjective tasks such as social-media campaign relevance, human inter-annotator disagreement establishes an irreducible error rate, generally estimated at $\epsilon \approx 0.05$ ($5\%$).
-\textcolor{red}{\textbf{NB!:}  show an example of a disagreement between two human annotators.}
-Consequently, any model performance fluctuation smaller than $\epsilon$ is statistically indistinguishable from background label noise. The monitoring system must therefore be calibrated to achieve a Minimum Detectable Effect (MDE) of $\Delta = 0.05$. For an observed drop to trigger a valid alert, the margin of error of our empirical accuracy estimate $\hat{A}_n$ must be strictly bounded by this noise floor.
+By geometrically isolating instances where models produce conflicting predictions, we are effectively sampling directly from the $\epsilon$-tube surrounding the submanifold $\mathcal{B}$. At the theoretical limit ($\epsilon \to 0$), the binary entropy $H(Y|X)$ reaches its global maximum of $1$ bit. The model is maximally uncertain, meaning the expected accuracy approaches random guessing ($A \approx 0.5$). 
 
-Let $Z_{1-\alpha}$ be the critical value for a one-sided hypothesis test at significance level $\alpha = 0.05$, where $Z_{0.95} \approx 1.645$. To ensure that the margin of error does not exceed our threshold $\Delta$, the required sample size $n$ must satisfy:
+This geometric isolation formalizes why disagreement sampling forces the evaluation subset into the \textbf{Maximum Variance} state for a Bernoulli process, which serves as the foundational assumption for determining the required sample size.
+
+\section{Statistical Derivation of the Sample Size}
+The decision to sample from the $\epsilon$-neighborhood of the decision boundary directly dictates the required sample size $n$. By forcing the expected accuracy toward $A = 0.5$, we deliberately subject our evaluation to the \textbf{Maximum Entropy} state. For a Bernoulli process, the variance $\sigma^2 = A(1-A)$ reaches its absolute maximum of $0.25$ exactly at $A=0.5$. 
+
+NB! show disagreement of annotators
+
+
+To determine $n$ under this worst-case variance, we must define the \textbf{Minimum Detectable Effect (MDE)} $\Delta$. In our production environment, human inter-annotator disagreement establishes an irreducible noise floor of $\epsilon_{noise} \approx 0.05$ ($5\%$). Any model drift smaller than $\epsilon_{noise}$ is statistically indistinguishable from background label noise. Thus, our monitoring system must have a margin of error strictly bounded by $\Delta = 0.05$.
+
+We formalize this requirement using the margin of error for a one-sided hypothesis test (detecting degradation) at a significance level of $\alpha = 0.05$. Let $Z_{1-\alpha} \approx 1.645$ be the critical value from the standard normal distribution. The required sample size $n$ must satisfy:
 \begin{equation}
     Z_{1-\alpha} \sqrt{\frac{A(1-A)}{n}} \le \Delta
 \end{equation}
 
-Because $\mathcal{D}_n$ is explicitly constructed from the region of maximal model disagreement, the empirical accuracy is pushed toward the maximum-entropy state, $A \approx 0.5$. This represents the absolute worst-case variance scenario for a Bernoulli process, where $A(1-A) = 0.25$. Substituting these values yields:
+Substituting the maximum variance assumption $A(1-A) = 0.25$ and our noise floor $\Delta = 0.05$, we obtain:
 \begin{equation}
     1.645 \sqrt{\frac{0.25}{n}} \le 0.05
 \end{equation}
@@ -213,65 +249,45 @@ Because $\mathcal{D}_n$ is explicitly constructed from the region of maximal mod
 \begin{equation}
     n \ge 270.6
 \end{equation}
-\begin{remark}
-    The use of the Normal approximation ($Z_{0.95}$) assumes that each of the 300 observations is independent and identically distributed (i.i.d.) within the subpopulation of high-disagreement cases. Although the monitoring subset $\mathcal{D}_n$ is intentionally biased compared to the general dataset $\mathcal{D}_N$, the Central Limit Theorem still ensures that the sampling distribution of the sample accuracy $\hat{A}_n$ will converge towards normality as sample size increases. Assuming $A=0.5$ corresponds to adopting a \emph{Maximum Entropy} prior, yielding the most conservative estimate for the required sample size given uncertainty about the true error rate in these edge-case examples.
-\end{remark}
-To ensure adequate statistical power, the theoretical minimum sample size $n \geq 271$ is voluntarly rounded up to $n=300$. This demonstrates that a monitoring subset of 300 samples is the minimum required to reliably detect a $5\%$ drop in performance attributable to model drift, even in the presence of human annotation noise, thus justifying the use of $n=300$ under worst-case assumptions.
 
-\subsection{Informative Sampling via Model Disagreement}
-The monitoring subset was constructed by selecting instances where at least one model in the initial benchmark exhibited disagreement. Let $y_i$ be the ground truth and $\hat{y}_{i,m}$ be the prediction of model $m \in \mathcal{M}$. The subset $\mathcal{D}_{300}$ is defined as:
+Voluntarly, the theoretically required sample size of $n \ge 271$ is rounded up to $n=300$. This calculation proves that $300$ is the strict mathematical minimum required to detect a $5\%$ model drift under the maximum variance conditions induced by our informative sampling strategy.
+
+\section{The Role of Selection Bias and Importance Weighting}
+
+Because $\mathcal{D}_{300}$ intentionally over-represents the manifold's decision boundary, the empirical accuracy calculated directly on this subset, $\hat{A}_n$, is a \textbf{biased estimator} of the global population accuracy $A_N$. Formally, $\mathbb{E}[\hat{A}_n] < A_N$, as the subset is deliberately composed of instances with high epistemic uncertainty.
+
+In standard statistical evaluation, selection bias is viewed as a flaw to be corrected. In the context of our drift monitoring framework, however, this bias is an operational requirement. We track the biased metric $\hat{A}_n$ because it isolates the exact region of the input space where temporal parameter shifts ($\Delta \theta_t$) manifest most strongly, thereby maximizing the statistical power of the alerting rule.
+
+Nevertheless, it is necessary to mathematically guarantee that this heavily biased subset remains formally linked to the underlying data-generating distribution, rather than being an arbitrary or disconnected sample. This rigorous link is established through the theory of \textbf{Importance Sampling} and the \textbf{Change of Measure}.
+
+\subsection{The Horvitz--Thompson Link}
+Let $S_i \in \{0, 1\}$ be an indicator variable for the inclusion of the $i$-th reference instance in the monitoring subset, with probability $q_i = P(S_i = 1 \mid \text{disagreement})$. The global accuracy $A_N$ can be theoretically recovered from the biased sample using the \textbf{Horvitz--Thompson (HT) estimator}:
 \begin{equation}
-    \mathcal{D}_{300} \subset \{ x_i \in \mathcal{D}_{1200} \mid \exists m_j, m_k \in \mathcal{M} : \hat{y}_{i,m_j} \neq \hat{y}_{i,m_k} \}
+    \hat{A}_{HT} = \frac{1}{N} \sum_{i=1}^{N} \frac{S_i \cdot \mathbb{I}(\hat{y}_i = y_i)}{q_i} = \frac{1}{N} \sum_{i \in \mathcal{D}_n} \frac{\mathbb{I}(\hat{y}_i = y_i)}{q_i}
 \end{equation}
 
-This approach is grounded in the principles of \emph{Active Learning}, specifically \emph{Uncertainty Sampling}. By focusing on the disagreement region, we sample from the portion of the manifold where the models' posterior probabilities $P(Y|X)$ are closest to the decision threshold.
+Here, the inverse probability $1/q_i$ acts as an importance weight (or Radon--Nikodym derivative) that maps the biased sampling measure back to the uniform population measure.
 
-\subsection{Sensitivity and Statistical Power}
-From a hypothesis testing perspective, the goal of weekly monitoring is to reject the null hypothesis $H_0: \Delta A = 0$ (no drift). The statistical power of a test—the probability of detecting drift when it exists—is higher on instances with high prediction variance. 
-
-In the full dataset ($N=1200$), a large portion of instances are "easy" cases with $P(Y=1|X) \approx 1$ or $0$. On these instances, the Bernoulli variance $p(1-p)$ is minimal, making them "robust" to small model drifts. In contrast, the disagreement subset ($n=300$) centers the evaluation on the "hard" cases where $p \approx 0.5$. 
-
-While $\hat{A}_{300}$ is a biased estimator of the global population accuracy, it serves as a \textbf{proxy metric} with higher sensitivity. A performance drop of $5\%$ on the hard 300-sample subset is a leading indicator of degradation that would require a much larger (and more expensive) sample to detect on the full 1200-sample distribution. Thus, $n=300$ provides an optimal balance between inference cost and the statistical power to detect model updates.
-\section{Theoretical Justification of Disagreement Sampling}
-
-The construction of the monitoring subset $\mathcal{D}_{300}$ via model disagreement represents a deliberate departure from simple random sampling (SRS). In this section, we formalise this approach through the lenses of \emph{importance sampling} and \emph{active learning}.
-
-\subsection{Selection Bias and the Sampling Indicator}
-
-Let $S_i \in \{0, 1\}$ be a Bernoulli random variable indicating whether the $i$-th instance from the reference benchmark $\mathcal{D}_{N}$ is included in the monitoring subset $\mathcal{D}_{n}$. Under SRS, $P(S_i = 1) = n/N$. In our framework, the inclusion probability is conditioned on the disagreement of a model ensemble $\mathcal{M}$:
+\begin{proof}[Proof of Unbiasedness]
+To prove that $\hat{A}_{HT}$ correctly recovers the global accuracy, we take its expectation over the sampling design:
 \begin{equation}
-    P(S_i = 1 \mid x_i, \mathcal{M}) = q_i,
+    \mathbb{E} [\hat{A}_{HT}] = \mathbb{E} \left[ \frac{1}{N} \sum_{i=1}^{N} \frac{S_i \cdot \mathbb{I}(\hat{y}_i = y_i)}{q_i} \right]
 \end{equation}
-where $q_i$ is high if the models in $\mathcal{M}$ yield conflicting predictions $\hat{y}_{i,m}$.
-
-Consequently, the empirical accuracy on the subset, $\hat{A}_n$, is a \textbf{biased estimator} of the population accuracy $A_N$:
+By the linearity of expectation, and noting that the true labels and model predictions at a fixed time $t$ are deterministic with respect to the sampling mechanism:
 \begin{equation}
-    \mathbb{E}[\hat{A}_n] \neq A_N.
+    \mathbb{E} [\hat{A}_{HT}] = \frac{1}{N} \sum_{i=1}^{N} \frac{\mathbb{I}(\hat{y}_i = y_i)}{q_i} \mathbb{E}[S_i]
 \end{equation}
-This bias arises because $\mathcal{D}_n$ intentionally over-represents ``hard'' cases near the decision boundary, for which the expected accuracy is lower than the population average.
-
-\subsection{Change of Measure and the Horvitz--Thompson Estimator}
-
-To reconcile the subset performance with the population mean, we can apply a \textbf{change of measure}. From the theory of \emph{importance sampling}, an unbiased estimate of $A_N$ can be recovered by weighting each observation by the inverse of its inclusion probability.
-
-Let $q_i = P(S_i = 1 \mid x_i, \mathcal{M})$ denote the (possibly model-dependent) inclusion probability. The Horvitz--Thompson estimator of the population accuracy is
+Since $S_i$ is a Bernoulli random variable, its expected value is exactly its probability of occurrence, $\mathbb{E}[S_i] = q_i$. Substituting this yields:
 \begin{equation}
-    \hat{A}_{\mathrm{HT}} = \frac{1}{N} \sum_{i \in \mathcal{D}_n} \frac{\mathbb{I}(\hat{y}_i = y_i)}{q_i},
+    \mathbb{E} [\hat{A}_{HT}] = \frac{1}{N} \sum_{i=1}^{N} \frac{\mathbb{I}(\hat{y}_i = y_i)}{q_i} \cdot q_i = \frac{1}{N} \sum_{i=1}^{N} \mathbb{I}(\hat{y}_i = y_i) = A_N
 \end{equation}
-where the factor $1/q_i$ serves as an \textbf{importance weight}. In principle, this restores unbiasedness with respect to the original reference distribution. In practice, our production pipeline treats $\hat{A}_n$ primarily as a \emph{monitoring signal}, but the existence of $\hat{A}_{\mathrm{HT}}$ clarifies the statistical relationship between the curated subset and the underlying data-generating distribution.
+\end{proof}
 
-\subsection{Bias–Power Trade-off in Drift Detection}
+\subsection{Operational Utility: Signal Amplification}
+The proof above confirms that $\mathcal{D}_{300}$ is a statistically valid basis for inference, as it remains anchored to the reference population through the HT estimator. However, within the operational monitoring loop, we deliberately report the raw empirical accuracy $\hat{A}_n$ rather than the unbiased estimate $\hat{A}_{\mathrm{HT}}$. 
 
-The motivation for accepting selection bias lies in a deliberate \textbf{bias–power trade-off}. For drift detection, the primary objective is not to obtain a perfectly calibrated estimate of global accuracy, but to maximise the \emph{power} of a test for changes over time.
+The rationale for this choice is rooted in \textbf{Signal-to-Noise Ratio (SNR) optimization}. Applying the importance weights $1/q_i$ would mathematically suppress the frequency of errors occurring at the decision boundary, effectively "smoothing" the data to reconstruct the global mean. While this is desirable for population estimation, it is counter-productive for \textbf{anomaly detection}. By utilizing the raw biased metric, we maintain the magnification of errors where the model is most unstable. Thus, $\hat{A}_n$ functions as a high-gain monitoring signal that provides a leading indicator of model drift, while the HT-framework provides the necessary theoretical guarantee that this signal is a rigorous and mathematically reversible projection of the global performance.
 
-By concentrating on the high-entropy region around the decision boundary, we sample from those $x \in \mathcal{X}$ where the classifier is intrinsically uncertain and where small perturbations of the underlying model parameters $\theta_t$ are most likely to flip predictions. Intuitively, these are the points where the gradient of the loss with respect to $\theta_t$ is largest; small, otherwise imperceptible shifts in $\theta_t$ that would be masked by ``easy'' examples in $\mathcal{D}_{N}$ are amplified in $\mathcal{D}_n$.
-
-Formally, we trade interpretability of $\hat{A}_n$ as a population accuracy for increased sensitivity of the drift signal:
-\begin{enumerate}
-    \item \textbf{Bias Increase:} $\hat{A}_n$ systematically underestimates $A_N$ because it is evaluated on a stress-test subset.
-    \item \textbf{Power Increase:} For a fixed evaluation budget $n$, the test statistic based on $\mathcal{D}_n$ has higher power to detect changes in accuracy than one based on an SRS of the same size, since it concentrates mass on inputs with high prediction variance.
-\end{enumerate}
-In this sense, $\mathcal{D}_n$ is designed as an optimised \emph{diagnostic instrument} for temporal instability, rather than as a representative sample of day-to-day traffic.
 \chapter{Drift Monitoring and Model Selection Methodology}
 
 \section{Formalisation of Temporal Evaluation}
