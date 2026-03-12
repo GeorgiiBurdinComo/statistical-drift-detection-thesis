@@ -291,58 +291,59 @@ The rationale for this choice is rooted in \textbf{Signal-to-Noise Ratio (SNR) o
 \chapter{Drift Monitoring and Model Selection Methodology}
 
 \section{Formalisation of Temporal Evaluation}
-Let $t \in \{1, \dots, T\}$ represent weekly evaluation intervals. For each model $m$, we track the empirical accuracy $\hat{A}_t$ on the monitoring subset $\mathcal{D}_{300}$. Because $\mathcal{D}_{300}$ consists of high-disagreement cases, $\hat{A}_t$ will be lower than the accuracy on the full benchmark, but it serves as our primary monitoring signal $S_t$.
+Let $t \in \{1, \dots, T\}$ represent discrete evaluation intervals (e.g., weekly batch runs). At each time step $t$, a deployed model $m$ evaluates the fixed monitoring subset $\mathcal{D}_{300}$. We denote the vector of temporal predictions for the $i$-th instance as $\hat{y}_{i,t} \in \{0,1\}$. 
 
-\section{Statistical Framework for Drift Detection}
-To distinguish between random performance fluctuation and genuine model drift, we utilize a threshold-based alerting rule. 
+Because the evaluation is conducted on the exact same set of instances $\mathcal{D}_{300}$ across time, the longitudinal accuracy measurements $\hat{A}_{t-1}$ and $\hat{A}_t$ are strongly dependent. Consequently, standard statistical tests that assume independent samples (such as the two-proportion $Z$-test) are invalid, as they overestimate variance and reduce the statistical power to detect subtle model drift.
 
-\subsection{Standard Error on the Informative Subset}
-Given that $n=300$, the standard error of our accuracy estimate $\hat{A}_t$ is:
-\begin{equation}
-    SE(\hat{A}_t) = \sqrt{\frac{\hat{A}_t(1 - \hat{A}_t)}{n}}
-\end{equation}
-For a model with an expected accuracy of $0.70$ on the hard subset, $SE \approx 0.026$ ($2.6\%$). 
+\section{Statistical Drift Detection via McNemar's Test}
+To formally detect model drift, we shift the focus from the marginal accuracies to the \textbf{discordant pairs}—the specific instances where the model's behavior has changed between $t-1$ and $t$.
 
-\subsection{The Alerting Rule}
-We define a performance drop as statistically significant if the difference between the current accuracy and the baseline accuracy $\hat{A}_0$ exceeds a confidence interval. However, for production stability, we use a \textbf{Practical Drift Threshold} $\tau_{\mathrm{drift}}$. An alert is triggered if:
-\begin{equation}
-    \hat{A}_t < \hat{A}_{0} - k \cdot SE(\hat{A}_0) - \tau_{\mathrm{drift}}
-\end{equation}
-where $k$ is a scaling factor (typically $k=2$ for a $\approx 95\%$ confidence interval) and $\tau_{\mathrm{drift}}$ is the minimum degradation the business is willing to tolerate before intervening.
-
-\section{Accuracy--Cost Trade-off Modeling}
-Model selection is formulated as a multi-objective optimization problem. We define the \textbf{Operational Value Score} $V_t(m)$:
-\begin{equation}
-    V_t(m) = \frac{\hat{A}_t(m)}{C(m)^\alpha}
-\end{equation}
-where $C(m)$ is the cost per 1,000 requests and $\alpha$ is a sensitivity parameter. 
+\subsection{The Contingency Table}
+We construct a $2 \times 2$ contingency table comparing the correctness of the model's predictions over time. Let $E_{i,t} = \mathbb{I}(\hat{y}_{i,t} = y_i)$ be the indicator of a correct prediction at time $t$. The frequencies of the four possible outcomes across the $n=300$ instances are defined as:
 \begin{itemize}
-    \item If $\alpha=0$, we select purely based on accuracy.
-    \item If $\alpha=1$, we select based on "accuracy per dollar."
+    \item $a$: Concordant correct ($E_{i,t-1}=1$ and $E_{i,t}=1$)
+    \item $b$: Discordant regression ($E_{i,t-1}=1$ and $E_{i,t}=0$)
+    \item $c$: Discordant improvement ($E_{i,t-1}=0$ and $E_{i,t}=1$)
+    \item $d$: Concordant incorrect ($E_{i,t-1}=0$ and $E_{i,t}=0$)
 \end{itemize}
-In our workflow, we set $\alpha$ based on the current budget constraints of the Gocomo pipeline.
 
-\section{Decision Logic for Model Switching}
-The system follows a three-step decision tree each week:
-\begin{enumerate}
-    \item \textbf{Monitor:} Calculate $V_t$ for all candidate models.
-    \item \textbf{Detect:} Check if the currently deployed model $m_{curr}$ has triggered a drift alert.
-    \item \textbf{Act:} If drift is detected, calculate if another model $m_{alt}$ provides a significantly higher $V_t$. If no model satisfies the threshold, trigger the \textbf{Prompt Optimisation} loop (Chapter 4).
-\end{enumerate}
-\section{Statistical Drift Detection}
-Let $\widehat{A}_t$ be the empirical accuracy of a model on the monitoring subset at week $t$. We define the temporal performance delta as $D_t = \widehat{A}_t - \widehat{A}_{t-1}$. An alert is triggered if the degradation exceeds a practical operational threshold $\tau_{\mathrm{drift}}$:
+In this framework, the instances contributing to $a$ and $d$ provide no information regarding temporal shifts. The drift signal is isolated entirely within the off-diagonal elements $b$ and $c$.
+
+\subsection{The Test Statistic and Alerting Rule}
+We establish the null hypothesis $H_0: p_b = p_c$, which states that the marginal probabilities of success are equal across time, implying no model drift. The alternative hypothesis for degradation is $H_a: p_b > p_c$.
+
+To test this, we utilize \textbf{McNemar's test statistic} with a continuity correction, which follows a $\chi^2$ distribution with 1 degree of freedom:
 \begin{equation}
-    D_t < -\tau_{\mathrm{drift}}
+    \chi^2 = \frac{(|b - c| - 1)^2}{b + c}
 \end{equation}
-This threshold must account for the natural variance of the 300-sample subset to avoid false-positive alerts.
+
+The automated monitoring pipeline triggers a \textbf{Statistical Drift Alert} at time $t$ if two conditions are met:
+\begin{enumerate}
+    \item \textbf{Directionality:} $b > c$ (the model "broke" more instances than it "fixed").
+    \item \textbf{Significance:} The $p$-value derived from the $\chi^2$ statistic is less than the specified confidence level $\alpha = 0.05$.
+\end{enumerate}
 
 \section{Cost-Aware Model Selection}
-Predictive accuracy cannot be isolated from inference cost in a production environment. Let $C_t(m)$ be the inference cost and $A_t(m)$ be the accuracy for model $m$. We define a deployment utility function $J_t$ that penalizes high costs:
-\begin{equation}
-    J_t(m) = A_t(m) - \lambda C_t(m)
-\end{equation}
-where $\lambda > 0$ represents the business's willingness to pay for marginal accuracy improvements. The system dynamically selects the model $m^\star = \arg\max_{m} J_t(m)$ each week.
+When a drift alert is triggered, or when evaluating new models for deployment, predictive accuracy cannot be considered in isolation from inference cost. Let $C_t(m)$ represent the API inference cost (in USD per 1,000 requests) and $A_t(m)$ the empirical accuracy for model $m \in \mathcal{M}$.
 
+\subsection{The Deployment Utility Function}
+We formulate model selection as a multi-objective optimization problem by defining a \textbf{Deployment Utility Function} $J_t(m)$ that penalizes excessive operational expenditure:
+\begin{equation}
+    J_t(m) = A_t(m) - \lambda \cdot \log(1 + C_t(m))
+\end{equation}
+where $\lambda \ge 0$ is a business-defined sensitivity parameter. 
+\begin{itemize}
+    \item When $\lambda = 0$, the system selects purely on predictive capability ($J_t = A_t$).
+    \item When $\lambda > 0$, the logarithmic penalty bounds the impact of highly expensive models, reflecting the diminishing business returns of marginal accuracy improvements at exorbitant API costs.
+\end{itemize}
+
+\subsection{Decision Logic for Pipeline Adaptation}
+The monitoring architecture follows an automated decision tree executed upon every batch completion:
+\begin{enumerate}
+    \item \textbf{Monitor:} Calculate the McNemar $\chi^2$ statistic for the currently deployed model $m_{\text{curr}}$ against its baseline performance at $t_0$.
+    \item \textbf{Detect:} If $p < 0.05$ and $b > c$, register a significant degradation event.
+    \item \textbf{Act:} Evaluate the utility $J_t(m)$ for all available fallback models. The pipeline dynamically routes future traffic to the model $m^\star = \arg\max_{m} J_t(m)$. If no fallback model satisfies the baseline utility threshold, the framework initiates the \textbf{Prompt Optimisation} loop (detailed in Chapter 4) to attempt performance recovery without altering the underlying model API.
+\end{enumerate}
 \chapter{Prompt Optimisation as an Adaptive Mechanism}
 \section{Integrating Optimisation into the Monitoring Loop}
 When a deployed model triggers a drift alert ($D_t < -\tau_{\mathrm{drift}}$), switching to a more expensive model is not the only recourse. We can attempt to recover performance via prompt optimization.
