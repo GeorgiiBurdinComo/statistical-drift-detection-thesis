@@ -2377,6 +2377,10 @@
     <bcf:datasource type="file" datatype="bibtex" glob="false">literature.bib</bcf:datasource>
   </bcf:bibdata>
   <bcf:section number="0">
+    <bcf:citekey order="1" intorder="1">chen2023chatgpt</bcf:citekey>
+    <bcf:citekey order="1" intorder="2">tu2023chatlog</bcf:citekey>
+    <bcf:citekey order="1" intorder="3">echterhoff2024muscle</bcf:citekey>
+    <bcf:citekey order="2" intorder="1">gepa2025</bcf:citekey>
   </bcf:section>
   <!-- SORTING TEMPLATES -->
   <bcf:sortingtemplate name="none">

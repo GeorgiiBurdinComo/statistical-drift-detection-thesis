@@ -52,7 +52,7 @@ Therefore, a framework is needed that can:
 \chapter{Introduction}
 
 \section{Context and Motivation}
-Industrial classification pipelines increasingly rely on Large Language Model (LLM) providers that expose their systems through application programming interfaces. In such settings, the deployed model can be viewed as a non-stationary black-box function $f_t(x)$ whose internal parameters and update schedule are controlled by the provider rather than by the user. As a result, the behaviour of the same API-accessible model may change over time even when the downstream task, the prompt, and the evaluation procedure remain fixed.
+Industrial classification pipelines increasingly rely on Large Language Model (LLM) providers that expose their systems through application programming interfaces. In such settings, the deployed model can be viewed as a non-stationary black-box function $f_t(x)$ whose internal parameters and update schedule are controlled by the provider rather than by the user. As a result, the behaviour of the same API-accessible model may change over time even when the downstream task, the prompt, and the evaluation procedure remain fixed~\cite{chen2023chatgpt,tu2023chatlog,echterhoff2024muscle}.
 
 The practical motivation for this thesis arises from the author's two-year work experience at \textbf{Gocomo GmbH}. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, event, or other marketing entity. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, manual verification is not scalable, and automated classification becomes a necessary operational component.
 
@@ -304,17 +304,110 @@ where $\lambda > 0$ represents the business's willingness to pay for marginal ac
 When a deployed model triggers a drift alert ($D_t < -\tau_{\mathrm{drift}}$), switching to a more expensive model is not the only recourse. We can attempt to recover performance via prompt optimization.
 
 \section{Pareto-Based Prompt Search (GEPA)}
-We utilize a reflective evolutionary method (GEPA) for prompt adaptation. Because prompt space is discrete and non-convex, greedy selection often fails. Instead, we maintain a candidate pool of prompts and evaluate their per-instance score vectors $\bm{s}(\Pi) = (s_1(\Pi), \dots, s_n(\Pi))$. 
+We utilize a reflective evolutionary method (GEPA)~\cite{gepa2025} for prompt adaptation. Because prompt space is discrete and non-convex, greedy selection often fails. Instead, we maintain a candidate pool of prompts and evaluate their per-instance score vectors $\bm{s}(\Pi) = (s_1(\Pi), \dots, s_n(\Pi))$. 
 
 We retain prompts based on Pareto dominance to preserve search diversity. A prompt $\Pi^{(a)}$ dominates $\Pi^{(b)}$ if it performs at least as well on all instances and strictly better on at least one. By mutating prompts on the Pareto frontier using natural-language reflections from execution traces, we can systematically search for a prompt $\Pi^\star$ that maximizes $J_t(m)$ without altering the underlying API model.
 
 \chapter{System Architecture and Experiments}
-\section{Pipeline Implementation}
-The evaluation framework is orchestrated via GitHub Actions, running batch jobs against external LLM APIs. Prompts, predictions, and ground-truth labels are logged in Langfuse, allowing for full observability and dashboard integration.
+\label{chap:system-architecture}
 
-\section{Results: Monitoring, Costs, and Savings}
-\textit{[Placeholder for experimental results: Prove how much money is saved using the 300-subset vs 1200-subset, demonstrate a captured instance of model drift, and show the before/after accuracy of applying GEPA.]}
+\section{Overview of the Evaluation Pipeline}
+\label{sec:evaluation-pipeline-overview}
 
+The experiments are implemented as an automated batch evaluation pipeline that connects a versioned Langfuse dataset, multiple LLM providers (OpenAI, Gemini, Claude), and a monitoring/analysis layer.
+Figure~\ref{fig:campaign-relevance-pipeline} shows the high-level flow from labeled examples to batch jobs, responses, and metrics.
+
+Throughout this chapter, the \emph{primary} metrics of interest are:
+\begin{itemize}
+    \item \textbf{Classification accuracy} on the monitoring subset
+    \item \textbf{Inference cost} per model (measured via token usage and provider pricing)
+\end{itemize}
+
+The core idea is that every evaluation run is:
+\begin{enumerate}
+    \item Defined as a subset of the campaign relevance dataset,
+    \item Executed as provider-native batch jobs, and
+    \item Ingested back into Langfuse as traces with structured outputs and scores, so that drift can be analysed across time and models.
+\end{enumerate}
+
+
+% TikZ figure from earlier:
+% \input{fig-campaign-relevance-pipeline}
+
+\section{Dataset Storage and Trace Logging}
+\label{sec:dataset-storage}
+
+All labels and input features for the campaign relevance task are stored in Langfuse as a dedicated dataset.
+Each row represents a single influencer post with a stable \texttt{custom\_id}, campaign brief, caption, optional image references, and a boolean \texttt{campaign\_relevant} label.
+During evaluation, each model call is recorded as a Langfuse trace whose metadata includes the \texttt{custom\_id}, model name, provider, run identifier, latency, and token usage.
+This makes it possible to reconstruct historical evaluations and to filter traces by dataset version, model, or time window when analysing drift.
+
+\section{Batch Evaluation Process}
+\label{sec:batch-process}
+
+Batch runs are orchestrated by \texttt{run\_eval.py}, which:
+\begin{enumerate}
+    \item Loads an evaluation subset via \texttt{load\_dataset\_rows}, either directly from Langfuse or from a CSV export (e.g.\ the disagreement subset).
+    \item Applies a shared prompt template to produce a normalised conversational payload (system + user messages) per example.
+    \item Calls provider-specific helpers (\texttt{batch\_openai.py}, \texttt{batch\_gemini.py}, \texttt{batch\_claude.py}) that write JSONL request files and submit batch jobs.
+    \item Writes a manifest \texttt{data/batch\_ids.json} listing all submitted batch IDs, models, and providers.
+\end{enumerate}
+GitHub Actions workflows schedule and execute this pipeline: they trigger batch submission, poll job status until completion, and then run the ingestion scripts (\texttt{poll\_and\_ingest.py}, \texttt{ingest.py}) that attach responses to the correct traces in Langfuse.
+
+\section{Interaction with LLM APIs}
+\label{sec:llm-api-interaction}
+
+All models are queried via provider-native batch APIs, but the logical payload is always the same: a schema-constrained campaign relevance call built from one labeled example.
+Concretely:
+\begin{itemize}
+    \item \textbf{OpenAI} (\texttt{batch\_openai.py}): writes JSONL lines of the form \{\texttt{custom\_id}, \texttt{method="POST"}, \texttt{url="/v1/responses"}, \texttt{body}\} and submits the file to the OpenAI Batch API with \texttt{endpoint="/v1/responses"}.
+    \item \textbf{Gemini} (\texttt{batch\_gemini.py}): writes JSONL lines with a \texttt{request} object (contents, optional \texttt{systemInstruction}, \texttt{generationConfig}) and uploads the file to the Google GenAI batch API via \texttt{client.batches.create(model=..., src=...)}.
+    \item \textbf{Claude} (\texttt{batch\_claude.py}): builds an in-memory list of \{\texttt{custom\_id}, \texttt{params}\} records and passes it directly to the Anthropic Messages Batches API via \texttt{client.messages.batches.create(requests=...)}; the streamed batch results are later normalised into JSONL by \texttt{download\_claude\_batch\_results}.
+\end{itemize}
+In all three cases, the underlying request encodes:
+\begin{itemize}
+    \item a \texttt{custom\_id} linking back to the dataset row,
+    \item a conversational payload (system instructions + user content with campaign brief and post),
+    \item and a JSON schema (\texttt{CampaignRelevanceMinimal}) that forces the response into a \{\texttt{campaign\_relevant}, \texttt{relevancy\_reasoning}\} object.
+\end{itemize}
+Listing~\ref{lst:campaign-relevance-payload} and Listing~\ref{lst:campaign-relevance-schema} give a concrete example of the batch line and output schema used in the experiments.
+
+\section{Metrics Collection and Monitoring Dashboard}
+\label{sec:metrics-dashboard}
+
+The monitoring stack exposes exactly two core metrics: \textbf{classification accuracy} on the monitoring subset and \textbf{inference cost} per model.
+
+Ingestion is handled by the script \texttt{ingest.py}, which processes each batch output file as follows:
+\begin{enumerate}
+    \item Parse each JSONL line and normalise the provider response (OpenAI, Gemini, Claude) into a common structure.
+    \item Extract the boolean \texttt{campaign\_relevant} prediction from the model output.
+    \item Look up the ground-truth label for the corresponding \texttt{custom\_id} from Langfuse or a CSV export.
+    \item Derive token usage \((\text{input}, \text{output}, \text{total})\) from the provider-specific usage fields.
+    \item Convert token usage into a dollar cost using the per-million-token prices in \texttt{config/models.yaml}.
+    \item Write a Langfuse trace/span with:
+    \begin{itemize}
+        \item metadata: \texttt{model}, \texttt{provider}, \texttt{custom\_id}, optional \texttt{run\_id};
+        \item the parsed input and raw provider response;
+        \item three scores:
+        \begin{itemize}
+            \item \texttt{accuracy} \(\in \{0,1\}\) (per-trace correctness),
+            \item \texttt{error\_type} \(\in\)\{\texttt{true\_positive}, \texttt{false\_negative}, \texttt{true\_negative}, \texttt{false\_positive}\},
+            \item \texttt{cost\_usd} (total dollar cost for this trace);
+        \end{itemize}
+        \item detailed \texttt{usage\_details} and \texttt{cost\_details} for debugging and audits.
+    \end{itemize}
+\end{enumerate}
+
+On top of this logging layer, a small Streamlit dashboard queries Langfuse and aggregates scores over the 300-example monitoring subset.
+The dashboard provides:
+\begin{itemize}
+    \item per-model accuracy curves over time (mean of the per-trace \texttt{accuracy} scores),
+    \item confusion-matrix summaries derived from \texttt{error\_type},
+    \item request volume and latency distributions per run,
+    \item and cost views such as cost per run and estimated cost per 1,000 inferences.
+\end{itemize}
+Screenshots from this Streamlit dashboard are used in the experiments chapter to show concrete drift events and the associated accuracy--cost trade-offs.
+Together, \texttt{ingest.py} and the dashboard form the practical monitoring surface of the statistical surveillance loop described in the previous chapters.
 \chapter{Conclusion}
 This thesis provides a statistically grounded, cost-aware framework for the continuous evaluation of LLMs in production. By decoupling the initial reference benchmark from an informative monitoring subset, and pairing statistical drift detection with automated prompt optimization, organizations can maintain high classification performance despite the inherent instability of black-box LLM APIs.
 
