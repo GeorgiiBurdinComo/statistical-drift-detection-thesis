@@ -45,6 +45,7 @@ Therefore, a framework is needed that can:
 %%% Bibliography
 \usepackage[bibstyle=ieee,citestyle=numeric-comp,natbib=true,sorting=none,dashed=false]{biblatex}
 \usepackage{bm}
+\usepackage{listings}
 \addbibresource{literature.bib}
 
 \begin{document}
@@ -88,8 +89,9 @@ The problem stated above is investigated through the following research question
 
 \chapter{Data and Evaluation Setup}
 
-\section{Formal Problem Definition}
-
+\section{Task Definition}
+\subsection{What do we do?}
+At a high level, the production pipeline takes each incoming social-media post and asks an LLM whether the content is relevant to a given marketing campaign. The model sees a structured description of the campaign (brands, slogans, product lines) together with the post's text, hashtags, and selected video frames, and must decide if at least one of the campaign entities is mentioned, visually present (e.g.\ logo), or otherwise clearly implied. The LLM returns a binary decision for every post in the batch, which is then used downstream for filtering and reporting.
 \subsection{Example LLM Request Payload}
 
 During evaluation, each social-media post is converted into a structured request
@@ -139,11 +141,12 @@ A simplified example payload is shown below.
 
 The system prompt defines the classification criteria and the list of campaign
 brands. The user messages contain the multimodal content of the post,
-including captions, transcriptions, hashtags, and selected video frames.
-The model output is mapped to the binary label space
-$\mathcal{Y} = \{0,1\}$.
+including captions, transcriptions, hashtags, and selected video frames. Results are restricted to binary response of is this post relevant or not to the requested topic
+
 
 To evaluate model drift rigorously, we must first define the classification task within a probabilistic framework. 
+
+\section{Formal Task Definition}
 
 \subsection{The Probability Space}
 Let $\mathcal{X}$ denote the input space of social-media posts (textual content and associated metadata) and let $\mathcal{Y} = \{0, 1\}$ be the label space, where $1$ indicates relevance to a campaign and $0$ indicates irrelevance. We assume that pairs $(x, y)$ are drawn from a joint distribution $P_t$ on $\mathcal{X} \times \mathcal{Y}$. The subscript $t$ signifies that this distribution or the underlying labeling function may evolve over time.
@@ -184,8 +187,11 @@ The expected risk \(R(f_{\pi,\theta_t})\) represents the true average loss of th
 
 Instead, performance is estimated through the empirical risk \(\hat{R}(f_{\pi,\theta_t};\mathcal{D})\), which is the average loss over a finite labelled dataset \(\mathcal{D}\). Under zero-one loss, the empirical risk is simply the fraction of incorrectly classified examples in the dataset. Thus, empirical risk serves as a sample-based approximation of expected risk and forms the basis for all practical evaluation and monitoring procedures in this thesis.
 
-\section{The 1200-Example Reference Benchmark}
-We formalize the task as a mapping $g: \mathcal{X} \to \{0,1\}$. The reference benchmark consists of $N = 1200$ manually labelled examples, establishing the ground truth for initial model selection. However, evaluating all candidate models against $N$ examples weekly is economically prohibitive.
+\section{The Reference Benchmark}
+The reference benchmark consists of $N = 1200$ manually labelled examples, establishing the ground truth for initial model selection. It was used to evaluate the interesting models once and obtain their accuracy estimates. However, evaluating all candidate models against $N$ examples on a weekly basis is economically prohibitive.
+ \textcolor{red}{\textbf{NB!:} how much?. Show accuracy estimates for the interesting models.}
+\section{The Monitoring Subset}
+To reduce operational costs, we construct a monitoring subset. Crucially, this is not a naive uniform random sample. It is an \emph{informative} subset heavily weighted towards instances where models historically disagreed. Because it over-indexes on edge cases, it acts as a stress test. While it may not provide an unbiased estimate of global accuracy, it is highly sensitive to model drift. 
 
 \subsection{Sample Size Determination via Annotation Noise Floor}
 The exact size of the monitoring subset, $n=300$, is not arbitrary but is derived from the inherent noise floor of the human annotation process. In complex subjective tasks such as social-media campaign relevance, human inter-annotator disagreement establishes an irreducible error rate, generally estimated at $\epsilon \approx 0.05$ ($5\%$).
@@ -207,14 +213,10 @@ Because $\mathcal{D}_n$ is explicitly constructed from the region of maximal mod
 \begin{equation}
     n \ge 270.6
 \end{equation}
-
-To guarantee sufficient statistical power and to provide a safety margin for occasional API routing failures or dropped traces during batch processing, the theoretically required sample size of $n \ge 271$ is rounded up to $n=300$. This demonstrates that a 300-sample subset is the theoretical minimum required to reliably detect a $5\%$ model drift against the backdrop of human annotation noise, fully justifying the sample size under worst-case variance assumptions.
-
-\section{The 300-Example Monitoring Subset}
-To reduce operational costs, we construct a monitoring subset of $n = 300$ examples. Crucially, this is not a naive uniform random sample. It is an \emph{informative} subset heavily weighted towards instances where models historically disagreed. Because it over-indexes on edge cases, it acts as a stress test. While it may not provide an unbiased estimate of global accuracy, it is highly sensitive to model drift. 
-\section{Statistical Justification of the Monitoring Subset}
-
-The reduction from the reference benchmark ($N=1200$) to the monitoring subset ($n=300$) is justified by a shift from \emph{population estimation} to \emph{change detection}. 
+\begin{remark}
+    The use of the Normal approximation ($Z_{0.95}$) assumes that each of the 300 observations is independent and identically distributed (i.i.d.) within the subpopulation of high-disagreement cases. Although the monitoring subset $\mathcal{D}_n$ is intentionally biased compared to the general dataset $\mathcal{D}_N$, the Central Limit Theorem still ensures that the sampling distribution of the sample accuracy $\hat{A}_n$ will converge towards normality as sample size increases. Assuming $A=0.5$ corresponds to adopting a \emph{Maximum Entropy} prior, yielding the most conservative estimate for the required sample size given uncertainty about the true error rate in these edge-case examples.
+\end{remark}
+To ensure adequate statistical power, the theoretical minimum sample size $n \geq 271$ is voluntarly rounded up to $n=300$. This demonstrates that a monitoring subset of 300 samples is the minimum required to reliably detect a $5\%$ drop in performance attributable to model drift, even in the presence of human annotation noise, thus justifying the use of $n=300$ under worst-case assumptions.
 
 \subsection{Informative Sampling via Model Disagreement}
 The monitoring subset was constructed by selecting instances where at least one model in the initial benchmark exhibited disagreement. Let $y_i$ be the ground truth and $\hat{y}_{i,m}$ be the prediction of model $m \in \mathcal{M}$. The subset $\mathcal{D}_{300}$ is defined as:
@@ -343,6 +345,13 @@ We retain prompts based on Pareto dominance to preserve search diversity. A prom
 The experiments are implemented as an automated batch evaluation pipeline that connects a versioned Langfuse dataset, multiple LLM providers (OpenAI, Gemini, Claude), and a monitoring/analysis layer.
 Figure~\ref{fig:campaign-relevance-pipeline} shows the high-level flow from labeled examples to batch jobs, responses, and metrics.
 
+\begin{figure}[ht]
+    \centering
+    \fbox{\parbox{0.9\linewidth}{High-level flow from labeled examples in Langfuse through provider-specific batch jobs to structured responses and monitoring metrics.}}
+    \caption{High-level campaign-relevance evaluation and monitoring pipeline.}
+    \label{fig:campaign-relevance-pipeline}
+\end{figure}
+
 Throughout this chapter, the \emph{primary} metrics of interest are:
 \begin{itemize}
     \item \textbf{Classification accuracy} on the monitoring subset
@@ -398,6 +407,56 @@ In all three cases, the underlying request encodes:
 \end{itemize}
 Listing~\ref{lst:campaign-relevance-payload} and Listing~\ref{lst:campaign-relevance-schema} give a concrete example of the batch line and output schema used in the experiments.
 
+\begin{lstlisting}[caption={Example OpenAI batch JSONL line for the campaign relevance task.},label={lst:campaign-relevance-payload}]
+{"custom_id": "run_2025-02-10_example_001",
+ "method": "POST",
+ "url": "/v1/responses",
+ "body": {
+   "model": "gpt-5.1-mini",
+   "input": [
+     {"role": "system",
+      "content": "You are a classifier that decides whether a social-media post is relevant to a marketing campaign. Return TRUE or FALSE and explain briefly."},
+     {"role": "user",
+      "content": "Campaign: Douglas_Beauty Day 2025\nCaption: ...\nHashtags: [...]"}
+   ],
+   "response_format": {"type": "json_schema",
+     "json_schema": {
+       "name": "CampaignRelevanceMinimal",
+       "schema": {"$ref": "#/definitions/CampaignRelevanceMinimal"},
+       "strict": true,
+       "definitions": {
+         "CampaignRelevanceMinimal": {
+           "type": "object",
+           "properties": {
+             "campaign_relevant": {"type": "boolean"},
+             "relevancy_reasoning": {"type": "string"}
+           },
+           "required": ["campaign_relevant", "relevancy_reasoning"],
+           "additionalProperties": false
+         }}}}}
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Minimal JSON schema used to constrain model outputs in the campaign relevance experiments.},label={lst:campaign-relevance-schema}]
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CampaignRelevanceMinimal",
+  "type": "object",
+  "properties": {
+    "campaign_relevant": {
+      "type": "boolean",
+      "description": "TRUE if the post is relevant to the campaign, otherwise FALSE."
+    },
+    "relevancy_reasoning": {
+      "type": "string",
+      "description": "Short natural-language explanation of the decision."
+    }
+  },
+  "required": ["campaign_relevant", "relevancy_reasoning"],
+  "additionalProperties": false
+}
+\end{lstlisting}
+
 \section{Metrics Collection and Monitoring Dashboard}
 \label{sec:metrics-dashboard}
 
@@ -430,7 +489,7 @@ The dashboard provides:
     \item per-model accuracy curves over time (mean of the per-trace \texttt{accuracy} scores),
     \item confusion-matrix summaries derived from \texttt{error\_type},
     \item request volume and latency distributions per run,
-    \item and cost views such as cost per run and estimated cost per 1,000 inferences.
+        \item and cost views such as cost per run and estimated cost per 1,000 inferences.
 \end{itemize}
 Screenshots from this Streamlit dashboard are used in the experiments chapter to show concrete drift events and the associated accuracy--cost trade-offs.
 Together, \texttt{ingest.py} and the dashboard form the practical monitoring surface of the statistical surveillance loop described in the previous chapters.
