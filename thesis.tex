@@ -180,9 +180,35 @@ Since $P_t$ is unknown, we estimate the risk using the \textbf{Empirical Risk} $
     \hat{R}(f_{\pi, \theta_t}; \mathcal{D}) = \frac{1}{n} \sum_{i=1}^{n} \mathcal{L}(f(x_i; \pi, \theta_t), y_i)
 \end{equation}
 Model drift is therefore defined as a statistically significant increase in $R(f_{\pi, \theta_t})$ over time $t$ for a fixed prompt $\pi$.
+The expected risk \(R(f_{\pi,\theta_t})\) represents the true average loss of the classifier under the unknown data-generating distribution \(P_t\). In the present binary classification setting with zero-one loss, this quantity is equal to the probability of misclassification. Since the underlying distribution \(P_t\) is not directly observable, the expected risk cannot be computed exactly in practice.
+
+Instead, performance is estimated through the empirical risk \(\hat{R}(f_{\pi,\theta_t};\mathcal{D})\), which is the average loss over a finite labelled dataset \(\mathcal{D}\). Under zero-one loss, the empirical risk is simply the fraction of incorrectly classified examples in the dataset. Thus, empirical risk serves as a sample-based approximation of expected risk and forms the basis for all practical evaluation and monitoring procedures in this thesis.
 
 \section{The 1200-Example Reference Benchmark}
 We formalize the task as a mapping $g: \mathcal{X} \to \{0,1\}$. The reference benchmark consists of $N = 1200$ manually labelled examples, establishing the ground truth for initial model selection. However, evaluating all candidate models against $N$ examples weekly is economically prohibitive.
+
+\subsection{Sample Size Determination via Annotation Noise Floor}
+The exact size of the monitoring subset, $n=300$, is not arbitrary but is derived from the inherent noise floor of the human annotation process. In complex subjective tasks such as social-media campaign relevance, human inter-annotator disagreement establishes an irreducible error rate, generally estimated at $\epsilon \approx 0.05$ ($5\%$).
+\textcolor{red}{\textbf{NB!:}  show an example of a disagreement between two human annotators.}
+Consequently, any model performance fluctuation smaller than $\epsilon$ is statistically indistinguishable from background label noise. The monitoring system must therefore be calibrated to achieve a Minimum Detectable Effect (MDE) of $\Delta = 0.05$. For an observed drop to trigger a valid alert, the margin of error of our empirical accuracy estimate $\hat{A}_n$ must be strictly bounded by this noise floor.
+
+Let $Z_{1-\alpha}$ be the critical value for a one-sided hypothesis test at significance level $\alpha = 0.05$, where $Z_{0.95} \approx 1.645$. To ensure that the margin of error does not exceed our threshold $\Delta$, the required sample size $n$ must satisfy:
+\begin{equation}
+    Z_{1-\alpha} \sqrt{\frac{A(1-A)}{n}} \le \Delta
+\end{equation}
+
+Because $\mathcal{D}_n$ is explicitly constructed from the region of maximal model disagreement, the empirical accuracy is pushed toward the maximum-entropy state, $A \approx 0.5$. This represents the absolute worst-case variance scenario for a Bernoulli process, where $A(1-A) = 0.25$. Substituting these values yields:
+\begin{equation}
+    1.645 \sqrt{\frac{0.25}{n}} \le 0.05
+\end{equation}
+\begin{equation}
+    \frac{0.8225}{\sqrt{n}} \le 0.05 \implies \sqrt{n} \ge 16.45
+\end{equation}
+\begin{equation}
+    n \ge 270.6
+\end{equation}
+
+To guarantee sufficient statistical power and to provide a safety margin for occasional API routing failures or dropped traces during batch processing, the theoretically required sample size of $n \ge 271$ is rounded up to $n=300$. This demonstrates that a 300-sample subset is the theoretical minimum required to reliably detect a $5\%$ model drift against the backdrop of human annotation noise, fully justifying the sample size under worst-case variance assumptions.
 
 \section{The 300-Example Monitoring Subset}
 To reduce operational costs, we construct a monitoring subset of $n = 300$ examples. Crucially, this is not a naive uniform random sample. It is an \emph{informative} subset heavily weighted towards instances where models historically disagreed. Because it over-indexes on edge cases, it acts as a stress test. While it may not provide an unbiased estimate of global accuracy, it is highly sensitive to model drift. 
