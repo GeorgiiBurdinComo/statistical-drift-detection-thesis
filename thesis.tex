@@ -18,11 +18,11 @@
 \examiner[Prof <Name>]{<First Examiner>}
 \addexaminer*{<Second Examiner>}[]
 \abstract{%
-Large language model (LLM) APIs are subject to frequent, silent updates by providers, leading to \emph{model drift}---a phenomenon where the performance of a fixed prompt on a downstream task degrades over time without notice. This thesis develops a statistically grounded framework for monitoring and adapting black-box LLM APIs in a production-oriented binary classification pipeline for social-media relevance detection. 
+This thesis addresses the challenge of maintaining stable performance in production-grade Large Language Model (LLM) classification pipelines. Based on two years of industrial application at Gocomo GmbH, the research focuses on \emph{model drift}—the performance degradation caused by silent, third-party updates to API-based models. 
 
-We propose a methodology to derive a high-sensitivity 300-sample monitoring subset from a larger 1200-sample reference benchmark by selecting instances characterized by model disagreement. This informative sampling approach maximizes the statistical power to detect performance shifts while significantly reducing periodic evaluation costs. The framework integrates a statistical alerting rule with a multi-objective decision criterion that balances predictive accuracy against inference cost. Furthermore, we investigate prompt optimization via reflective evolutionary methods (GEPA) as a mechanism to recover performance following detected drift. 
+The work contributes a three-part framework designed for high-volume marketing analytics. First, we provide a mathematical justification for reducing monitoring costs: by utilizing disagreement-based sampling, a high-sensitivity 300-sample monitoring subset is derived from a 1200-sample reference benchmark. This approach maximizes statistical power at a fraction of the original inference cost. Second, we formalize model selection as a multi-objective optimization problem, balancing predictive quality against operational expenditure. Finally, the thesis evaluates reflective prompt evolution (GEPA) as an adaptive mechanism to recover performance following detected drift events.
 
-The resulting system, implemented with Langfuse and automated batch processing, provides a reproducible architecture for maintaining stable LLM deployments. Our results demonstrate that disagreement-based monitoring offers a cost-effective leading indicator of model degradation, allowing for timely adaptation in business-critical environments.
+The resulting system, integrated with Langfuse and GitHub Actions, demonstrates that informative subsetting can act as a reliable leading indicator for model degradation. By combining statistical surveillance with automated adaptation, this framework provides a robust methodology for deploying non-stationary black-box models in business-critical environments.
 }
 \email{\href{mailto:gburdin@hs-mittweida.de}{gburdin@hs-mittweida.de}}
 \location{Mittweida}
@@ -39,15 +39,18 @@ The resulting system, implemented with Langfuse and automated batch processing, 
 \chapter{Introduction}
 
 \section{Context and Motivation}
-Industrial classification pipelines increasingly rely on Large Language Model (LLM) APIs, which operate as non-stationary black-box functions $f(x; \theta_t)$. Unlike static machine learning models, LLM-as-a-Service (LLMaaS) providers frequently update underlying parameters $\theta_t$ without notice. This temporal instability, or \textbf{model drift}, poses a significant risk to production systems: a model optimized at $t_0$ may exhibit regressive behavior at $t_1$.
+Industrial classification pipelines increasingly rely on Large Language Model (LLM) providers, which operate as non-stationary black-box functions $f(x; \theta_t)$. Unlike static machine learning models, LLM-as-a-Service (LLMaaS) providers frequently update underlying parameters $\theta_t$ without notice. This temporal instability, or \textbf{model drift}, poses a significant risk to production systems: a model optimized at $t_0$ may exhibit regressive behavior at $t_1$.
 
-In the case of Gocomo's social-media relevance detection, where high-volume data is processed in batches, manual verification is not scalable. However, full-scale benchmarking on a reference dataset $\mathcal{D}_N$ ($N=1200$) is economically prohibitive for frequent monitoring. This creates a need for a statistically sensitive yet cost-effective surveillance framework.
+The practical motivation for this work stems from the author's two-year tenure as a working student and internship at \textbf{Gocomo GmbH}, where these challenges were observed within the company's core social-media relevance detection pipeline. In this environment, where high-volume data is processed in batches to determine the marketing relevance of social-media posts, manual verification is not scalable.
+
+
+However, full-scale benchmarking on a large and statistically representative dataset is economically prohibitive for frequent monitoring. This creates a need for a statistically sensitive yet cost-effective surveillance framework.
 
 \section{Problem Statement}
 This thesis addresses the design of a monitoring system for black-box LLMs under non-stationary conditions. The core challenge is a dual-objective optimization:
 \begin{enumerate}
-    \item \textbf{Statistical Efficiency:} Deriving a monitoring subset $\mathcal{D}_n$ ($n=300$) that maximizes the Fisher information regarding model drift, thereby retaining the statistical power to detect degradation while minimizing evaluation cost.
-    \item \textbf{Decision Utility:} Formulating a selection rule that balances classification accuracy against inference expenditure through multi-objective optimization.
+    \item \textbf{Statistical Efficiency:} Deriving a high-sensitivity monitoring subset that preserves the power to detect drift while minimizing sample size.
+    \item \textbf{Decision Utility:} Formulating a selection rule that balances the trade-off between classification accuracy and inference expenditure.
 \end{enumerate}
 By integrating importance sampling with automated prompt adaptation (GEPA), this work provides a methodology for maintaining stable classification services in a provider-controlled API landscape.
 
@@ -61,8 +64,6 @@ This thesis answers the following research questions:
     \item[\textbf{RQ5:}] To what extent can reflective prompt evolution (GEPA) serve as an adaptive recovery mechanism following a detected drift event?
 \end{enumerate}
 
-\section{Thesis Structure}
-The remainder of this thesis is organized as follows: Chapter 2 establishes the formal mathematical setup and justifies the sampling methodology. Chapter 3 develops the statistical monitoring and model selection rules. Chapter 4 explores the theoretical foundations of prompt optimization. Chapter 5 details the experimental implementation and results, followed by concluding remarks in Chapter 6.
 \chapter{Data and Evaluation Setup}
 
 \section{Formal Problem Definition}
