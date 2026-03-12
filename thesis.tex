@@ -18,11 +18,24 @@
 \examiner[Prof <Name>]{<First Examiner>}
 \addexaminer*{<Second Examiner>}[]
 \abstract{%
-This thesis addresses the challenge of maintaining stable performance in production-grade Large Language Model (LLM) classification pipelines. Based on two years of industrial application at Gocomo GmbH, the research focuses on \emph{model drift}—the performance degradation caused by silent, third-party updates to API-based models. 
+\textbf{1. Context}\\
+Gocomo uses API-based large language models (LLMs) for campaign-relevance classification on social-media posts.
 
-The work contributes a three-part framework designed for high-volume marketing analytics. First, we provide a mathematical justification for reducing monitoring costs: by utilizing disagreement-based sampling, a high-sensitivity 300-sample monitoring subset is derived from a 1200-sample reference benchmark. This approach maximizes statistical power at a fraction of the original inference cost. Second, we formalize model selection as a multi-objective optimization problem, balancing predictive quality against operational expenditure. Finally, the thesis evaluates reflective prompt evolution (GEPA) as an adaptive mechanism to recover performance following detected drift events.
+\textbf{2. Practical Problem}\\
+These API models change over time without full transparency, so the performance of a deployed classification pipeline may degrade.
 
-The resulting system, integrated with Langfuse and GitHub Actions, demonstrates that informative subsetting can act as a reliable leading indicator for model degradation. By combining statistical surveillance with automated adaptation, this framework provides a robust methodology for deploying non-stationary black-box models in business-critical environments.
+\textbf{3. Operational Constraint}\\
+Re-running a full benchmark frequently is too expensive.
+
+\textbf{4. Methodological Problem}\\
+Therefore, a framework is needed that can:
+\begin{itemize}
+    \item represent the task consistently,
+    \item monitor performance over time with a smaller but informative sample,
+    \item detect drift statistically,
+    \item support cost-aware model selection,
+    \item and possibly recover performance through prompt optimisation.
+\end{itemize}
 }
 \email{\href{mailto:gburdin@hs-mittweida.de}{gburdin@hs-mittweida.de}}
 \location{Mittweida}
@@ -39,34 +52,96 @@ The resulting system, integrated with Langfuse and GitHub Actions, demonstrates 
 \chapter{Introduction}
 
 \section{Context and Motivation}
-Industrial classification pipelines increasingly rely on Large Language Model (LLM) providers, which operate as non-stationary black-box functions $f(x; \theta_t)$. Unlike static machine learning models, LLM-as-a-Service (LLMaaS) providers frequently update underlying parameters $\theta_t$ without notice. This temporal instability, or \textbf{model drift}, poses a significant risk to production systems: a model optimized at $t_0$ may exhibit regressive behavior at $t_1$.
+Industrial classification pipelines increasingly rely on Large Language Model (LLM) providers that expose their systems through application programming interfaces. In such settings, the deployed model can be viewed as a non-stationary black-box function $f_t(x)$ whose internal parameters and update schedule are controlled by the provider rather than by the user. As a result, the behaviour of the same API-accessible model may change over time even when the downstream task, the prompt, and the evaluation procedure remain fixed.
 
-The practical motivation for this work stems from the author's two-year tenure as a working student and internship at \textbf{Gocomo GmbH}, where these challenges were observed within the company's core social-media relevance detection pipeline. In this environment, where high-volume data is processed in batches to determine the marketing relevance of social-media posts, manual verification is not scalable.
+The practical motivation for this thesis arises from the author's two-year work experience at \textbf{Gocomo GmbH}. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, event, or other marketing entity. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, manual verification is not scalable, and automated classification becomes a necessary operational component.
 
-
-However, full-scale benchmarking on a large and statistically representative dataset is economically prohibitive for frequent monitoring. This creates a need for a statistically sensitive yet cost-effective surveillance framework.
-
+However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade due to silent provider-side updates. In a business-critical pipeline, such degradation must be detected early. At the same time, repeated full-scale benchmarking on a large labelled dataset is costly. This creates a need for a monitoring methodology that is statistically informative, operationally feasible, and economically justified.
 \section{Problem Statement}
-This thesis addresses the design of a monitoring system for black-box LLMs under non-stationary conditions. The core challenge is a dual-objective optimization:
-\begin{enumerate}
-    \item \textbf{Statistical Efficiency:} Deriving a high-sensitivity monitoring subset that preserves the power to detect drift while minimizing sample size.
-    \item \textbf{Decision Utility:} Formulating a selection rule that balances the trade-off between classification accuracy and inference expenditure.
-\end{enumerate}
-By integrating importance sampling with automated prompt adaptation (GEPA), this work provides a methodology for maintaining stable classification services in a provider-controlled API landscape.
+This thesis addresses the problem of how to evaluate and monitor API-based LLM classifiers in a production environment where model behaviour may change over time. The central challenge is that the user does not control the underlying model updates, yet must still make reliable deployment decisions based on observed task performance.
 
-\section{Research Questions}
-This thesis answers the following research questions:
+More specifically, the problem consists of four interconnected parts:
 \begin{enumerate}
-    \item[\textbf{RQ1:}] How can the relevance detection task be formally represented as a binary classification problem in a non-stationary black-box environment?
-    \item[\textbf{RQ2:}] Can a disagreement-based subset $\mathcal{D}_n$ preserve the statistical sensitivity to model drift relative to a larger reference benchmark $\mathcal{D}_N$?
-    \item[\textbf{RQ3:}] What statistical criteria and hypothesis testing frameworks effectively detect significant performance degradation in a temporal loop?
-    \item[\textbf{RQ4:}] How should the model selection rule be formulated to optimize the trade-off between empirical risk and inference cost?
-    \item[\textbf{RQ5:}] To what extent can reflective prompt evolution (GEPA) serve as an adaptive recovery mechanism following a detected drift event?
+    \item The social-media relevance detection task must be formalised in a way that permits consistent evaluation across models, prompts, and time points.
+    \item Because repeated evaluation on the full reference benchmark is economically expensive, a smaller monitoring subset must be constructed without losing the ability to detect practically relevant performance changes.
+    \item A statistical rule is required to distinguish variability in performance from genuine model drift.
+    \item Once multiple candidate models are monitored, deployment decisions must account not only for predictive performance but also for inference cost.
+\end{enumerate}
+
+In addition, if a deployed model exhibits degraded performance, it is natural to ask whether this degradation can be mitigated without immediately replacing the model. This motivates the investigation of prompt optimisation as an adaptive mechanism within the monitoring framework.
+
+Accordingly, the thesis does not study model drift merely as an observational phenomenon. Its objective is to develop a practically usable framework for benchmark design, drift-sensitive monitoring, cost-aware model selection, and post-drift adaptation for binary classification with black-box LLM APIs.
+\section{Research Questions}
+The problem stated above is investigated through the following research questions:
+
+\begin{enumerate}
+    \item[\textbf{RQ1:}] How can the campaign-relevance detection task be formally represented as a binary classification problem for non-stationary black-box LLM APIs?
+
+    \item[\textbf{RQ2:}] How can a reduced monitoring subset be derived from a larger reference benchmark so that routine evaluation remains substantially cheaper while preserving sensitivity to model drift?
+
+    \item[\textbf{RQ3:}] Which statistical criteria and alerting rules are appropriate for detecting practically significant performance degradation over time?
+
+    \item[\textbf{RQ4:}] How should candidate models be compared and selected when deployment decisions depend on both predictive quality and inference cost?
+
+    \item[\textbf{RQ5:}] To what extent can prompt optimisation improve or recover task performance after drift has been detected, and how can such optimisation be integrated into the monitoring loop?
 \end{enumerate}
 
 \chapter{Data and Evaluation Setup}
 
 \section{Formal Problem Definition}
+
+\subsection{Example LLM Request Payload}
+
+During evaluation, each social-media post is converted into a structured request
+sent to the LLM provider API. The request consists of a system prompt describing
+the classification task together with user inputs containing the extracted
+content of the post (text, metadata, and video frames).
+
+A simplified example payload is shown below.
+
+\textcolor{red}{NB!: MAKE A VISUALISATION IN FIGMA OF THE PAYLOAD WITH A IMAGE $\rightarrow$ STRUCTURED OUTPUT, it is literally a map function}
+{\footnotesize
+\begin{verbatim}
+[
+  {
+    "role": "system",
+    "content": "Classify whether the post is relevant to the campaign
+    'Douglas_Beauty Day 2025'. Return TRUE or FALSE and explain the reasoning."
+  },
+  {
+    "role": "user",
+    "content": "Transcription: ..."
+  },
+  {
+    "role": "user",
+    "content": "Hashtags: []"
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "input_text",
+        "text": "Video frames extracted from the post"
+      },
+      {
+        "type": "input_image",
+        "image_url": "https://.../frame1.jpg"
+      },
+      {
+        "type": "input_image",
+        "image_url": "https://.../frame2.jpg"
+      }
+    ]
+  }
+]
+\end{verbatim}
+}
+
+The system prompt defines the classification criteria and the list of campaign
+brands. The user messages contain the multimodal content of the post,
+including captions, transcriptions, hashtags, and selected video frames.
+The model output is mapped to the binary label space
+$\mathcal{Y} = \{0,1\}$.
 
 To evaluate model drift rigorously, we must first define the classification task within a probabilistic framework. 
 
