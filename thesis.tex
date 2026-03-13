@@ -291,67 +291,348 @@ The rationale for this choice is rooted in \textbf{Signal-to-Noise Ratio (SNR) o
 \chapter{Drift Monitoring and Model Selection Methodology}
 
 \section{Formalisation of Temporal Evaluation}
-Let $t \in \{1, \dots, T\}$ represent discrete evaluation intervals (e.g., weekly batch runs). At each time step $t$, a deployed model $m$ evaluates the fixed monitoring subset $\mathcal{D}_{300}$. We denote the vector of temporal predictions for the $i$-th instance as $\hat{y}_{i,t} \in \{0,1\}$. 
 
-Because the evaluation is conducted on the exact same set of instances $\mathcal{D}_{300}$ across time, the longitudinal accuracy measurements $\hat{A}_{t-1}$ and $\hat{A}_t$ are strongly dependent. Consequently, standard statistical tests that assume independent samples (such as the two-proportion $Z$-test) are invalid, as they overestimate variance and reduce the statistical power to detect subtle model drift.
+Let $t \in \{1, \dots, T\}$ represent discrete evaluation intervals, for example weekly batch runs. At each time point $t$, a deployed model $m$ is evaluated on the same fixed monitoring subset $\mathcal{D}_{300} = \{(x_i,y_i)\}_{i=1}^{300}$. The key idea of this setup is that temporal changes in model behaviour should be measured on a constant reference set rather than on newly sampled data, so that differences across time can be attributed to model behaviour rather than to changes in the evaluation sample.
+
+For each instance $x_i \in \mathcal{D}_{300}$, let
+\begin{equation}
+\hat{y}_{i,t} \in \{0,1\}
+\end{equation}
+denote the model prediction at time $t$. Since the true label $y_i$ is fixed, the correctness of the prediction at time $t$ can be represented by the binary indicator
+\begin{equation}
+E_{i,t} = \mathbb{I}(\hat{y}_{i,t} = y_i),
+\end{equation}
+where $\mathbb{I}(\cdot)$ is the indicator function. Thus, $E_{i,t}=1$ means that the model classified instance $i$ correctly at time $t$, whereas $E_{i,t}=0$ means that it made an error.
+
+Using these indicators, the empirical accuracy of the model at time $t$ on the monitoring subset is
+\begin{equation}
+\hat{A}_t = \frac{1}{300}\sum_{i=1}^{300} E_{i,t}.
+\end{equation}
+This quantity is the fraction of correctly classified instances in the monitoring run. It provides a natural summary of aggregate predictive performance, but on its own it is not sufficient for rigorous drift detection.
+
+The reason is that the sequence $(\hat{A}_t)_{t=1}^T$ is obtained by repeatedly evaluating the \emph{same} instances. Therefore, the empirical accuracies $\hat{A}_{t_1}$ and $\hat{A}_{t_2}$ are not independent sample proportions. A standard two-sample comparison such as the two-proportion $Z$-test would incorrectly treat the observations as independent and would therefore overestimate the sampling variance. In the present setting, the dependence structure must be taken into account explicitly. This motivates the use of a paired test based on per-instance changes in correctness.
 
 \section{Statistical Drift Detection via McNemar's Test}
-To formally detect model drift, we shift the focus from the marginal accuracies to the \textbf{discordant pairs}—the specific instances where the model's behavior has changed between $t-1$ and $t$.
+
+To formally detect temporal drift, it is more informative to analyse \emph{which instances changed status} than to compare marginal accuracies alone. In other words, the relevant signal is not simply whether the accuracy has changed, but whether instances that were previously correct have become incorrect, or vice versa.
 
 \subsection{The Contingency Table}
-We construct a $2 \times 2$ contingency table comparing the correctness of the model's predictions over time. Let $E_{i,t} = \mathbb{I}(\hat{y}_{i,t} = y_i)$ be the indicator of a correct prediction at time $t$. The frequencies of the four possible outcomes across the $n=300$ instances are defined as:
+
+For this purpose, the correctness indicators at two time points $t_1$ and $t_2$ are compared instance by instance. Each example in the monitoring subset falls into one of four categories:
 \begin{itemize}
-    \item $a$: Concordant correct ($E_{i,t-1}=1$ and $E_{i,t}=1$)
-    \item $b$: Discordant regression ($E_{i,t-1}=1$ and $E_{i,t}=0$)
-    \item $c$: Discordant improvement ($E_{i,t-1}=0$ and $E_{i,t}=1$)
-    \item $d$: Concordant incorrect ($E_{i,t-1}=0$ and $E_{i,t}=0$)
+    \item correct at both times,
+    \item correct at $t_1$ but incorrect at $t_2$,
+    \item incorrect at $t_1$ but correct at $t_2$,
+    \item incorrect at both times.
 \end{itemize}
 
-In this framework, the instances contributing to $a$ and $d$ provide no information regarding temporal shifts. The drift signal is isolated entirely within the off-diagonal elements $b$ and $c$.
+Aggregating these outcomes across all $n=300$ monitored instances yields the paired $2\times2$ contingency table for $(t_1, t_2)$. The corresponding cell counts can be written directly inside the table as
+\begin{table}[h]
+    \centering
+    \caption{Paired $2\times2$ contingency table for correctness at times $t_1$ and $t_2$.}
+    \label{tab:mcnemar_contingency}
+    \begin{tabular}{c|p{0.35\textwidth}p{0.35\textwidth}}
+        & \centering $E_{i,t_2}=1$ & \centering $E_{i,t_2}=0$ \tabularnewline
+        \hline
+        $E_{i,t_1}=1$ 
+            & \centering $\displaystyle a = \sum_{i=1}^{300} \mathbb{I}(E_{i,t_1}=1,\; E_{i,t_2}=1)$ 
+            & \centering $\displaystyle b = \sum_{i=1}^{300} \mathbb{I}(E_{i,t_1}=1,\; E_{i,t_2}=0)$ \tabularnewline
+        $E_{i,t_1}=0$ 
+            & \centering $\displaystyle c = \sum_{i=1}^{300} \mathbb{I}(E_{i,t_1}=0,\; E_{i,t_2}=1)$ 
+            & \centering $\displaystyle d = \sum_{i=1}^{300} \mathbb{I}(E_{i,t_1}=0,\; E_{i,t_2}=0)$ \tabularnewline
+    \end{tabular}
+\end{table}
+
+These four counts partition the monitoring subset, so that
+\begin{equation}
+a+b+c+d = 300.
+\end{equation}
+
+The interpretation of the cells is as follows:
+\begin{itemize}
+    \item $a$: instances classified correctly at both time points,
+    \item $b$: instances that were correct at $t_1$ but became incorrect at $t_2$,
+    \item $c$: instances that were incorrect at $t_1$ but became correct at $t_2$,
+    \item $d$: instances classified incorrectly at both time points.
+\end{itemize}
+
+From the perspective of drift detection, the concordant counts $a$ and $d$ are not informative about temporal change, because they correspond to cases where the model's behaviour did not change. The evidence for drift is therefore concentrated in the discordant counts $b$ and $c$. In particular, $b$ captures regressions, whereas $c$ captures improvements.
+
+This decomposition also clarifies the relation between paired comparisons and aggregate accuracy at the two time points. Since
+\begin{equation}
+\hat{A}_{t_1} = \frac{a+b}{300}
+\qquad\text{and}\qquad
+\hat{A}_{t_2} = \frac{a+c}{300},
+\end{equation}
+it follows that
+\begin{equation}
+\hat{A}_{t_2} - \hat{A}_{t_1} = \frac{c-b}{300}.
+\end{equation}
+Hence, the change in accuracy is determined entirely by the imbalance between regressions and improvements. McNemar's test exploits exactly this structure.
 
 \subsection{The Test Statistic and Alerting Rule}
-We establish the null hypothesis $H_0: p_b = p_c$, which states that the marginal probabilities of success are equal across time, implying no model drift. The alternative hypothesis for degradation is $H_a: p_b > p_c$.
 
-To test this, we utilize \textbf{McNemar's test statistic} with a continuity correction, which follows a $\chi^2$ distribution with 1 degree of freedom:
+The null hypothesis of McNemar's test states that the probability of a regression equals the probability of an improvement:
 \begin{equation}
-    \chi^2 = \frac{(|b - c| - 1)^2}{b + c}
+H_0: p_b = p_c.
 \end{equation}
+Under this null hypothesis, the model is equally likely to lose correctness on an instance as it is to gain correctness on another instance, which corresponds to the absence of systematic drift.
 
-The automated monitoring pipeline triggers a \textbf{Statistical Drift Alert} at time $t$ if two conditions are met:
+Since the operational concern  is degradation, the relevant one-sided alternative is
+\begin{equation}
+H_a: p_b > p_c.
+\end{equation}
+This means that the model breaks more previously correct cases than it repairs previously incorrect ones.
+
+To test this hypothesis, McNemar's statistic with continuity correction is used:
+\begin{equation}
+\chi^2 = \frac{(|b-c|-1)^2}{b+c}.
+\end{equation}
+The numerator measures the imbalance between regressions and improvements, while the denominator normalises this imbalance by the total number of changed cases. The subtraction of $1$ is the continuity correction, which is commonly used to make the large-sample chi-square approximation more conservative for finite samples.
+
+The test statistic is approximately $\chi^2$-distributed with one degree of freedom when the number of discordant pairs is sufficiently large. Operationally, the monitoring pipeline raises a \textbf{Statistical Drift Alert} at time $t$ if both of the following conditions hold:
 \begin{enumerate}
-    \item \textbf{Directionality:} $b > c$ (the model "broke" more instances than it "fixed").
-    \item \textbf{Significance:} The $p$-value derived from the $\chi^2$ statistic is less than the specified confidence level $\alpha = 0.05$.
+    \item \textbf{Directionality:} $b>c$, meaning that the model has deteriorated on more instances than it has improved.
+    \item \textbf{Significance:} the corresponding $p$-value is below the chosen threshold $\alpha=0.05$.
 \end{enumerate}
+
+The directionality condition is important because statistical significance alone does not distinguish between degradation and improvement. By requiring both $b>c$ and $p<0.05$, the alerting rule is aligned with the practical objective of detecting harmful drift rather than any change whatsoever.
 
 \section{Cost-Aware Model Selection}
-When a drift alert is triggered, or when evaluating new models for deployment, predictive accuracy cannot be considered in isolation from inference cost. Let $C_t(m)$ represent the API inference cost (in USD per 1,000 requests) and $A_t(m)$ the empirical accuracy for model $m \in \mathcal{M}$.
+
+Once performance has been measured, model selection must take into account not only predictive quality but also operational cost. In real deployments, a model that is slightly more accurate may still be unattractive if it is substantially more expensive to run at scale.
+
+Let
+\begin{equation}
+A_t(m)
+\end{equation}
+denote the empirical accuracy of model $m \in \mathcal{M}$ at time $t$, and let
+\begin{equation}
+C_t(m)
+\end{equation}
+denote its average inference cost, measured in USD per 1 requests. The goal is to compare candidate models using a criterion that balances these two dimensions.
 
 \subsection{The Deployment Utility Function}
-We formulate model selection as a multi-objective optimization problem by defining a \textbf{Deployment Utility Function} $J_t(m)$ that penalizes excessive operational expenditure:
+
+To formalise this trade-off, define the deployment utility
 \begin{equation}
-    J_t(m) = A_t(m) - \lambda \cdot \log(1 + C_t(m))
+U_t(m) = A_t(m) - \lambda \log\!\bigl(1 + C_t(m)\bigr),
 \end{equation}
-where $\lambda \ge 0$ is a business-defined sensitivity parameter. 
+where $\lambda \ge 0$ is a business-defined cost sensitivity parameter.
+
+The first term, $A_t(m)$, rewards predictive performance. The second term penalises operational cost. The parameter $\lambda$ controls how strongly cost influences the final decision:
 \begin{itemize}
-    \item When $\lambda = 0$, the system selects purely on predictive capability ($J_t = A_t$).
-    \item When $\lambda > 0$, the logarithmic penalty bounds the impact of highly expensive models, reflecting the diminishing business returns of marginal accuracy improvements at exorbitant API costs.
+    \item if $\lambda = 0$, then
+    \begin{equation}
+    U_t(m)=A_t(m),
+    \end{equation}
+    so model selection is based purely on accuracy;
+    \item if $\lambda > 0$, cost is explicitly incorporated into the deployment decision.
 \end{itemize}
 
+The logarithmic form of the penalty was chosen during a group workshop, where the value of $\lambda$ was set to $10$ to reflect the team's consensus on cost sensitivity in deployment scenarios. Unlike a linear penalty, the logarithmic option introduces diminishing marginal sensitivity to cost: a move from a very cheap to a moderately priced model is penalized more heavily than the same absolute cost increase at higher price levels, which better matches business intuition that value does not decrease linearly with API cost.
+
+
+NB!: Add a graph here that shows the diminishing marginal sensitivity to cost
+
+
+The use of $\log(1+C_t(m))$ instead of $\log(C_t(m))$ also ensures that the expression is well-defined when the cost is close to zero.
+
 \subsection{Decision Logic for Pipeline Adaptation}
-The monitoring architecture follows an automated decision tree executed upon every batch completion:
+
+The monitoring architecture follows a simple decision process after each batch evaluation:
 \begin{enumerate}
-    \item \textbf{Monitor:} Calculate the McNemar $\chi^2$ statistic for the currently deployed model $m_{\text{curr}}$ against its baseline performance at $t_0$.
-    \item \textbf{Detect:} If $p < 0.05$ and $b > c$, register a significant degradation event.
-    \item \textbf{Act:} Evaluate the utility $J_t(m)$ for all available fallback models. The pipeline dynamically routes future traffic to the model $m^\star = \arg\max_{m} J_t(m)$. If no fallback model satisfies the baseline utility threshold, the framework initiates the \textbf{Prompt Optimisation} loop (detailed in Chapter 4) to attempt performance recovery without altering the underlying model API.
+    \item \textbf{Monitor:} compute the paired drift statistic for the currently deployed model $m_{\mathrm{curr}}$ by comparing its correctness on $\mathcal{D}_{300}$ at time $t$ against the chosen baseline time point.
+    \item \textbf{Detect:} if the McNemar test indicates significant degradation, that is, if $b>c$ and $p<0.05$, register a drift event.
+    \item \textbf{Act:} evaluate the deployment utility $U_t(m)$ for all available candidate models and select
+    \begin{equation}
+    m_t^\star \in \arg\max_{m\in\mathcal{M}} U_t(m).
+    \end{equation}
 \end{enumerate}
+
+Thus, the selected deployment model is the one that maximises the joint accuracy--cost criterion at time $t$. If no available fallback model yields a satisfactory utility level, the system initiates the prompt optimisation loop described in Chapter~4. In that case, adaptation is attempted first at the prompt level, without replacing the underlying model API.
+
+Overall, this methodology separates the monitoring problem into two layers. First, McNemar's test determines whether a meaningful temporal degradation has occurred. Second, the utility function
+\begin{equation}
+U_t(m)
+\end{equation}
+determines which model is most attractive from the deployment perspective once both predictive quality and cost are taken into account.
+
 \chapter{Prompt Optimisation as an Adaptive Mechanism}
+\section{Prompt Optimisation Problem Formulation}
+
+Let $\mathcal{X}$ denote the input space and $\mathcal{Y}=\{0,1\}$ the set of binary labels. At time $t$, an external API-based large language model is represented by a stochastic predictor
+\begin{equation}
+    f_t(\,\cdot\,;\Pi) : \mathcal{X} \to \mathcal{Y},
+\end{equation}
+where $\Pi \in \mathcal{P}$ is a prompt from a discrete prompt space $\mathcal{P}$. The index $t$ reflects possible model drift over time: even for the same prompt $\Pi$, the conditional behaviour of the API model may change.
+
+Let $P_t$ denote the joint distribution of $(X,Y)$ at time $t$. For a given loss function $\ell:\mathcal{Y}\times\mathcal{Y}\to\mathbb{R}_+$, the population risk of prompt $\Pi$ at time $t$ is
+\begin{equation}
+    R_t(\Pi) = \mathbb{E}_{(X,Y)\sim P_t}\bigl[\ell(f_t(X;\Pi),Y)\bigr].
+\end{equation}
+Equivalently, for a utility or score function $u$, one may consider the population utility
+\begin{equation}
+    U_t(\Pi) = \mathbb{E}_{(X,Y)\sim P_t}\bigl[u(f_t(X;\Pi),Y)\bigr].
+\end{equation}
+For binary classification, a natural choice is
+\begin{equation}
+    u(f_t(X;\Pi),Y)=\mathbf{1}\{f_t(X;\Pi)=Y\},
+\end{equation}
+so that $U_t(\Pi)$ coincides with accuracy.
+
+The prompt optimisation problem at time $t$ is therefore
+\begin{equation}
+    \Pi_t^\star \in \arg\max_{\Pi\in\mathcal{P}} U_t(\Pi),
+\end{equation}
+or equivalently,
+\begin{equation}
+    \Pi_t^\star \in \arg\min_{\Pi\in\mathcal{P}} R_t(\Pi).
+\end{equation}
+
+Since $P_t$ is unknown, optimisation must be carried out using a finite labelled optimisation set
+\begin{equation}
+    \mathcal{D}_t = \{(x_i,y_i)\}_{i=1}^{n_t}.
+\end{equation}
+The empirical utility is
+\begin{equation}
+    \widehat{U}_t(\Pi)=\frac{1}{n_t}\sum_{i=1}^{n_t} s_i(\Pi),
+\end{equation}
+where
+\begin{equation}
+    s_i(\Pi)=u(f_t(x_i;\Pi),y_i).
+\end{equation}
+In the simplest case,
+\begin{equation}
+    s_i(\Pi)=\mathbf{1}\{f_t(x_i;\Pi)=y_i\}.
+\end{equation}
+
+Hence, the empirical prompt optimisation problem becomes
+\begin{equation}
+    \widehat{\Pi}_t \in \arg\max_{\Pi\in\mathcal{P}} \widehat{U}_t(\Pi).
+\end{equation}
+
+In this thesis, prompt optimisation is treated as a black-box optimisation problem over a discrete, non-smooth search space. No gradient information with respect to prompt text is assumed to be available. Instead, optimisation is performed by iteratively generating and evaluating candidate prompts.
+
+To account for temporal model drift, one may also define the robust objective over a monitoring horizon $t\in\{1,\dots,T\}$:
+\begin{equation}
+    \Pi^\star_{\mathrm{rob}} \in \arg\max_{\Pi\in\mathcal{P}} \sum_{t=1}^{T} w_t U_t(\Pi),
+\end{equation}
+where $w_t\ge 0$ and $\sum_{t=1}^{T}w_t=1$ are time weights. This formulation expresses the fact that a prompt can be evaluated not only by its instantaneous performance but also by its stability under drift.
+
+\section{Overview of Prompt Optimisation Strategies}
+
+Given the black-box nature of $f_t(\cdot;\Pi)$ and the discrete space $\mathcal{P}$, most practically usable methods fall into a small number of families:
+\begin{itemize}
+    \item \textbf{Manual heuristic search:} human-designed variants $\Pi^{(1)}, \Pi^{(2)}, \dots$ evaluated on $\mathcal{D}_t$.
+    \item \textbf{Bandit \& Bayesian optimisation:} treating prompts as arms in a multi-armed bandit with rewards $s_i(\Pi)$.
+    \item \textbf{Local search / hill-climbing:} iteratively editing a single prompt and accepting only improving variants.
+    \item \textbf{Evolutionary methods:} maintaining a population of prompts and applying mutation / selection; the GEPA method belongs to this class.
+\end{itemize}
+
+Formally, all of these can be written as stochastic optimisation algorithms that generate a sequence of prompts
+\[
+    \Pi^{(0)}, \Pi^{(1)}, \dots, \Pi^{(k)}, \dots
+\]
+and are allowed to query $f_t(\cdot;\Pi^{(k)})$ on instances from $\mathcal{D}_t$ in order to estimate $\widehat{U}_t(\Pi^{(k)})$. The algorithms differ in how they trade off \emph{exploration} of new parts of $\mathcal{P}$ against \emph{exploitation} of currently good prompts.
+
+\subsection{Heuristic and Local Search}
+
+In its simplest form, a local search method starts from an initial prompt $\Pi^{(0)}$ and repeatedly proposes a neighbour $\widetilde{\Pi}$ (for example, by editing task instructions or adding examples). If $\widehat{U}_t(\widetilde{\Pi}) \geq \widehat{U}_t(\Pi^{(k)})$ the algorithm moves to $\Pi^{(k+1)} := \widetilde{\Pi}$; otherwise it stays put.
+
+This defines a Markov chain on $\mathcal{P}$ whose absorbing states are precisely the local optima:
+\begin{equation}
+    \Pi \text{ is a local optimum } \iff \widehat{U}_t(\Pi') \le \widehat{U}_t(\Pi)\ \ \forall \Pi' \in \mathcal{N}(\Pi),
+\end{equation}
+where $\mathcal{N}(\Pi)$ is the chosen neighbourhood (e.g.\ all prompts reachable by a single edit). Under a finite state space and a neighbourhood that is symmetric and irreducible, standard arguments from Markov chain theory imply that the chain will almost surely hit a local optimum in finitely many steps. However, there is no guarantee that this local optimum coincides with the global maximiser $\widehat{\Pi}_t$.
+
+\subsection{Bandit-Based Prompt Selection}
+
+An alternative view is to treat each prompt as an arm in a stochastic bandit. At round $k$, the optimiser chooses a prompt $\Pi^{(k)}$ and observes a random reward
+\[
+    R^{(k)} = s_{i_k}(\Pi^{(k)}),
+\]
+where $i_k$ indexes either a fresh example from the underlying stream or an element of $\mathcal{D}_t$ chosen according to some policy. Writing
+\[
+    \mu(\Pi) := \mathbb{E}[s_i(\Pi)],
+\]
+the aim is to minimise the cumulative regret
+\begin{equation}
+    \mathcal{R}_K = \sum_{k=1}^{K} \bigl(\mu(\Pi^\star) - \mu(\Pi^{(k)})\bigr).
+\end{equation}
+
+Classical algorithms such as UCB or Thompson sampling guarantee sublinear regret $\mathcal{R}_K = \mathcal{O}(\log K)$ when $\mathcal{P}$ is finite and rewards are bounded~\cite{lattimoreSzepesvari2020bandit}. As a consequence, the fraction of suboptimal prompt selections goes to zero:
+\begin{equation}
+    \frac{1}{K} \sum_{k=1}^{K} \mathbf{1}\{\Pi^{(k)} \neq \Pi^\star\} \xrightarrow[K\to\infty]{} 0.
+\end{equation}
+This provides a clean theoretical justification for bandit-style prompt selection when the set of candidate prompts is fixed a priori.
+
+\subsection{Evolutionary and Population-Based Methods}
+
+Population-based methods maintain a set of prompts
+\[
+    \mathcal{P}^{(k)}_{\mathrm{pop}} = \{\Pi^{(k)}_1,\dots,\Pi^{(k)}_M\}
+\]
+at iteration $k$, together with empirical utilities $\widehat{U}_t(\Pi^{(k)}_j)$. New candidates are generated by stochastic transformations (``mutations'') of the current population, and a selection rule decides which prompts survive to the next generation.
+
+In the context of this thesis, we make this population-level view explicit by working with per-instance score vectors
+\begin{equation}
+    \bm{s}(\Pi) = \bigl(s_1(\Pi),\dots,s_{n_t}(\Pi)\bigr) \in \{0,1\}^{n_t}.
+\end{equation}
+This finer-grained representation allows us to reason not only about scalar utilities $\widehat{U}_t(\Pi)$ but also about the distribution of errors across $\mathcal{D}_t$.
+
+\section{Theoretical Comparison of Strategies}
+
+From the perspective of the objective $\widehat{U}_t(\Pi)$, the main differences between the strategies above can be summarised as follows:
+\begin{itemize}
+    \item Local search methods are cheap and exploitative but can become trapped in poor local optima.
+    \item Bandit methods enjoy finite-time regret bounds when the prompt set is fixed but do not, by themselves, propose new prompts.
+    \item Evolutionary methods naturally accommodate an open-ended search space where prompts are created on the fly but typically lack closed-form regret guarantees.
+\end{itemize}
+
+We now record two simple propositions that formalise properties used later in the design of the GEPA algorithm.
+
+\begin{proposition}[Unbiasedness of Empirical Utility]
+For any fixed prompt $\Pi$ and i.i.d.\ sample $\mathcal{D}_t = \{(x_i,y_i)\}_{i=1}^{n_t}$ from $P_t$, the empirical utility $\widehat{U}_t(\Pi)$ is an unbiased estimator of $U_t(\Pi)$:
+\begin{equation}
+    \mathbb{E}_{\mathcal{D}_t}\bigl[\widehat{U}_t(\Pi)\bigr] = U_t(\Pi).
+\end{equation}
+\end{proposition}
+\begin{proof}
+By definition,
+\[
+    \widehat{U}_t(\Pi) = \frac{1}{n_t}\sum_{i=1}^{n_t} s_i(\Pi),
+\]
+where $s_i(\Pi) = u(f_t(x_i;\Pi),y_i)$ and $(x_i,y_i)\sim P_t$ i.i.d. Taking expectations and using linearity,
+\[
+    \mathbb{E}_{\mathcal{D}_t}\bigl[\widehat{U}_t(\Pi)\bigr]
+    = \frac{1}{n_t}\sum_{i=1}^{n_t} \mathbb{E}_{(X,Y)\sim P_t}\bigl[u(f_t(X;\Pi),Y)\bigr]
+    = U_t(\Pi).
+\]
+\end{proof}
+
+This proposition justifies using $\widehat{U}_t(\Pi)$ as the scalar fitness signal for all optimisation methods considered.
+
+\begin{proposition}[Monotone Improvement under Exact Comparison]
+Suppose a local search or evolutionary algorithm accepts a new prompt $\widetilde{\Pi}$ in place of $\Pi$ only if $\widehat{U}_t(\widetilde{\Pi}) \ge \widehat{U}_t(\Pi)$, with strict inequality for at least one accepted move. Then along any realised optimisation trajectory the sequence of empirical utilities is monotonically non-decreasing and can increase at most $\mathcal{O}(n_t)$ times by at least $1/n_t$ before reaching an empirical local optimum.
+\end{proposition}
+\begin{proof}
+Each acceptance step enforces
+\[
+    \widehat{U}_t(\Pi^{(k+1)}) \ge \widehat{U}_t(\Pi^{(k)}),
+\]
+so the sequence is non-decreasing. Because $\widehat{U}_t(\Pi)\in\{0,1/n_t,\dots,1\}$, any strict improvement is at least $1/n_t$, and there are at most $n_t$ such distinct increases before the sequence saturates at $1$. Once no neighbour or mutation yields a strictly larger empirical utility, the algorithm has reached a local optimum with respect to the underlying move set.
+\end{proof}
+
+In practice, stochasticity of the API responses and finite evaluation budgets complicate these guarantees, but the monotonicity argument still motivates using empirical utility as the primary selection criterion in our population-based search.
+
 \section{Integrating Optimisation into the Monitoring Loop}
-When a deployed model triggers a drift alert ($D_t < -\tau_{\mathrm{drift}}$), switching to a more expensive model is not the only recourse. We can attempt to recover performance via prompt optimization.
+When a deployed model triggers a drift alert ($D_t < -\tau_{\mathrm{drift}}$), switching to a more expensive model is not the only recourse. We can attempt to recover performance via prompt optimisation by explicitly optimising $\widehat{U}_t(\Pi)$ (or its robust counterpart $\sum_{t} w_t U_t(\Pi)$) over $\mathcal{P}$, subject to the operational constraints of the monitoring pipeline.
 
 \section{Pareto-Based Prompt Search (GEPA)}
 We utilize a reflective evolutionary method (GEPA)~\cite{gepa2025} for prompt adaptation. Because prompt space is discrete and non-convex, greedy selection often fails. Instead, we maintain a candidate pool of prompts and evaluate their per-instance score vectors $\bm{s}(\Pi) = (s_1(\Pi), \dots, s_n(\Pi))$. 
 
-We retain prompts based on Pareto dominance to preserve search diversity. A prompt $\Pi^{(a)}$ dominates $\Pi^{(b)}$ if it performs at least as well on all instances and strictly better on at least one. By mutating prompts on the Pareto frontier using natural-language reflections from execution traces, we can systematically search for a prompt $\Pi^\star$ that maximizes $J_t(m)$ without altering the underlying API model.
+We retain prompts based on Pareto dominance to preserve search diversity. A prompt $\Pi^{(a)}$ dominates $\Pi^{(b)}$ if it performs at least as well on all instances and strictly better on at least one. By mutating prompts on the Pareto frontier using natural-language reflections from execution traces, we can systematically search for a prompt $\Pi^\star$ that maximizes $U_t(m)$ without altering the underlying API model.
 
 \chapter{System Architecture and Experiments}
 \label{chap:system-architecture}
