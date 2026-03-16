@@ -46,6 +46,7 @@ Therefore, a framework is needed that can:
 \usepackage[bibstyle=ieee,citestyle=numeric-comp,natbib=true,sorting=none,dashed=false]{biblatex}
 \usepackage{bm}
 \usepackage{listings}
+\usepackage{graphicx}
 \addbibresource{literature.bib}
 
 % Theorem-style environments used in the formalisation
@@ -395,8 +396,50 @@ The test statistic is approximately $\chi^2$-distributed with one degree of free
     \item \textbf{Directionality:} $b>c$, meaning that the model has deteriorated on more instances than it has improved.
     \item \textbf{Significance:} the corresponding $p$-value is below the chosen threshold $\alpha=0.05$.
 \end{enumerate}
-
 The directionality condition is important because statistical significance alone does not distinguish between degradation and improvement. By requiring both $b>c$ and $p<0.05$, the alerting rule is aligned with the practical objective of detecting harmful drift rather than any change whatsoever.
+
+\subsection{Empirical Example from the Monitoring Runs}
+
+To make the above definitions concrete, Tables~\ref{tab:mcnemar_gpt5} and~\ref{tab:mcnemar_gpt5mini} show example McNemar contingency tables from two real monitoring runs on the $n=300$ subset.
+
+\begin{table}[h]
+    \centering
+    \caption{McNemar contingency table for \texttt{gpt-5} between 8~March~2026 and 10~March~2026 on the 300-example monitoring subset.}
+    \label{tab:mcnemar_gpt5}
+    \begin{tabular}{c|cc}
+        & 2026-03-10 correct & 2026-03-10 wrong \\
+        \hline
+        2026-03-08 correct & 291 & 0 \\
+        2026-03-08 wrong   & 0   & 9 \\
+    \end{tabular}
+\end{table}
+
+Here the discordant counts are $(b,c) = (0, 0)$, so there are no instances whose correctness changed between the two dates. McNemar's test is undefined in this degenerate case, but operationally the absence of discordant pairs already implies that no temporal drift is detectable on the monitoring subset.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{assets/Screenshot_2026-03-13_at_18.12.49-ab3bb230-c6fd-429c-b7d7-1a9af08a4170.png}
+    \caption{Streamlit visualisation of McNemar contingency tables and statistics for two monitored models. The top panel corresponds to \texttt{gpt-5}, where no discordant pairs occur, and the bottom panel to \texttt{gpt-5.1-mini}, where the discordant counts $(b,c)=(13,7)$ yield a non-significant drift signal.}
+    \label{fig:mcnemar-dashboard}
+\end{figure}
+
+\begin{table}[h]
+    \centering
+    \caption{McNemar contingency table for \texttt{gpt-5.1-mini} between 8~March~2026 and 10~March~2026 on the 300-example monitoring subset.}
+    \label{tab:mcnemar_gpt5mini}
+    \begin{tabular}{c|cc}
+        & 2026-03-10 correct & 2026-03-10 wrong \\
+        \hline
+        2026-03-08 correct & 269 & 13 \\
+        2026-03-08 wrong   & 7   & 11 \\
+    \end{tabular}
+\end{table}
+
+In this second example, the discordant pairs are $(b,c) = (13, 7)$, yielding McNemar's chi-square statistic with continuity correction
+\[
+    \chi^2 = \frac{(|b-c|-1)^2}{b+c} \approx 1.26
+\]
+and an exact one-sided binomial $p$-value of approximately $0.26$. Because $b>c$ but $p>0.05$, the model exhibits a numerical decrease in accuracy but the evidence is insufficient to trigger a statistical drift alert under the chosen monitoring rule.
 
 \section{Cost-Aware Model Selection}
 
@@ -432,9 +475,35 @@ The first term, $A_t(m)$, rewards predictive performance. The second term penali
 
 The logarithmic form of the penalty was chosen during a group workshop, where the value of $\lambda$ was set to $10$ to reflect the team's consensus on cost sensitivity in deployment scenarios. Unlike a linear penalty, the logarithmic option introduces diminishing marginal sensitivity to cost: a move from a very cheap to a moderately priced model is penalized more heavily than the same absolute cost increase at higher price levels, which better matches business intuition that value does not decrease linearly with API cost.
 
+Figure~\ref{fig:utility-overview} shows the Streamlit view of the deployment utility definition and controls. Figures~\ref{fig:utility-table-lambda10}--\ref{fig:utility-vs-lambda-highlight} then illustrate the concrete per-model utilities and the behaviour of $U_t(m)$ as $\lambda$ varies.
 
-NB!: Add a graph here that shows the diminishing marginal sensitivity to cost
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{assets/utility_overview.png}
+    \caption{Overview of the deployment utility dashboard in the monitoring application. The top panel recalls the definition of $U_t(m)$ and exposes controls for the evaluation window, model set, and the cost-sensitivity parameter $\lambda$.}
+    \label{fig:utility-overview}
+\end{figure}
 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{assets/utility_table_lambda10.png}
+    \caption{Per-model metrics and utility values for $\lambda = 10$ on the 300-example monitoring subset. The highlighted row shows the model selected by maximising $U_t(m)$, jointly accounting for accuracy and cost.}
+    \label{fig:utility-table-lambda10}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{assets/utility_vs_lambda_all.png}
+    \caption{Utility $U_t(m)$ as a function of the cost-sensitivity parameter $\lambda$ for all candidate models. The gradual flattening of the curves with increasing $\lambda$ reflects the diminishing marginal penalty introduced by the $\log(1 + C_t(m))$ term.}
+    \label{fig:utility-vs-lambda}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{assets/utility_vs_lambda_highlight.png}
+    \caption{Same utility-vs-$\lambda$ plot as in Figure~\ref{fig:utility-vs-lambda}, but with a single model highlighted to make the effect of increasing $\lambda$ on its deployment attractiveness more visible.}
+    \label{fig:utility-vs-lambda-highlight}
+\end{figure}
 
 The use of $\log(1+C_t(m))$ instead of $\log(C_t(m))$ also ensures that the expression is well-defined when the cost is close to zero.
 
@@ -782,6 +851,7 @@ Ingestion is handled by the script \texttt{ingest.py}, which processes each batc
 \end{enumerate}
 
 On top of this logging layer, a small Streamlit dashboard queries Langfuse and aggregates scores over the 300-example monitoring subset.
+The public instance of this dashboard is available at \url{https://llm-eval-dashboard.streamlit.app/}, and the underlying evaluation code is open-sourced at \url{https://github.com/gocomo/llm-batch-eval}.
 The dashboard provides:
 \begin{itemize}
     \item per-model accuracy curves over time (mean of the per-trace \texttt{accuracy} scores),

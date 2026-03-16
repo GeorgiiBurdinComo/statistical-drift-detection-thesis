@@ -1,5 +1,10 @@
 \babel@toc {english}{}\relax 
 \babel@toc {ngerman}{}\relax 
 \babel@toc {english}{}\relax 
-\contentsline {figure}{\numberline {5.1}{\ignorespaces High-level campaign-relevance evaluation and monitoring pipeline.}}{19}{figure.caption.4}%
+\contentsline {figure}{\numberline {3.1}{\ignorespaces Streamlit visualisation of McNemar contingency tables and statistics for two monitored models. The top panel corresponds to \texttt {gpt-5}, where no discordant pairs occur, and the bottom panel to \texttt {gpt-5.1-mini}, where the discordant counts $(b,c)=(13,7)$ yield a non-significant drift signal.}}{12}{figure.caption.5}%
+\contentsline {figure}{\numberline {3.2}{\ignorespaces Overview of the deployment utility dashboard in the monitoring application. The top panel recalls the definition of $U_t(m)$ and exposes controls for the evaluation window, model set, and the cost-sensitivity parameter $\lambda $.}}{14}{figure.caption.7}%
+\contentsline {figure}{\numberline {3.3}{\ignorespaces Per-model metrics and utility values for $\lambda = 10$ on the 300-example monitoring subset. The highlighted row shows the model selected by maximising $U_t(m)$, jointly accounting for accuracy and cost.}}{15}{figure.caption.8}%
+\contentsline {figure}{\numberline {3.4}{\ignorespaces Utility $U_t(m)$ as a function of the cost-sensitivity parameter $\lambda $ for all candidate models. The gradual flattening of the curves with increasing $\lambda $ reflects the diminishing marginal penalty introduced by the $\log (1 + C_t(m))$ term.}}{15}{figure.caption.9}%
+\contentsline {figure}{\numberline {3.5}{\ignorespaces Same utility-vs-$\lambda $ plot as in Figure~\ref {fig:utility-vs-lambda}, but with a single model highlighted to make the effect of increasing $\lambda $ on its deployment attractiveness more visible.}}{16}{figure.caption.10}%
+\contentsline {figure}{\numberline {5.1}{\ignorespaces High-level campaign-relevance evaluation and monitoring pipeline.}}{22}{figure.caption.11}%
 \providecommand \tocbasic@end@toc@file {}\tocbasic@end@toc@file 
