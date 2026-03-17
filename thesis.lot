@@ -3,5 +3,8 @@
 \babel@toc {english}{}\relax 
 \contentsline {table}{\numberline {3.1}{\ignorespaces Paired $2\times 2$ contingency table for correctness at times $t_1$ and $t_2$.}}{10}{table.caption.3}%
 \contentsline {table}{\numberline {3.2}{\ignorespaces McNemar contingency table for \texttt {gpt-5} between 8~March~2026 and 10~March~2026 on the 300-example monitoring subset.}}{12}{table.caption.4}%
-\contentsline {table}{\numberline {3.3}{\ignorespaces McNemar contingency table for \texttt {gpt-5.1-mini} between 8~March~2026 and 10~March~2026 on the 300-example monitoring subset.}}{13}{table.caption.6}%
+\contentsline {table}{\numberline {3.3}{\ignorespaces McNemar contingency table for \texttt {gpt-5.1-mini} between 8~March~2026 and 10~March~2026 on the 300-example monitoring subset.}}{12}{table.caption.5}%
+\contentsline {table}{\numberline {5.1}{\ignorespaces LLM models monitored in this study, grouped by provider.}}{31}{table.caption.18}%
+\def \@chapapp {\appendixname }
+\contentsline {table}{\numberline {A.1}{\ignorespaces Batch-API prices per one million tokens (USD) for all models in \texttt {config/models.yaml} as of 16~March~2026.}}{43}{table.caption.24}%
 \providecommand \tocbasic@end@toc@file {}\tocbasic@end@toc@file 
