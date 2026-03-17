@@ -47,6 +47,41 @@ Therefore, a framework is needed that can:
 \usepackage{bm}
 \usepackage{listings}
 \usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,fit}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{adjustbox}
+
+\tikzset{
+  figbox/.style={
+    draw,
+    rectangle,
+    rounded corners=1pt,
+    align=center,
+    font=\footnotesize,
+    minimum height=8mm,
+    text width=25mm,
+    inner sep=3pt
+  },
+  figboxsmall/.style={
+    draw,
+    rectangle,
+    rounded corners=1pt,
+    align=center,
+    font=\scriptsize,
+    minimum height=7mm,
+    text width=17mm,
+    inner sep=2pt
+  },
+  figarrow/.style={
+    ->,
+    thick,
+    >=Latex
+  }
+}
+% already loaded above with 'fit'
+
 \addbibresource{literature.bib}
 
 % Theorem-style environments used in the formalisation
@@ -916,73 +951,140 @@ Drift detection on monitoring subset $\rightarrow$ Trigger APO $\rightarrow$ Opt
 \chapter{System Architecture and Experiments}
 \label{chap:system-architecture}
 
+This chapter describes the implementation that realizes the framework developed in Chapters~2--4 and reports the corresponding experiments. The implementation has four roles. First, it stores and versions the campaign-relevance dataset and its labels. Second, it executes repeated batch evaluations against multiple LLM providers under a shared prompt and output schema. Third, it logs per-example predictions, costs, and metadata in a form suitable for repeated statistical monitoring. Fourth, after a statistically supported degradation event, it enables bounded prompt recovery through GEPA.
+
+Throughout the chapter, two dataset scales are used. The \emph{reference benchmark} consists of \(N=1200\) manually labelled examples. The \emph{monitoring subset} consists of the fixed disagreement-based subset of size \(n=300\) introduced in Chapter~2. The full benchmark is used for benchmark refreshes and broader model comparison, whereas the fixed 300-example subset is used for repeated monitoring over time. All paired drift tests, regression counts, recovery counts, and cost-aware deployment decisions are computed on this fixed subset.
+
 \section{Overview of the Evaluation Pipeline}
 \label{sec:evaluation-pipeline-overview}
 
-The experiments are implemented as an automated batch evaluation pipeline that connects a versioned Langfuse dataset, multiple LLM providers (OpenAI, Gemini, Claude), and a monitoring/analysis layer.
-Figure~\ref{fig:campaign-relevance-pipeline} shows the high-level flow from labeled examples to batch jobs, responses, and metrics.
+The implemented system is a batch-oriented evaluation pipeline built around three persistent data surfaces: Langfuse datasets for labelled inputs, provider-native batch APIs for model execution, and Langfuse traces for normalized outputs and metrics. Prompt text and response schema are stored separately from the dataset, which allows prompt revisions and schema updates without duplicating dataset rows. The same traces then support both the Streamlit monitoring dashboard and notebook-style statistical analysis.
 
-\begin{figure}[ht]
+Figure~\ref{fig:overall-system-architecture} summarizes the main components of the system. Dataset rows are loaded from Langfuse, combined with prompt files and the shared output schema, and transformed into provider-specific batch requests. Batch responses are written to raw result files, normalized by the ingestion layer, and stored back into Langfuse as traces with derived scores and costs. These traces are then consumed by the dashboard and by offline statistical analyses.
+
+\begin{figure}[H]
     \centering
-    \fbox{\parbox{0.9\linewidth}{High-level flow from labeled examples in Langfuse through provider-specific batch jobs to structured responses and monitoring metrics.}}
-    \caption{High-level campaign-relevance evaluation and monitoring pipeline.}
-    \label{fig:campaign-relevance-pipeline}
+    \includegraphics[width=\textwidth]{assets/System Architecture.png}
+    \caption{Overall system architecture: dataset and trace layers in Langfuse, batch execution, monitoring, and adaptation via model switching or GEPA-based prompt optimisation.}
+    \label{fig:overall-system-architecture}
 \end{figure}
 
-Throughout this chapter, the \emph{primary} metrics of interest are:
-\begin{itemize}
-    \item \textbf{Classification accuracy} on the monitoring subset
-    \item \textbf{Inference cost} per model (measured via token usage and provider pricing)
-\end{itemize}
-
-The core idea is that every evaluation run is:
-\begin{enumerate}
-    \item Defined as a subset of the campaign relevance dataset,
-    \item Executed as provider-native batch jobs, and
-    \item Ingested back into Langfuse as traces with structured outputs and scores, so that drift can be analysed across time and models.
-\end{enumerate}
-
-
-% TikZ figure from earlier:
-% \input{fig-campaign-relevance-pipeline}
+The same system can execute two kinds of runs. In a \emph{benchmark run}, the evaluated subset is the larger reference benchmark. In a \emph{monitoring run}, the evaluated subset is the fixed 300-example disagreement subset. This separation is operationally important: it makes frequent monitoring substantially cheaper while preserving the ability to re-run the broader benchmark when needed.
 
 \section{Dataset Storage and Trace Logging}
 \label{sec:dataset-storage}
 
-All labels and input features for the campaign relevance task are stored in Langfuse as a dedicated dataset.
-Each row represents a single influencer post with a stable \texttt{custom\_id}, campaign brief, caption, optional image references, and a boolean \texttt{campaign\_relevant} label.
-During evaluation, each model call is recorded as a Langfuse trace whose metadata includes the \texttt{custom\_id}, model name, provider, run identifier, latency, and token usage.
-This makes it possible to reconstruct historical evaluations and to filter traces by dataset version, model, or time window when analysing drift.
+All labelled examples for campaign-relevance classification are stored in Langfuse datasets. Each row has a stable \texttt{custom\_id}, which acts as the join key across the entire system. The dataset row contains the task input needed to construct one model request: campaign description, post text, transcription, hashtags, optional frame references, and the binary ground-truth label \texttt{campaign\_relevant}. This identifier is preserved across request generation, batch submission, raw result files, ingestion, dashboard exports, and statistical analyses.
+
+The dataset layer also supports frozen evaluation subsets. In particular, the disagreement-based monitoring subset of \(n=300\) examples, selected once from the \(N=1200\) reference benchmark, can be loaded either directly from Langfuse or from a CSV export. This allows the monitoring subset to remain fixed across time, which is required for the paired McNemar comparisons described in Chapter~3. The same \texttt{custom\_id} values are then used to reconstruct per-example correctness histories across runs.
+
+After inference, each evaluated example is stored as a Langfuse trace. The trace contains the normalized request and response, the model and provider identifiers, token usage, timing information, and the derived evaluation scores written by the ingestion pipeline. Because traces are indexed by stable dataset identifiers and run identifiers, they provide a persistent execution log for both temporal monitoring and retrospective debugging.
+
+Figure~\ref{fig:artifact-flow} shows the artifact flow more explicitly. It also highlights the implementation split between dataset artifacts, request artifacts, provider artifacts, and analysis artifacts.
+
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=\textwidth}
+    \begin{tikzpicture}[
+    node distance=2mm
+    ]
+    
+    \node[figboxsmall] (dataset) {Langfuse\\Dataset};
+    \node[figboxsmall, right=of dataset] (subset) {Eval\\Subset\\\(N=1200\) or\\\(n=300\)};
+    \node[figboxsmall, right=of subset] (req) {Prompted\\Requests\\\texttt{new\_prompt.txt}\\\texttt{request\_template.json}};
+    \node[figboxsmall, right=of req] (jsonl) {Batches\\JSONL\\\texttt{batches/*.jsonl}};
+    \node[figboxsmall, right=of jsonl] (ids) {BatchIds\\\texttt{data/batch\_ids.json}};
+    \node[figboxsmall, right=of ids] (raw) {Raw\\Results\\\texttt{data/results/*.jsonl}};
+    \node[figboxsmall, right=of raw] (traces) {Normalized\\Traces\\Langfuse\\traces/scores};
+    \node[figboxsmall, right=of traces] (csv) {Dashboard\\Exports\\\texttt{streamlit\_app/}\\\texttt{langfuse\_*.csv}};
+    \node[figboxsmall, right=of csv] (analysis) {Analysis\\Artifacts};
+    
+    \draw[figarrow] (dataset) -- (subset);
+    \draw[figarrow] (subset) -- (req);
+    \draw[figarrow] (req) -- (jsonl);
+    \draw[figarrow] (jsonl) -- (ids);
+    \draw[figarrow] (ids) -- (raw);
+    \draw[figarrow] (raw) -- (traces);
+    \draw[figarrow] (traces) -- (csv);
+    \draw[figarrow] (csv) -- (analysis);
+    
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Artifact flow from the Langfuse dataset to dashboard and analysis outputs.}
+    \label{fig:artifact-flow}
+    \end{figure}
 
 \section{Batch Evaluation Process}
 \label{sec:batch-process}
 
-Batch runs are orchestrated by \texttt{run\_eval.py}, which:
-\begin{enumerate}
-    \item Loads an evaluation subset via \texttt{load\_dataset\_rows}, either directly from Langfuse or from a CSV export (e.g.\ the disagreement subset).
-    \item Applies a shared prompt template to produce a normalised conversational payload (system + user messages) per example.
-    \item Calls provider-specific helpers (\texttt{batch\_openai.py}, \texttt{batch\_gemini.py}, \texttt{batch\_claude.py}) that write JSONL request files and submit batch jobs.
-    \item Writes a manifest \texttt{data/batch\_ids.json} listing all submitted batch IDs, models, and providers.
-\end{enumerate}
-GitHub Actions workflows schedule and execute this pipeline: they trigger batch submission, poll job status until completion, and then run the ingestion scripts (\texttt{poll\_and\_ingest.py}, \texttt{ingest.py}) that attach responses to the correct traces in Langfuse.
+Batch execution is orchestrated by \texttt{scripts/run\_eval.py}. A run begins by resolving the evaluation subset through \texttt{scripts/lib/load\_dataset.py}. This loader supports two sources: direct access to Langfuse datasets and CSV files exported from previous steps. The latter path is particularly useful for the frozen disagreement subset, because it guarantees that the same 300 instances are used in every monitoring run.
+
+Once the rows are loaded, the system combines them with the selected prompt template and the shared response schema. Prompt versions are stored as external text files in \texttt{scripts/old\_prompt.txt} and \texttt{scripts/new\_prompt.txt}, which makes prompt comparison explicit at the file level. The response schema is stored in \texttt{config/request\_template.json}. The resulting provider-neutral request objects are then passed to provider-specific batch adapters.
+
+The three provider adapters are \texttt{scripts/batch\_openai.py}, \texttt{scripts/batch\_gemini.py}, and \texttt{scripts/batch\_claude.py}. Each adapter serializes the normalized request objects into the format required by the provider batch API. \texttt{run\_eval.py} records every submitted batch in \texttt{data/batch\_ids.json}, which serves as the manifest connecting logical runs to provider-specific batch identifiers. Raw provider results are written as JSONL files in \texttt{data/results/}, with one file per provider/model batch.
+
+Gemini requires an additional preprocessing step for image inputs. The scripts \texttt{upload\_gemini\_images.py} and \texttt{image\_cache.py} pre-upload and cache image assets so that the Gemini batch payload can reference provider-side image handles rather than repeatedly uploading identical frames. This preprocessing is part of the execution path only for Gemini-backed multimodal runs.
+
+Routine execution is automated by GitHub Actions. Submission workflows start new batch jobs, retrieval workflows poll for completion and download results, and synchronization workflows export dashboard CSV files after ingestion. Figure~\ref{fig:weekly-monitoring-loop} summarizes this automation.
+
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=0.92\textwidth}
+    \begin{tikzpicture}[
+    node distance=10mm and 14mm
+    ]
+    
+    \node[figbox] (submit) {Github\\Workflow\\Submit};
+    \node[figbox, below=of submit] (runeval) {Run\\Eval};
+    \node[figbox, below=of runeval] (batchids) {Batch\\Ids};
+    
+    \node[figbox, right=32mm of batchids] (retrieve) {Github\\Workflow\\Retrieve};
+    \node[figbox, below=of retrieve] (poll) {PollAnd\\Ingest};
+    \node[figbox, left=of poll] (results) {Result\\Files};
+    \node[figbox, below=of results] (ingest) {Ingest};
+    \node[figbox, below=of ingest] (traces) {Langfuse\\Traces};
+    
+    \node[figbox, right=32mm of traces] (sync) {Github\\Workflow\\Sync\\Dashboard};
+    \node[figbox, below=of sync] (export) {Export\\Dashboard\\Csv};
+    \node[figbox, below=of export] (dashboard) {Streamlit\\Dashboard};
+    
+    \draw[figarrow] (submit) -- (runeval);
+    \draw[figarrow] (runeval) -- (batchids);
+    
+    \draw[figarrow] (batchids) -- (retrieve);
+    \draw[figarrow] (retrieve) -- (poll);
+    \draw[figarrow] (poll) -- (results);
+    
+    \draw[figarrow] (results) -- (ingest);
+    \draw[figarrow] (ingest) -- (traces);
+    
+    \draw[figarrow] (sync) -- (export);
+    \draw[figarrow] (export) -- (dashboard);
+    
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Automated weekly monitoring loop implemented via GitHub Actions.}
+    \label{fig:weekly-monitoring-loop}
+    \end{figure}
 
 \section{Interaction with LLM APIs}
 \label{sec:llm-api-interaction}
 
-All models are queried via provider-native batch APIs, but the logical payload is always the same: a schema-constrained campaign relevance call built from one labeled example.
-Concretely:
-\begin{itemize}
-    \item \textbf{OpenAI} (\texttt{batch\_openai.py}): writes JSONL lines of the form \{\texttt{custom\_id}, \texttt{method="POST"}, \texttt{url="/v1/responses"}, \texttt{body}\} and submits the file to the OpenAI Batch API with \texttt{endpoint="/v1/responses"}.
-    \item \textbf{Gemini} (\texttt{batch\_gemini.py}): writes JSONL lines with a \texttt{request} object (contents, optional \texttt{systemInstruction}, \texttt{generationConfig}) and uploads the file to the Google GenAI batch API via \texttt{client.batches.create(model=..., src=...)}.
-    \item \textbf{Claude} (\texttt{batch\_claude.py}): builds an in-memory list of \{\texttt{custom\_id}, \texttt{params}\} records and passes it directly to the Anthropic Messages Batches API via \texttt{client.messages.batches.create(requests=...)}; the streamed batch results are later normalised into JSONL by \texttt{download\_claude\_batch\_results}.
-\end{itemize}
-In all three cases, the underlying request encodes:
-\begin{itemize}
-    \item a \texttt{custom\_id} linking back to the dataset row,
-    \item a conversational payload (system instructions + user content with campaign brief and post),
-    \item and a JSON schema (\texttt{CampaignRelevanceMinimal}) that forces the response into a \{\texttt{campaign\_relevant}, \texttt{relevancy\_reasoning}\} object.
-\end{itemize}
-Listing~\ref{lst:campaign-relevance-payload} and Listing~\ref{lst:campaign-relevance-schema} give a concrete example of the batch line and output schema used in the experiments.
+Although the providers differ substantially at the transport layer, the logical task payload is the same across all runs: one campaign-relevance classification request with a shared prompt structure and a schema-constrained response format. The implementation therefore separates the provider-independent request definition from the provider-specific batch envelope.
+
+OpenAI batch requests are generated by \texttt{batch\_openai.py}. The adapter writes one JSONL line per example, containing the \texttt{custom\_id}, HTTP metadata for \texttt{/v1/responses}, and the request body with model name, conversational input, and strict JSON schema instructions.
+
+Gemini batch requests are generated by \texttt{batch\_gemini.py}. Each JSONL line contains a provider-specific \texttt{request} object with message contents, optional \texttt{systemInstruction}, generation settings, and references to already uploaded images when multimodal inputs are present.
+
+Claude batch requests are generated by \texttt{batch\_claude.py}. In contrast to the file-based JSONL interfaces used by OpenAI and Gemini, Claude batches are assembled in memory as a list of \texttt{custom\_id}/parameter records and submitted through the Anthropic Messages Batches API. The streamed results are later normalized into JSONL before ingestion.
+
+In all cases, responses are constrained by the same output schema, namely the minimal object
+\[
+\{\texttt{campaign\_relevant},\; \texttt{relevancy\_reasoning}\}.
+\]
+This is operationally important. It makes predictions from heterogeneous APIs directly comparable and greatly simplifies downstream parsing, scoring, and dashboard aggregation.
+
+Listing~\ref{lst:campaign-relevance-payload} shows an example OpenAI batch line. Listing~\ref{lst:campaign-relevance-schema} shows the corresponding schema definition.
 
 \begin{lstlisting}[caption={Example OpenAI batch JSONL line for the campaign relevance task.},label={lst:campaign-relevance-payload}]
 {"custom_id": "run_2025-02-10_example_001",
@@ -1037,41 +1139,126 @@ Listing~\ref{lst:campaign-relevance-payload} and Listing~\ref{lst:campaign-relev
 \section{Metrics Collection and Monitoring Dashboard}
 \label{sec:metrics-dashboard}
 
-The monitoring stack exposes exactly two core metrics: \textbf{classification accuracy} on the monitoring subset and \textbf{inference cost} per model.
+The ingestion layer converts raw batch outputs into a common monitoring representation. This is implemented in \texttt{scripts/ingest.py}, with \texttt{poll\_and\_ingest.py} handling retrieval and automatic handoff once provider batches finish.
 
-Ingestion is handled by the script \texttt{ingest.py}, which processes each batch output file as follows:
-\begin{enumerate}
-    \item Parse each JSONL line and normalise the provider response (OpenAI, Gemini, Claude) into a common structure.
-    \item Extract the boolean \texttt{campaign\_relevant} prediction from the model output.
-    \item Look up the ground-truth label for the corresponding \texttt{custom\_id} from Langfuse or a CSV export.
-    \item Derive token usage \((\text{input}, \text{output}, \text{total})\) from the provider-specific usage fields.
-    \item Convert token usage into a dollar cost using the per-million-token prices in \texttt{config/models.yaml}.
-    \item Write a Langfuse trace/span with:
-    \begin{itemize}
-        \item metadata: \texttt{model}, \texttt{provider}, \texttt{custom\_id}, optional \texttt{run\_id};
-        \item the parsed input and raw provider response;
-        \item three scores:
-        \begin{itemize}
-            \item \texttt{accuracy} \(\in \{0,1\}\) (per-trace correctness),
-            \item \texttt{error\_type} \(\in\)\{\texttt{true\_positive}, \texttt{false\_negative}, \texttt{true\_negative}, \texttt{false\_positive}\},
-            \item \texttt{cost\_usd} (total dollar cost for this trace);
-        \end{itemize}
-        \item detailed \texttt{usage\_details} and \texttt{cost\_details} for debugging and audits.
-    \end{itemize}
-\end{enumerate}
+For each JSONL output line, the ingestion script performs five steps. It first normalizes the provider-specific response format into a common internal representation. It then extracts the boolean prediction \texttt{campaign\_relevant} and joins it with the ground-truth label via \texttt{custom\_id}. Next, it computes token usage from the provider-specific accounting fields. These token counts are then converted into a monetary cost using the per-million-token batch prices stored in \texttt{config/models.yaml}. Finally, the script writes a Langfuse trace containing the parsed request, normalized response, run metadata, and derived scores.
 
-On top of this logging layer, a small Streamlit dashboard queries Langfuse and aggregates scores over the 300-example monitoring subset.
-The public instance of this dashboard is available at \url{https://llm-eval-dashboard.streamlit.app/}, and the underlying evaluation code is open-sourced at \url{https://github.com/gocomo/llm-batch-eval}.
-The dashboard provides:
+Three trace-level scores are central for subsequent analyses:
 \begin{itemize}
-    \item per-model accuracy curves over time (mean of the per-trace \texttt{accuracy} scores),
-    \item confusion-matrix summaries derived from \texttt{error\_type},
-    \item request volume and latency distributions per run,
-        \item and cost views such as cost per run and estimated cost per 1,000 inferences.
+    \item \texttt{accuracy} \(\in \{0,1\}\), indicating per-example correctness;
+    \item \texttt{error\_type}, distinguishing true positives, false positives, true negatives, and false negatives;
+    \item \texttt{cost\_usd}, giving the realized dollar cost of the request.
 \end{itemize}
-Screenshots from this Streamlit dashboard are used in the experiments chapter to show concrete drift events and the associated accuracy--cost trade-offs.
-Together, \texttt{ingest.py} and the dashboard form the practical monitoring surface of the statistical surveillance loop described in the previous chapters.
-\chapter{Conclusion}
-This thesis provides a statistically grounded, cost-aware framework for the continuous evaluation of LLMs in production. By decoupling the initial reference benchmark from an informative monitoring subset, and pairing statistical drift detection with automated prompt optimization, organizations can maintain high classification performance despite the inherent instability of black-box LLM APIs.
+
+This design makes accuracy and cost first-class time-series objects in Langfuse. The Streamlit dashboard in \texttt{streamlit\_app/app.py} does not query Langfuse directly. Instead, it reads exported Langfuse CSV files under \texttt{streamlit\_app/langfuse\_*.csv}. This choice keeps the monitoring interface decoupled from production credentials and makes dashboard state reproducible from exported artifacts alone.
+
+The dashboard exposes four views that are directly relevant to the thesis:
+\begin{itemize}
+    \item per-model accuracy curves over time on the fixed monitoring subset;
+    \item paired McNemar contingency tables for selected run pairs;
+    \item confusion summaries derived from \texttt{error\_type};
+    \item cost and utility views based on \texttt{cost\_usd} and the deployment utility from Chapter~3.
+\end{itemize}
+
+The same exported CSVs also support notebook-based statistical analyses outside the dashboard. In practice, the dashboard is the operational surface of the monitoring loop, while notebook analyses are used for deeper inspection of drift events, error clusters, and prompt recovery outcomes.
+\FloatBarrier
+\section{Experimental Design}
+\label{sec:experimental-design}
+
+Experiments follow the protocol of Chapters~2--3: reference benchmark \(N=1200\), fixed monitoring subset \(n=300\) (disagreement-based, held constant across time), and the same paired McNemar and utility machinery. Each run is defined by dataset version, prompt version, and the model roster in \texttt{config/models.yaml}; the system records one trace per example, yielding aligned correctness vectors for paired drift tests.
+
+Drift: compare new run to baseline for the same model on the same 300 examples; alert only when \(b>c\) and \(p<0.05\) (one-sided McNemar). Deployment: maximise \(U_t(m)\) from Chapter~3; \(\lambda=10\) is the default. If no drift, keep current config; if drift, choose between switching model or running GEPA. GEPA runs under a fixed evaluation budget; recovery is measured on the same 300 examples via \(c_{\mathrm{new}}\), \(b_{\mathrm{new}}\), \(\Delta\)accuracy, and \(\Delta\)utility. Figure~\ref{fig:run-decision-logic} summarizes the decision logic.
+\FloatBarrier
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=0.92\textwidth}
+    \begin{tikzpicture}[
+    >=Latex,
+    node distance=10mm and 16mm
+    ]
+    
+    \node[figbox] (baseline) {Baseline\\Run\\Metrics};
+    \node[figbox, right=of baseline] (newrun) {New\\Run\\Metrics};
+    
+    \node[figbox, below=of newrun] (drift) {DriftTest\\McNemar on fixed\\300-example subset};
+    
+    \node[figbox, left=25mm of drift] (deploy) {Deploy\\Current\\Setup};
+    \node[figbox, right=25mm of drift] (utility) {CostUtility\\Computation\\same \(U(m)\)\\for all actions};
+    
+    \node[figbox, below=of utility] (decision) {Decision\\Node};
+    \node[figbox, left=of decision] (switch) {Switch\\Model};
+    \node[figbox, right=of decision] (gepa) {Run\\GEPA};
+    \node[figbox, below=of gepa] (reeval) {Re\\Evaluate};
+    
+    \draw[figarrow] (baseline) -- (drift);
+    \draw[figarrow] (newrun) -- (drift);
+    
+    \draw[figarrow] (drift) -- node[above, font=\scriptsize]{no drift} (deploy);
+    \draw[figarrow] (drift) -- node[above, font=\scriptsize]{drift} (utility);
+    
+    \draw[figarrow] (utility) -- (decision);
+    \draw[figarrow] (decision) -- (switch);
+    \draw[figarrow] (decision) -- (gepa);
+    \draw[figarrow] (gepa) -- (reeval);
+    
+    \draw[figarrow] (reeval.west) |- (utility.south);
+    
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Decision logic after a monitoring run. Drift is tested on the fixed 300-example subset. If no statistically significant degradation is detected, the current setup is retained. If degradation is detected, corrective actions are compared under the same deployment utility \(U(m)\); this may lead either to model switching or to prompt optimisation with subsequent re-evaluation.}
+    \label{fig:run-decision-logic}
+    \end{figure}
+    \FloatBarrier
+\section{Drift Monitoring Results}
+\label{sec:drift-results}
+
+On the fixed 300-example subset, small provider-side changes show up as shifts in \((b,c)\). For \texttt{gpt-5} between 8~March and 10~March~2026 there were no discordant pairs; for \texttt{gpt-5.1-mini}, \((b,c)=(13,7)\), so accuracy dropped but the one-sided McNemar test did not reach \(\alpha=0.05\)---no alert. The dashboard exposes both accuracy-over-time and McNemar tables so that regressions and recoveries are visible separately; the fixed subset ensures that changes reflect model behaviour, not sample composition.
+\FloatBarrier
+\section{Cost-Aware Model Comparison}
+\label{sec:cost-aware-comparison}
+
+Cost per run is computed from token usage and \texttt{config/models.yaml} pricing. Model selection uses \(U_t(m)\) from Chapter~3: at \(\lambda=0\) the ranking is by accuracy only; as \(\lambda\) grows, cheaper models gain. The dashboard shows this crossover; at \(\lambda=10\) (the default) the chosen model balances accuracy and cost, and the same utility is used to compare switching model vs.\ prompt recovery after drift.
+\FloatBarrier
+\section{Prompt Adaptation and Recovery}
+\label{sec:prompt-recovery-results}
+
+GEPA is triggered only when McNemar signals degradation (\(b>c\), \(p<0.05\)). The seed is the current prompt; the optimisation set is built from hard and disagreement cases. GEPA runs under a fixed evaluation budget; the chosen prompt is then re-evaluated on the same 300-example subset. Recovery is reported as \(c_{\mathrm{new}}\), \(b_{\mathrm{new}}\), \(\Delta\)accuracy, and \(\Delta\)utility, so prompt change is comparable to switching model under the same \(U_t(m)\). Figure~\ref{fig:prompt-adaptation-flow} shows the flow.
+
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=0.92\textwidth}
+    \begin{tikzpicture}[
+    node distance=8mm and 10mm
+    ]
+    
+    \node[figbox] (signal) {Degradation\\Signal};
+    \node[figbox, right=of signal] (hard) {HardCases\\Subset};
+    \node[figbox, right=of hard] (init) {GEPAInitial\\Population};
+    \node[figbox, right=of init] (loop) {GEPAEvolution\\Loop};
+    
+    \node[figbox, below=16mm of loop] (frontier) {GEPA\\Frontier};
+    \node[figbox, right=of frontier] (selected) {Selected\\Prompt};
+    \node[figbox, right=of selected] (rerun) {ReRun\\Monitoring\\Subset};
+    \node[figbox, right=of rerun] (metrics) {Recovery\\Metrics\\\(c_{\mathrm{new}}, b_{\mathrm{new}}\)\\\(\Delta\)accuracy, \(\Delta\)utility};
+    
+    \draw[figarrow] (signal) -- (hard);
+    \draw[figarrow] (hard) -- (init);
+    \draw[figarrow] (init) -- (loop);
+    
+    \draw[figarrow] (loop) -- (frontier);
+    \draw[figarrow] (frontier) -- (selected);
+    \draw[figarrow] (selected) -- (rerun);
+    \draw[figarrow] (rerun) -- (metrics);
+    
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Prompt adaptation flow after a detected degradation signal. Recovery is measured on the same fixed monitoring subset using paired counts and utility changes.}
+    \label{fig:prompt-adaptation-flow}
+    \end{figure}
+    \FloatBarrier
+\section{Error Analysis and Threats to Validity}
+\label{sec:error-analysis}
+
+Errors cluster at the boundary: FPs on superficial brand/hashtag mention, FNs when relevance is implicit or multimodal. The 300-example subset is intentionally biased; it is a monitoring instrument, not an unbiased accuracy estimator (that role stays with \(N=1200\)). Provider-side changes are opaque---drift is detected at task level, not attributed to internal cause; cost can shift with pricing or tokenization. GEPA can overfit; we run it only after a drift alert and report \(c_{\mathrm{new}}, b_{\mathrm{new}}\) on the fixed subset so regressions are visible. The chapter demonstrates that the pipeline can detect and react to real changes; it does not characterise all possible drift regimes.
 
 \end{document}

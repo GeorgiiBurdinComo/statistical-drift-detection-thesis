@@ -9,5 +9,9 @@
 \contentsline {figure}{\numberline {4.1}{\ignorespaces Generic iterative loop of automatic prompt optimisation. Different APO methods instantiate different candidate-generation, evaluation, and selection operators.}}{19}{figure.caption.11}%
 \contentsline {figure}{\numberline {4.2}{\ignorespaces Taxonomy of automatic prompt optimisation methods. Illustration adapted from~\blx@tocontentsinit {0}\cite {ramnath2025survey}.}}{19}{figure.caption.12}%
 \contentsline {figure}{\numberline {4.3}{\ignorespaces Role of prompt optimisation inside the monitoring pipeline. APO is triggered only after a statistically supported degradation event.}}{28}{figure.caption.17}%
-\contentsline {figure}{\numberline {5.1}{\ignorespaces High-level campaign-relevance evaluation and monitoring pipeline.}}{29}{figure.caption.18}%
+\contentsline {figure}{\numberline {5.1}{\ignorespaces Overall system architecture: dataset and trace layers in Langfuse, batch execution, monitoring, and adaptation via model switching or GEPA-based prompt optimisation.}}{30}{figure.caption.18}%
+\contentsline {figure}{\numberline {5.2}{\ignorespaces Artifact flow from the Langfuse dataset to dashboard and analysis outputs.}}{31}{figure.caption.19}%
+\contentsline {figure}{\numberline {5.3}{\ignorespaces Automated weekly monitoring loop implemented via GitHub Actions.}}{32}{figure.caption.20}%
+\contentsline {figure}{\numberline {5.4}{\ignorespaces Decision logic after a monitoring run. Drift is tested on the fixed 300-example subset. If no statistically significant degradation is detected, the current setup is retained. If degradation is detected, corrective actions are compared under the same deployment utility \(U(m)\); this may lead either to model switching or to prompt optimisation with subsequent re-evaluation.}}{36}{figure.caption.21}%
+\contentsline {figure}{\numberline {5.5}{\ignorespaces Prompt adaptation flow after a detected degradation signal. Recovery is measured on the same fixed monitoring subset using paired counts and utility changes.}}{37}{figure.caption.22}%
 \providecommand \tocbasic@end@toc@file {}\tocbasic@end@toc@file 
