@@ -1,0 +1,39 @@
+{
+  "latex-workshop.latex.outDir": "%WORKSPACE_FOLDER%/build",
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.latex.clean.subfolder.enabled": true,
+  "latex-workshop.latex.clean.fileTypes": [
+    "*.aux",
+    "*.bbl",
+    "*.bcf",
+    "*.blg",
+    "*.fdb_latexmk",
+    "*.fls",
+    "*.glo",
+    "*.gls",
+    "*.glg",
+    "*.ist",
+    "*.lof",
+    "*.log",
+    "*.lot",
+    "*.out",
+    "*.run.xml",
+    "*.synctex.gz",
+    "*.toc",
+    "*.acn",
+    "*.acr",
+    "*.alg",
+    "*.idx",
+    "*.ilg",
+    "*.ind",
+    "*.slo",
+    "*.sls",
+    "*.slg"
+  ],
+  "files.watcherExclude": {
+    "**/build/**": true
+  },
+  "search.exclude": {
+    "**/build": true
+  }
+}

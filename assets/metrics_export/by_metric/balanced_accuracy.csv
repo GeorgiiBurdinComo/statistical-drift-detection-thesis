@@ -1,0 +1,3 @@
+model,balanced_accuracy
+gpt-4.1-mini,0.8715261044176708
+gpt-4.1-nano,0.776

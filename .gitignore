@@ -1,3 +1,8 @@
+# Build directories
+build/
+dist/
+
+# Fallback: common TeX artifacts (if generated outside build/)
 *.aux
 *.log
 *.toc
@@ -24,22 +29,3 @@
 *.ind
 *.ilg
 *.ist
-*.pdf
-*.bcf
-*.run.xml
-*.lof
-*.lot
-*.glg
-*.glo
-*.gls
-*.slg
-*.slo
-*.sls
-*.acn
-*.acr
-*.alg
-*.idx
-*.ind
-*.ilg
-*.ist
-*.pdf

@@ -1,0 +1,460 @@
+\chapter{System Implementation and Experimental Evaluation}
+\label{chap:system-architecture}
+
+This chapter is split deliberately into two halves. The first half describes the implemented monitoring system as an artifact: how datasets are stored, how evaluation runs are executed, and how traces are collected and exposed for analysis. The second half turns to the experiments performed with that system: how the baseline was established, how longitudinal monitoring was carried out, and how drift-response decisions are evaluated. This separation is important because the architecture is the means of the thesis, whereas the monitored runs and their interpretation are the empirical outcome.
+
+\section*{Part I: System Architecture and Implementation}
+
+\section{Overview and System Design}
+\label{sec:evaluation-pipeline-overview}
+
+The implemented system has three persistent layers:
+\begin{itemize}
+    \item \textbf{Dataset layer:} Langfuse stores the labelled reference benchmark and the fixed monitoring subset;
+    \item \textbf{Execution layer:} local scripts and provider batch APIs execute benchmark and monitoring runs;
+    \item \textbf{Trace layer:} ingested Langfuse traces store normalized predictions, scores, usage, and costs.
+\end{itemize}
+
+Figure~\ref{fig:overall-system-architecture} gives the high-level design. The key architectural decision is that the system separates one-time dataset construction from repeated monitoring. A manual full-benchmark run on \(N=1199\) labelled examples is used once to define the disagreement-based subset, whereas the recurring weekly loop operates only on the fixed \(n=300\) monitoring set. This keeps repeated evaluation inexpensive while preserving paired comparability across time.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{assets/System Architecture.png}
+    \caption{Overall system architecture: Langfuse stores datasets and ingested traces, batch execution runs either locally or via split GitHub Actions workflows, and monitoring is served through exported CSV artifacts synchronized to the Streamlit dashboard.}
+    \label{fig:overall-system-architecture}
+\end{figure}
+
+The same architecture therefore supports two run types:
+\begin{itemize}
+    \item \emph{Benchmark run:} a broader comparison on the full reference benchmark;
+    \item \emph{Monitoring run:} a recurring paired evaluation on the fixed 300-example subset.
+\end{itemize}
+
+This distinction is what prevents Chapter~5 from conflating system design with empirical monitoring. The benchmark run initializes the monitoring instrument; the weekly subset runs produce the longitudinal evidence used in the later sections.
+
+\section{Dataset Management and Trace Logging}
+\label{sec:dataset-storage}
+
+The implementation uses two Langfuse datasets:
+\begin{itemize}
+    \item \textbf{Reference benchmark} (\(N=1199\)): \href{https://cloud.langfuse.com/project/cmkqnvv3z016aad08kqtjim2n/datasets/cmlfi3uo0003yad07e75cd7e3}{Langfuse link};
+    \item \textbf{Monitoring subset} (\(n=300\)): \href{https://cloud.langfuse.com/project/cmkqnvv3z016aad08kqtjim2n/datasets/cmmjjduz501c6ad07vbuln8m8/items}{Langfuse link}.
+\end{itemize}
+
+Langfuse acts as the single source of truth for both dataset scales. Each row carries a stable \texttt{custom\_id}, and that identifier is reused end-to-end across:
+\begin{itemize}
+    \item batch submission,
+    \item raw result files,
+    \item ingested traces,
+    \item CSV exports,
+    \item statistical analyses.
+\end{itemize}
+
+Each dataset row includes the campaign description, post text, transcription, hashtags, media references, frame references where applicable, and the binary ground-truth label \texttt{campaign\_relevant}. Reusing the same schema for both the \(N=1199\) benchmark and the \(n=300\) monitoring subset ensures that the smaller set is not a separate task definition but a frozen projection of the original benchmark onto its most informative cases.
+
+The 300-example monitoring dataset is selected once from the full benchmark and then held fixed. This immutability is crucial: it makes per-example histories meaningful and ensures that paired McNemar comparisons are not confounded by changes in sample composition.
+
+After each run, outputs are written back into Langfuse as traces. Each trace stores the normalized response, provider and model identifiers, token usage, monetary cost, and derived scores. Langfuse therefore serves two roles at once: it is both the registry of evaluation instances and the persistent log of how each monitored model behaved on each instance over time.
+
+Figure~\ref{fig:artifact-flow} shows the concrete artifact flow from dataset storage to downstream analysis.
+
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=\textwidth}
+    \begin{tikzpicture}[
+    node distance=2mm
+    ]
+    
+    \node[figboxsmall] (reference) {Reference\\Benchmark\\Langfuse\\\(N=1199\)};
+    \node[figboxsmall, right=of reference] (selection) {One-Time\\Manual Run\\+\\Disagreement\\Selection};
+    \node[figboxsmall, right=of selection] (monitoring) {Monitoring\\Subset\\Langfuse\\\(n=300\)};
+    \node[figboxsmall, right=of monitoring] (submit) {Weekly CI\\Submit};
+    \node[figboxsmall, right=of submit] (ids) {Batch IDs\\\texttt{data/batch\_ids.json}};
+    \node[figboxsmall, right=of ids] (raw) {Raw\\Results\\\texttt{data/results/*.jsonl}};
+    \node[figboxsmall, right=of raw] (traces) {Langfuse\\Traces\\/ Scores};
+    \node[figboxsmall, right=of traces] (csv) {Exported\\CSV Files\\\texttt{langfuse\_*.csv}};
+
+    \node[figboxsmall, below=7mm of submit] (config) {Prompt +\\Schema};
+    \node[figboxsmall, below=7mm of traces] (analysis) {Notebook\\Analysis};
+    \node[figboxsmall, below=7mm of csv] (dashboard) {Streamlit\\Dashboard};
+    
+    \draw[figarrow] (reference) -- (selection);
+    \draw[figarrow] (selection) -- (monitoring);
+    \draw[figarrow] (monitoring) -- (submit);
+    \draw[figarrow] (submit) -- (ids);
+    \draw[figarrow] (ids) -- (raw);
+    \draw[figarrow] (raw) -- (traces);
+    \draw[figarrow] (traces) -- (csv);
+    \draw[figarrow] (config) -- (submit);
+    \draw[figarrow] (csv) -- (dashboard);
+    \draw[figarrow] (csv) -- (analysis);
+    
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Concrete artifact flow: the full Langfuse benchmark is used once to define the fixed disagreement-based monitoring subset, weekly CI runs produce batch identifiers and raw result files, ingestion writes traces and scores back to Langfuse, and exported CSV files feed the dashboard and offline analysis.}
+    \label{fig:artifact-flow}
+    \end{figure}
+
+\section{Automated Evaluation Pipeline}
+\label{sec:batch-process}
+
+The execution layer turns stored dataset rows into asynchronous provider-side batch jobs and later converts those jobs back into raw result files. Chronologically, one run consists of six steps:
+\begin{enumerate}
+    \item load the target dataset split via the dataset loader;
+    \item combine each row with the shared prompt and response schema;
+    \item serialize the logical request through a provider-specific batch adapter;
+    \item submit the batch and persist the returned identifiers in \texttt{data/batch\_ids.json};
+    \item retrieve completed outputs into \texttt{data/results/};
+    \item hand the raw outputs to the ingestion layer for normalization and trace creation.
+\end{enumerate}
+
+The loader supports both Langfuse datasets and CSV files. The CSV path is operationally useful for the frozen monitoring subset because it guarantees that the identical 300 instances can be replayed even outside live dataset access.
+
+The logical task is provider-invariant: every request asks for the same campaign-relevance classification under the same output schema. What changes is only the transport layer. The concrete set of monitored models, together with the prices used later for cost accounting, is defined centrally in \texttt{config/models.yaml} and summarized in Table~\ref{tab:monitored-models}.
+
+\begin{table}[htbp]
+\centering
+\caption{LLM models monitored in this study, grouped by provider.}
+\label{tab:monitored-models}
+\begin{tabular}{ll}
+\toprule
+\textbf{Provider} & \textbf{Models} \\
+\midrule
+OpenAI   & \texttt{gpt-5.4-2026-03-05}, \texttt{gpt-5.2}, \texttt{gpt-5.1}, \texttt{gpt-5}, \\
+         & \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, \texttt{gpt-4.1-mini}, \texttt{gpt-4.1-nano} \\
+Gemini   & \texttt{gemini-2.5-flash}, \texttt{gemini-2.0-flash} \\
+Claude   & \texttt{claude-sonnet-4-6}, \texttt{claude-sonnet-4-5}, \texttt{claude-haiku-4-5} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The provider differences enter exactly at the serialization layer:
+\begin{itemize}
+    \item \textbf{OpenAI:} \texttt{batch\_openai.py} emits one JSONL line per example, already formatted as a call to \texttt{/v1/responses};
+    \item \textbf{Gemini:} \texttt{batch\_gemini.py} rewrites the shared payload into Gemini's native batch format and replaces image URLs with references to files uploaded beforehand;
+    \item \textbf{Claude:} \texttt{batch\_claude.py} first stores a staging JSONL entry with a sanitized identifier and then translates the payload into Anthropic's Messages Batches format.
+\end{itemize}
+
+Gemini is the only provider that requires a dedicated pre-upload step for image-based inputs. An image-upload helper plus cache module therefore prevents repeated uploads of identical media across runs.
+
+The structural differences are easiest to see in abbreviated examples:
+
+\begin{lstlisting}[
+        caption={Batch entry formats across providers.},
+        label={lst:batch-provider-structures},
+        frame=single,
+        basicstyle=\ttfamily\small,
+        breaklines=true
+        ]
+        === OpenAI ===
+        {"custom_id":"...", "method":"POST", "url":"/v1/responses",
+         "body":{
+           "input":[...],
+           "text":{"format":{"type":"json_schema"}}
+         }}
+        
+        === Gemini ===
+        {"key":"...", "request":{
+         "systemInstruction":{"parts":[{"text":"..."}]},
+         "contents":[{"role":"user","parts":[
+           {"text":"..."},
+           {"fileData":{"fileUri":"..."}}
+         ]}],
+         "generationConfig":{
+           "responseMimeType":"application/json",
+           "responseSchema":{...}
+         }}}
+        
+        === Claude (staging JSONL) ===
+        {"custom_id":"...", "sanitized_id":"...",
+         "body":{
+           "input":[...],
+           "text":{"format":{"type":"json_schema"}}
+         }}
+        \end{lstlisting}
+
+Across all three providers, the response is constrained to the same minimal schema:
+\[
+\{\texttt{campaign\_relevant},\; \texttt{relevancy\_reasoning}\}.
+\]
+This common schema is what keeps the monitoring stack provider-agnostic at the trace and scoring levels.
+
+Routine execution is automated through a split GitHub Actions loop:
+\begin{itemize}
+    \item submission workflows start new batches on Fridays at 15{:}00 UTC;
+    \item retrieval workflows poll and ingest completed results on Sundays at 05{:}00 UTC;
+    \item synchronization workflows export dashboard CSVs on Sundays at 07{:}00 UTC.
+\end{itemize}
+
+This split is not cosmetic. It reflects the asynchronous semantics of the provider batch APIs, where completion typically occurs within a roughly 24-hour window and retrieval must therefore be decoupled from submission. Figure~\ref{fig:weekly-monitoring-loop} summarizes the implemented weekly loop.
+
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=0.92\textwidth}
+    \begin{tikzpicture}[
+    node distance=8mm and 18mm
+    ]
+    
+    \node[figbox] (submitTime) {Friday\\15{:}00 UTC\\(16{:}00 Berlin)};
+    \node[figbox, below=of submitTime] (submitWf) {Github\\Workflow\\Submit\\Drift\\Monitoring};
+    \node[figbox, below=of submitWf] (runEval) {Run Eval\\(local batch\\creation)};
+    \node[figbox, below=of runEval] (batchIds) {Batch IDs\\\texttt{data/batch\_ids.json}};
+    
+    \node[figbox, right=32mm of submitTime] (retrieveTime) {Sunday\\05{:}00 UTC\\(06{:}00 Berlin)};
+    \node[figbox, below=of retrieveTime] (retrieveWf) {Github\\Workflow\\Retrieve\\\& Ingest};
+    \node[figbox, below=of retrieveWf] (pollIngest) {Poll\\\& Download\\Results};
+    \node[figbox, below=of pollIngest] (results) {Result Files\\\texttt{data/results/*.jsonl}};
+    \node[figbox, below=of results] (traces) {Ingest\\Langfuse\\Traces\\/ Scores};
+    
+    \node[figbox, right=32mm of retrieveTime] (syncTime) {Sunday\\07{:}00 UTC};
+    \node[figbox, below=of syncTime] (syncWf) {Github\\Workflow\\Sync\\Dashboard};
+    \node[figbox, below=of syncWf] (exportCsv) {Export\\Langfuse CSV};
+    \node[figbox, below=of exportCsv] (dashboard) {Streamlit\\Dashboard};
+    
+    \draw[figarrow] (submitTime) -- (submitWf);
+    \draw[figarrow] (submitWf) -- (runEval);
+    \draw[figarrow] (runEval) -- (batchIds);
+    
+    \draw[figarrow] (retrieveTime) -- (retrieveWf);
+    \draw[figarrow] (retrieveWf) -- (pollIngest);
+    \draw[figarrow] (pollIngest) -- (results);
+    \draw[figarrow] (results) -- (traces);
+    
+    \draw[figarrow] (syncTime) -- (syncWf);
+    \draw[figarrow] (syncWf) -- (exportCsv);
+    \draw[figarrow] (exportCsv) -- (dashboard);
+    
+    \draw[figarrow] (batchIds) -- (retrieveWf);
+    \draw[figarrow] (traces) -- (syncWf);
+    
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Automated weekly monitoring loop implemented via GitHub Actions. Batches are submitted on Friday afternoon, retrieved and ingested into Langfuse traces early Sunday morning, and the monitoring dashboard is refreshed from exported CSVs two hours later.}
+    \label{fig:weekly-monitoring-loop}
+\end{figure}
+
+\section{Metrics Collection and Dashboarding}
+\label{sec:metrics-dashboard}
+
+Once raw batch outputs have been retrieved, the monitoring layer converts them into a common analytical representation. For each output line, ingestion performs five steps:
+\begin{enumerate}
+    \item normalize the provider-specific response;
+    \item extract \texttt{campaign\_relevant} and join it to the ground truth via \texttt{custom\_id};
+    \item compute token usage from the provider-specific usage fields;
+    \item convert token usage into USD cost via \texttt{config/models.yaml};
+    \item write the resulting Langfuse trace together with derived scores and metadata.
+\end{enumerate}
+
+The full batch-API price table for all monitored models is provided in Appendix~\ref{app:batch-pricing-table} as Table~\ref{tab:batch-pricing-examples}.
+
+Three trace-level scores are central for the later evaluation:
+\begin{itemize}
+    \item \texttt{accuracy} \(\in \{0,1\}\), indicating per-example correctness;
+    \item \texttt{error\_type}, distinguishing true positives, false positives, true negatives, and false negatives;
+    \item \texttt{cost\_usd}, giving the realized dollar cost of the request.
+\end{itemize}
+
+From \texttt{error\_type}, aggregated \textbf{precision}, \textbf{recall}, and \textbf{F1} are computed per run on the monitoring subset as in Section~\ref{sec:classification-metrics}. Accuracy, cost, and these error-type metrics are therefore first-class time-series variables rather than post hoc aggregates. This matters operationally because drift detection, model comparison, and error analysis are all derived from the same persisted traces.
+
+The Streamlit dashboard does not query Langfuse directly. Instead, the synchronization workflow exports CSV snapshots into a dedicated dashboard directory, and the dashboard is rebuilt from these exported artifacts. This keeps the interface independent of live credentials and makes each weekly monitoring state reproducible.
+
+The dashboard exposes four views used in the evaluation:
+\begin{itemize}
+    \item per-model accuracy curves over time on the fixed monitoring subset;
+    \item paired McNemar contingency tables for selected run pairs;
+    \item confusion summaries and derived precision, recall, and F1 from \texttt{error\_type};
+    \item per-model cost from \texttt{cost\_usd} alongside the metrics from Chapter~3 for manual comparison.
+\end{itemize}
+
+\subsection{Reference-overlap metrics}
+\label{sec:ref-overlap-metrics}
+
+In addition to label-based scores, offline analysis can compare each model's free-text output (e.g.\ \texttt{relevancy\_reasoning}) to a reference string using standard overlap and similarity metrics: ROUGE-L, METEOR, BLEU, overlap-F1, BERTScore, chrF, and exact match. These quantities are \emph{not} substitutes for campaign-relevance accuracy; they track whether generations stay lexically or semantically aligned with references over time and may reveal formatting-only or explanation-style shifts that should be triaged alongside label-based monitoring. They are plotted longitudinally in Figure~\ref{fig:daily-text-metrics-timeseries} (Phase~2).
+
+Exported runs also feed auxiliary plots used in this thesis: Figure~\ref{fig:metrics-by-model-bars} summarises classification metrics by model; Figure~\ref{fig:daily-text-metrics-timeseries} shows reference-overlap metrics over calendar time (Section~\ref{sec:ref-overlap-metrics}).
+
+Among these, the paired-drift view and the metric/cost comparison view are the operationally decisive ones because they turn raw traces into concrete actions: whether to keep the current setup, switch models, or attempt prompt recovery. Figure~\ref{fig:mcnemar-dashboard} shows the paired-drift interface, and Figure~\ref{fig:utility-overview} shows the model comparison surface (accuracy, precision, recall, F1, and cost) used for operator decisions.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/Screenshot_2026-03-13_at_18.12.49-ab3bb230-c6fd-429c-b7d7-1a9af08a4170.png}
+    \caption{Streamlit visualisation of McNemar contingency tables and statistics for two monitored models. The top panel corresponds to \texttt{gpt-5}, where no discordant pairs occur, and the bottom panel to \texttt{gpt-5.1-mini}, where the discordant counts $(b,c)=(13,7)$ yield a non-significant drift signal.}
+    \label{fig:mcnemar-dashboard}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/utility_overview.png}
+    \caption{Overview of the model comparison view in the monitoring application: per-model accuracy, precision, recall, F1, and mean cost for the selected evaluation window and model roster (manual model choice; no single scalar utility).}
+    \label{fig:utility-overview}
+\end{figure}
+
+The same exported CSVs also support notebook-based analyses outside the dashboard. In practice, the dashboard is the operational surface of the monitoring loop, whereas notebooks are used for deeper inspection of drift events, error clusters, and prompt-recovery candidates.
+\FloatBarrier
+
+\section*{Part II: Experimental Evaluation and Results}
+
+\section{Experimental Setup}
+\label{sec:experimental-design}
+
+The experiments instantiate the framework from Chapters~2--4 on two fixed dataset scales:
+\begin{itemize}
+    \item the full reference benchmark with \(N=1199\) labelled examples;
+    \item the disagreement-based monitoring subset with \(n=300\).
+\end{itemize}
+
+The monitored model roster is the one defined in \texttt{config/models.yaml}. Each run is versioned by dataset, prompt, and model configuration. Because the system records one trace per example, each run yields an aligned correctness vector that can be compared pairwise against its own baseline.
+
+The monitored quantities are the same ones motivated in the methodology chapters:
+\begin{itemize}
+    \item per-example correctness and aggregate accuracy;
+    \item paired discordant counts \((b,c)\) for McNemar testing;
+    \item token usage and realized dollar cost;
+    \item aggregate precision, recall, and F1 derived from confusion counts, for corrective-action comparison alongside cost.
+\end{itemize}
+
+Operationally, the experiments unfold in four phases. First, the full \(N=1199\) benchmark is run once to establish baseline behaviour and to construct the disagreement subset. Second, the fixed subset is used for longitudinal drift monitoring. Third, when alternative responses to degradation must be compared, operators inspect accuracy, precision, recall, F1, and cost per candidate model as in Chapter~3. Fourth, if a degradation event is statistically verified, GEPA is available as a bounded prompt-recovery mechanism.
+
+The decision logic is:
+\begin{enumerate}
+    \item compare a new run to its baseline for the same model on the same 300 examples;
+    \item raise a drift alert only if \(b>c\) and \(p<0.05\) in the one-sided McNemar test;
+    \item if no drift is detected, keep the current setup;
+    \item if drift is detected, compare corrective actions using accuracy, precision, recall, F1, and cost (manual choice);
+    \item either switch model or run GEPA;
+    \item if GEPA is used, re-evaluate the recovered prompt on the same 300 examples.
+\end{enumerate}
+
+GEPA runs under a fixed evaluation budget, and any recovery attempt is reported through \(c_{\mathrm{new}}\), \(b_{\mathrm{new}}\), \(\Delta\)accuracy, and changes in precision, recall, and F1 where applicable. Figure~\ref{fig:run-decision-logic} summarizes this experimental logic.
+\FloatBarrier
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=0.92\textwidth}
+    \begin{tikzpicture}[
+    >=Latex,
+    node distance=10mm and 16mm
+    ]
+    
+    \node[figbox] (baseline) {Baseline\\Run\\Metrics};
+    \node[figbox, right=of baseline] (newrun) {New\\Run\\Metrics};
+    
+    \node[figbox, below=of newrun] (drift) {DriftTest\\McNemar on fixed\\300-example subset};
+    
+    \node[figbox, left=25mm of drift] (deploy) {Deploy\\Current\\Setup};
+    \node[figbox, right=25mm of drift] (metriccost) {Compare\\metrics + cost\\(manual)};
+    
+    \node[figbox, below=of metriccost] (decision) {Decision\\Node};
+    \node[figbox, left=of decision] (switch) {Switch\\Model};
+    \node[figbox, right=of decision] (gepa) {Run\\GEPA};
+    \node[figbox, below=of gepa] (reeval) {Re\\Evaluate};
+    
+    \draw[figarrow] (baseline) -- (drift);
+    \draw[figarrow] (newrun) -- (drift);
+    
+    \draw[figarrow] (drift) -- node[above, font=\scriptsize]{no drift} (deploy);
+    \draw[figarrow] (drift) -- node[above, font=\scriptsize]{drift} (metriccost);
+    
+    \draw[figarrow] (metriccost) -- (decision);
+    \draw[figarrow] (decision) -- (switch);
+    \draw[figarrow] (decision) -- (gepa);
+    \draw[figarrow] (gepa) -- (reeval);
+    
+    \draw[figarrow] (reeval.west) |- (metriccost.south);
+    
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Decision logic after a monitoring run. Drift is tested on the fixed 300-example subset. If no statistically significant degradation is detected, the current setup is retained. If degradation is detected, corrective actions are compared using accuracy, precision, recall, F1, and cost, with a manual model or prompt decision; this may lead either to model switching or to prompt optimisation with subsequent re-evaluation.}
+    \label{fig:run-decision-logic}
+    \end{figure}
+    \FloatBarrier
+
+\section{Phase 1: Establishing the Baseline and Monitoring Subset}
+\label{sec:baseline-subset}
+
+The first empirical phase is the one-time full-benchmark run on the \(N=1199\) reference dataset. Its purpose is not yet longitudinal drift detection, because there is no time axis at this stage. Instead, it establishes the initial per-model behaviour on the full benchmark and identifies those examples on which model decisions diverge. These disagreement cases are the operational signal used to construct the smaller monitoring subset described in Chapter~2.
+
+This phase therefore produces two outputs. First, it yields a full benchmark record that can be reused for broad model comparison. Second, it produces the fixed \(n=300\) disagreement-based monitoring set that is stored as a separate Langfuse dataset and then frozen for all later paired analyses. The key result of this phase is not merely that a subset exists, but that it is anchored in observed cross-model uncertainty rather than arbitrary sampling.
+
+Once created, the monitoring subset becomes the empirical backbone of the thesis. All later drift statistics, dashboard views, and adaptation decisions are computed on this fixed set. The full benchmark remains important as the initial reference frame, but the recurring evidence in the remainder of the chapter comes from the repeated reuse of the same 300 difficult cases.
+
+Table~\ref{tab:phase1-baseline-snapshot} gives a compact \textbf{baseline} after the subset is frozen: aggregate accuracy, precision, recall, and F1 for two API models that participate in the disagreement construction and in later monitoring (same scoring pipeline as Chapter~3). Counts $n$ refer to scored examples in that export (one missing score for \texttt{gpt-4.1-mini} in the batch). Full-benchmark $\mathcal{D}_N$ aggregates are produced in the same way but are not duplicated here; the point of Phase~1 for the empirical narrative is the frozen hard-case subset and comparable scalar summaries on~$\mathcal{D}_{300}$.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Phase~1 baseline: classification metrics on the frozen monitoring subset after construction (batch export, last score day 2026-03-28).}
+    \label{tab:phase1-baseline-snapshot}
+    \begin{tabular}{lccccc}
+        \toprule
+        Model & $n$ & Accuracy & Precision & Recall & F1 \\
+        \midrule
+        \texttt{gpt-4.1-mini} & 299 & {\csname benchgpt41miniaccuracy\endcsname} & {\csname benchgpt41miniprecision\endcsname} & {\csname benchgpt41minirecall\endcsname} & {\csname benchgpt41minif1\endcsname} \\
+        \texttt{gpt-4.1-nano}  & 300 & {\csname benchgpt41nanoaccuracy\endcsname} & {\csname benchgpt41nanoprecision\endcsname} & {\csname benchgpt41nanorecall\endcsname} & {\csname benchgpt41nanof1\endcsname} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Phase 2: Longitudinal Drift Monitoring}
+\label{sec:drift-results}
+
+The second phase evaluates whether repeated runs on the fixed monitoring subset reveal meaningful temporal changes in model behaviour. Because the subset is held constant, any change in the paired counts \((b,c)\) can be attributed to changed model predictions rather than to a changed sample.
+
+Two monitored examples illustrate the range of outcomes. For \texttt{gpt-5}, the run pair from 8~March~2026 to 10~March~2026 yields the contingency table in Table~\ref{tab:mcnemar_gpt5}. The discordant counts are \((b,c)=(0,0)\), so no monitored instance changed correctness between the two dates. In operational terms, this is the strongest possible evidence of short-term stability on the subset.
+
+For \texttt{gpt-5.1-mini}, the corresponding run pair in Table~\ref{tab:mcnemar_gpt5mini} yields \((b,c)=(13,7)\). This means that 20 monitored cases changed status, with 13 regressions and 7 recoveries. Accuracy therefore decreased numerically, but the one-sided McNemar test does not cross the \(\alpha=0.05\) threshold. The result is an interpretable weak-degradation pattern: the model worsened on more cases than it improved on, but the evidence is not yet strong enough to trigger the thesis' alerting rule.
+
+Figure~\ref{fig:mcnemar-dashboard} shows how these cases appear in the monitoring interface. The important empirical point is not just whether an alert fires. The paired view also preserves the structure of change: it distinguishes complete stability from mixed regressions and recoveries, and it makes visible when a decrease in accuracy is still statistically inconclusive.
+
+Reference-overlap metrics from Section~\ref{sec:ref-overlap-metrics} provide a complementary longitudinal view: they track how similar model generations are to reference text on the same dated evaluation runs. Figure~\ref{fig:daily-text-metrics-timeseries} stacks ROUGE-L, METEOR, BLEU, overlap-F1, BERTScore, chrF, and exact match over roughly one month for a roster of API models. Most series are flat, which is consistent with stable provider behaviour on the scored outputs; visible dips and recoveries (for example around late March) indicate transient regressions in lexical or semantic alignment that may or may not coincide with label-level drift, and therefore warrant cross-checking against the binary correctness series and McNemar evidence rather than being interpreted in isolation.
+
+\begin{figure}[p]
+    \centering
+    \includegraphics[width=\linewidth]{assets/daily_metrics_all.png}
+    \caption{Daily reference-overlap metrics by model (same monitored examples evaluated on successive dates). Each panel is a different automatic metric; curves compare API models over time. Flat lines suggest stable generation quality relative to references; sharp coordinated drops across metrics indicate a short-lived regression in overlap or formatting that should be triaged alongside label-based monitoring.}
+    \label{fig:daily-text-metrics-timeseries}
+\end{figure}
+
+\section{Phase 3: Model comparison for corrective action}
+\label{sec:cost-aware-comparison}
+
+The third phase asks how a monitoring system should support choice among candidate corrective actions once predictive quality and cost are both visible. Each monitored run yields empirical accuracy, precision, recall, and F1 on the fixed subset together with mean per-request cost (Chapter~3). Operators compare candidates manually: some campaigns tolerate more false positives than others, so no single ranking rule is imposed in the experiments reported here.
+
+\paragraph{Authoritative batch export.}
+The \textbf{single authoritative numeric panel} for corrective-action comparison in this thesis is Table~\ref{tab:model-metrics-snapshot}. It is generated from \texttt{assets/metrics\_export/} (see \texttt{metrics\_wide.csv}, \texttt{export\_meta.json}) and input via \texttt{metrics\_tabular.tex}; it lists confusion counts $(\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})$, threshold-based metrics, specificity, balanced accuracy, and PR--AUC for each candidate in one snapshot. Mean USD cost per request is \emph{not} in that static file; it is read from Langfuse traces as in Section~\ref{sec:metrics-dashboard}. For example, \texttt{gpt-4.1-mini} shows exported subset accuracy {\csname benchgpt41miniaccuracy\endcsname} versus \texttt{gpt-4.1-nano} {\csname benchgpt41nanoaccuracy\endcsname} on that snapshot. Figures~\ref{fig:metrics-by-model-bars} and~\ref{fig:utility-overview} support the same phase visually: the former is a compact offline bar chart of the same metric dimensions across models on a fixed slice; the latter is the Streamlit dashboard view used to inspect trade-offs across date windows and model sets together with cost. The result of this phase is a \textbf{decision surface}---multiple metrics and cost---rather than a single universally best model. That matches the need to compare continued deployment, model switching, and prompt recovery under campaign-specific priorities.
+
+\section{Phase 4: Prompt Adaptation (GEPA)}
+\label{sec:prompt-recovery-results}
+
+The fourth phase addresses what happens after a verified degradation event. In this thesis, GEPA is not treated as a general prompt-improvement tool but as a conditional recovery mechanism that is invoked only when monitoring has already established harmful drift, that is, when \(b>c\) and \(p<0.05\).
+
+The implemented recovery workflow is:
+\begin{enumerate}
+    \item start from the currently deployed prompt;
+    \item construct an optimization set from hard and disagreement cases;
+    \item run GEPA under a fixed evaluation budget;
+    \item select the recovered prompt from the evolved frontier;
+    \item re-evaluate that prompt on the same 300-example monitoring subset.
+\end{enumerate}
+
+Recovery is then measured with the same quantities used in the rest of the chapter: \(c_{\mathrm{new}}\), \(b_{\mathrm{new}}\), \(\Delta\)accuracy, and changes in precision, recall, and F1 where reported. This is what makes prompt recovery commensurable with model switching rather than a separate qualitative intervention.
+
+Within the monitoring window documented here, however, no run shown in this chapter crosses the full alert threshold required to trigger GEPA as a production intervention. The empirical contribution of this phase is therefore the implemented and evaluation-ready recovery mechanism, not yet a completed live recovery case with before/after prompt text. Figure~\ref{fig:prompt-adaptation-flow} shows this recovery path.
+
+    \FloatBarrier
+
+\section{Error Analysis and Limitations}
+\label{sec:error-analysis}
+
+The qualitative error patterns are concentrated near the class boundary, but the two dominant failure modes are different in kind. False positives typically arise when the model overweights superficial lexical cues such as brand mentions, campaign slogans, or hashtags and infers campaign relevance from weak surface association alone. False negatives, by contrast, often arise when campaign relevance is implicit, visually grounded, or distributed across text and image context so that no single textual field states the relevance criterion explicitly.
+
+This asymmetry matters for interpretation. False positives indicate overgeneralization from easy textual signals, whereas false negatives indicate missed contextual integration. In a monitoring setting, the latter are often harder to recover from with simple prompt wording because they can reflect genuinely multimodal ambiguity rather than a missing textual rule.
+
+The main validity limits are:
+\begin{itemize}
+    \item the 300-example subset is intentionally biased toward hard cases and is therefore a monitoring instrument, not an unbiased estimator of population accuracy;
+    \item provider-side changes are opaque, so detected drift is observable only at the task-output level rather than attributable to internal model updates;
+    \item cost may shift over time because of pricing changes or tokenization changes even when predictive behaviour remains stable;
+    \item GEPA can overfit the monitored hard cases, which is why it is reserved for verified drift events and always re-evaluated on the same fixed subset.
+\end{itemize}
+
+Taken together, the results show that the implemented system can establish a hard-case monitoring subset, track paired temporal changes on that subset, and compare corrective actions using a common metric panel (accuracy, precision, recall, F1, cost). What the chapter does not yet provide is a fully observed end-to-end recovery episode in which drift is detected, GEPA is triggered, and the recovered prompt is deployed.
+

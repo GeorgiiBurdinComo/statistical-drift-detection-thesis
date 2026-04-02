@@ -1,0 +1,12 @@
+{
+  "last_score_day": "2026-03-28",
+  "exported_at_utc": "2026-03-29T19:45:46.789359+00:00",
+  "n_models": 2,
+  "paths": {
+    "metrics_wide_csv": "metrics_export/metrics_wide.csv",
+    "metrics_long_csv": "metrics_export/metrics_long.csv",
+    "metrics_tabular_tex": "metrics_export/metrics_tabular.tex",
+    "metrics_macros_tex": "metrics_export/metrics_macros.tex",
+    "by_metric_dir": "metrics_export/by_metric"
+  }
+}

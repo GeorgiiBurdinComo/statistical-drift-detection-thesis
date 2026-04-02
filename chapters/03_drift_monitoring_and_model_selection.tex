@@ -1,0 +1,244 @@
+\chapter{Drift Monitoring and Model Selection Methodology}
+
+\section{Formalisation of Temporal Evaluation}
+\label{sec:formalisation-temporal}
+
+Let $t \in \{1, \dots, T\}$ represent discrete evaluation intervals, for example weekly batch runs. At each time point $t$, the deployed model is evaluated on the same fixed monitoring subset $\mathcal{D}_{300} = \{(x_i,y_i)\}_{i=1}^{300}$. The key idea of this setup is that temporal changes in model behaviour should be measured on a constant reference set rather than on newly sampled data, so that differences across time can be attributed to model behaviour rather than to changes in the evaluation sample.
+
+For each instance $x_i \in \mathcal{D}_{300}$, let
+\begin{equation}
+\hat{y}_{i,t} \in \{0,1\}
+\end{equation}
+denote the prediction of the model under evaluation at time $t$. Since the true label $y_i$ is fixed, the correctness of the prediction at time $t$ can be represented by the binary indicator
+\begin{equation}
+E_{i,t} = \mathbb{I}(\hat{y}_{i,t} = y_i),
+\end{equation}
+where $\mathbb{I}(\cdot)$ is the indicator function. Thus, $E_{i,t}=1$ means that the model classified instance $i$ correctly at time $t$, whereas $E_{i,t}=0$ means that it made an error. Unless stated otherwise, in Sections~\ref{sec:formalisation-temporal}--\ref{sec:mcnemar-section} the notation $\hat{y}_{i,t}$ and $E_{i,t}$ refers to the current deployment $m_{\mathrm{curr}}$; Section~\ref{sec:model-comparison-manual} compares several candidates $m \in \mathcal{M}$ and writes accuracy as $\hat{A}_t(m)$ explicitly.
+
+For any $m \in \mathcal{M}$, let $\hat{A}_t(m)$ denote the empirical accuracy of model $m$ on $\mathcal{D}_{300}$ at time $t$. In the drift-detection development below, the evaluated model is fixed to $m_{\mathrm{curr}}$, and we abbreviate
+\begin{equation}
+\hat{A}_t := \hat{A}_t(m_{\mathrm{curr}}) = \frac{1}{300}\sum_{i=1}^{300} E_{i,t}.
+\end{equation}
+This quantity is the fraction of correctly classified instances in the monitoring run. It provides a natural summary of aggregate predictive performance, but on its own it is not sufficient for rigorous drift detection.
+
+The reason is that the sequence $(\hat{A}_t)_{t=1}^T$ is obtained by repeatedly evaluating the \emph{same} instances. Therefore, the empirical accuracies $\hat{A}_{t_1}$ and $\hat{A}_{t_2}$ are not independent sample proportions. A standard two-sample comparison such as the two-proportion $Z$-test would incorrectly treat the observations as independent and would therefore overestimate the sampling variance. In the present setting, the dependence structure must be taken into account explicitly. This motivates the use of a paired test based on per-instance changes in correctness.
+
+\section{Classification metrics on the monitoring subset}
+\label{sec:classification-metrics}
+
+Aggregate accuracy alone can obscure error structure under class imbalance. For the positive class \emph{relevant}, let $\mathrm{TP}_t$, $\mathrm{FP}_t$, $\mathrm{TN}_t$, and $\mathrm{FN}_t$ denote the usual confusion-matrix counts on $\mathcal{D}_{300}$ at time $t$ for a given model and fixed parsing rule that maps provider outputs to $\hat{y}_{i,t}\in\{0,1\}$.
+
+\paragraph{Accuracy.}
+The empirical \textbf{accuracy} is the fraction of all instances classified correctly,
+\begin{equation}
+\widehat{\mathrm{Acc}}_t = \frac{\mathrm{TP}_t+\mathrm{TN}_t}{\mathrm{TP}_t+\mathrm{TN}_t+\mathrm{FP}_t+\mathrm{FN}_t},
+\end{equation}
+which coincides with $\hat{A}_t$ from Section~\ref{sec:formalisation-temporal}. It summarises overall correctness in one number and is the natural headline for monitoring, but it weights false positives and false negatives by class prevalence rather than by operational cost.
+
+\paragraph{Precision, recall, and F1.}
+\textbf{Precision} and \textbf{recall} decompose errors for the positive class:
+\begin{equation}
+\widehat{\mathrm{Prec}}_t = \frac{\mathrm{TP}_t}{\mathrm{TP}_t+\mathrm{FP}_t},
+\qquad
+\widehat{\mathrm{Rec}}_t = \frac{\mathrm{TP}_t}{\mathrm{TP}_t+\mathrm{FN}_t}.
+\end{equation}
+Precision answers ``when the model predicts relevant, how often is it right?''; recall answers ``of all truly relevant posts, how many did we retrieve?'' The convention is that each fraction is omitted when its denominator is zero. The \textbf{F1} score is their harmonic mean,
+\begin{equation}
+\widehat{\mathrm{F}}_{1,t} = \frac{2\,\widehat{\mathrm{Prec}}_t\,\widehat{\mathrm{Rec}}_t}{\widehat{\mathrm{Prec}}_t+\widehat{\mathrm{Rec}}_t},
+\end{equation}
+defined only when both precision and recall are defined and their sum is positive. F1 is a single balanced summary when precision--recall trade-offs matter; it penalises extreme imbalance between the two (unlike the arithmetic mean). These are \emph{threshold-based} summaries at the deployed decision rule; they complement $\hat{A}_t$ by separating false positives (irrelevant content flagged as relevant) from false negatives (relevant content missed).
+
+\paragraph{Specificity.}
+\textbf{Specificity} (true negative rate) quantifies performance on the negative class,
+\begin{equation}
+\widehat{\mathrm{Spec}}_t = \frac{\mathrm{TN}_t}{\mathrm{TN}_t+\mathrm{FP}_t},
+\end{equation}
+with the same zero-denominator convention. It measures how reliably irrelevant posts are left in the negative bucket. High specificity corresponds to few false positives among negatives; it is the natural complement to recall when a campaign is sensitive to funnel pollution.
+
+\paragraph{Balanced accuracy.}
+\textbf{Balanced accuracy} averages sensitivity and specificity,
+\begin{equation}
+\widehat{\mathrm{BA}}_t = \tfrac{1}{2}\bigl(\widehat{\mathrm{Rec}}_t + \widehat{\mathrm{Spec}}_t\bigr),
+\end{equation}
+when both are defined. Unlike raw accuracy, balanced accuracy does not inflate performance when one class dominates: a trivial majority-class predictor can score high accuracy yet low balanced accuracy on imbalanced data.
+
+\paragraph{Precision--recall curve and PR--AUC.}
+A \textbf{precision--recall curve} (PRC) plots precision against recall over a threshold sweep on scored predictions. The \textbf{area under the PRC} (PR--AUC) aggregates that curve into a single number in $[0,1]$; for skewed labels it often tracks rare-class behaviour more directly than ROC--AUC alone~\cite{googlemlcrashcourse2026roc}. The offline bar chart in Figure~\ref{fig:metrics-by-model-bars} and the numeric snapshot in Table~\ref{tab:model-metrics-snapshot} report PR--AUC where per-example scores from batch evaluation support the curve, alongside the threshold-based metrics above.
+
+In the production pipeline, API responses are primarily parsed to \emph{hard} binary labels unless a continuous score is available; obtaining full ROC or PRC curves therefore requires per-example scores or an explicit sweep over decision rules. Figure~\ref{fig:placeholder-prc} reserves space for full PRC panels once score traces are visualised per model.
+
+\begin{figure}[htbp]
+    \centering
+    \fbox{\parbox[c][0.18\textheight][c]{0.88\linewidth}{\centering\small Placeholder: per-model precision--recall curves (threshold sweep on scored outputs). Replace with exported PRC panels when per-example scores are available.}}
+    \caption{Placeholder for precision--recall curve panels per model. Not used for monitoring alerts; complements Table~\ref{tab:model-metrics-snapshot} PR--AUC when full curves are plotted.}
+    \label{fig:placeholder-prc}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{adjustbox}{max width=\linewidth,max height=0.82\textheight,center}
+    \includegraphics[width=\linewidth]{assets/metrics_by_model.png}
+    \end{adjustbox}
+    \caption{Per-model classification metrics on a fixed evaluation slice (bar length $=$ score, horizontal axis $0$--$1$). Accuracy, precision, recall, and F1 describe hard thresholded decisions; specificity and balanced accuracy stress performance on negatives and imbalance-robustness; PR--AUC summarises the precision--recall ranking when per-example scores are available from offline scoring}
+    \label{fig:metrics-by-model-bars}
+\end{figure}
+
+
+\section{Statistical Drift Detection via McNemar's Test}
+\label{sec:mcnemar-section}
+
+To formally detect temporal drift, it is more informative to analyse \emph{which instances changed status} than to compare marginal accuracies alone. In other words, the relevant signal is not simply whether the accuracy has changed, but whether instances that were previously correct have become incorrect, or vice versa.
+
+\subsection{The Contingency Table}
+
+For this purpose, the correctness indicators at two time points $t_1$ and $t_2$ are compared instance by instance. Each example in the monitoring subset falls into one of four categories:
+\begin{itemize}
+    \item correct at both times,
+    \item correct at $t_1$ but incorrect at $t_2$,
+    \item incorrect at $t_1$ but correct at $t_2$,
+    \item incorrect at both times.
+\end{itemize}
+
+Aggregating these outcomes across all $n=300$ monitored instances yields the paired $2\times2$ contingency table for $(t_1, t_2)$. The corresponding cell counts can be written directly inside the table as
+\begin{table}[htbp]
+    \centering
+    \caption{Paired $2\times2$ contingency table for correctness at times $t_1$ and $t_2$.}
+    \label{tab:mcnemar_contingency}
+    \begin{tabular}{c|p{0.35\textwidth}p{0.35\textwidth}}
+        & \centering $E_{i,t_2}=1$ & \centering $E_{i,t_2}=0$ \tabularnewline
+        \hline
+        $E_{i,t_1}=1$ 
+            & \centering $\displaystyle a = \sum_{i=1}^{300} \mathbb{I}(E_{i,t_1}=1,\; E_{i,t_2}=1)$ 
+            & \centering $\displaystyle b = \sum_{i=1}^{300} \mathbb{I}(E_{i,t_1}=1,\; E_{i,t_2}=0)$ \tabularnewline
+        $E_{i,t_1}=0$ 
+            & \centering $\displaystyle c = \sum_{i=1}^{300} \mathbb{I}(E_{i,t_1}=0,\; E_{i,t_2}=1)$ 
+            & \centering $\displaystyle d = \sum_{i=1}^{300} \mathbb{I}(E_{i,t_1}=0,\; E_{i,t_2}=0)$ \tabularnewline
+    \end{tabular}
+\end{table}
+
+These four counts partition the monitoring subset, so that
+\begin{equation}
+a+b+c+d = 300.
+\end{equation}
+
+The interpretation of the cells is as follows:
+\begin{itemize}
+    \item $a$: instances classified correctly at both time points,
+    \item $b$: instances that were correct at $t_1$ but became incorrect at $t_2$,
+    \item $c$: instances that were incorrect at $t_1$ but became correct at $t_2$,
+    \item $d$: instances classified incorrectly at both time points.
+\end{itemize}
+
+From the perspective of drift detection, the concordant counts $a$ and $d$ are not informative about temporal change, because they correspond to cases where the model's behaviour did not change. The evidence for drift is therefore concentrated in the discordant counts $b$ and $c$. In particular, $b$ captures regressions, whereas $c$ captures improvements.
+
+This decomposition also clarifies the relation between paired comparisons and aggregate accuracy at the two time points. Since
+\begin{equation}
+\hat{A}_{t_1} = \frac{a+b}{300}
+\qquad\text{and}\qquad
+\hat{A}_{t_2} = \frac{a+c}{300},
+\end{equation}
+it follows that
+\begin{equation}
+\hat{A}_{t_2} - \hat{A}_{t_1} = \frac{c-b}{300}.
+\end{equation}
+Hence, the change in accuracy is determined entirely by the imbalance between regressions and improvements. McNemar's test exploits exactly this structure.
+
+\subsection{The Test Statistic and Alerting Rule}
+
+The null hypothesis of McNemar's test states that the probability of a regression equals the probability of an improvement:
+\begin{equation}
+H_0: p_b = p_c.
+\end{equation}
+Under this null hypothesis, the model is equally likely to lose correctness on an instance as it is to gain correctness on another instance, which corresponds to the absence of systematic drift.
+
+Since the operational concern  is degradation, the relevant one-sided alternative is
+\begin{equation}
+H_a: p_b > p_c.
+\end{equation}
+This means that the model breaks more previously correct cases than it repairs previously incorrect ones.
+
+To test this hypothesis, McNemar's statistic with continuity correction is used:
+\begin{equation}
+\chi^2 = \frac{(|b-c|-1)^2}{b+c}.
+\end{equation}
+The numerator measures the imbalance between regressions and improvements, while the denominator normalises this imbalance by the total number of changed cases. The subtraction of $1$ is the continuity correction, which is commonly used to make the large-sample chi-square approximation more conservative for finite samples.
+
+The test statistic is approximately $\chi^2$-distributed with one degree of freedom when the number of discordant pairs is sufficiently large. Operationally, the monitoring pipeline raises a \textbf{Statistical Drift Alert} at time $t$ if both of the following conditions hold:
+\begin{enumerate}
+    \item \textbf{Directionality:} $b>c$, meaning that the model has deteriorated on more instances than it has improved.
+    \item \textbf{Significance:} the corresponding $p$-value is below the chosen threshold $\alpha=0.05$.
+\end{enumerate}
+The directionality condition is important because statistical significance alone does not distinguish between degradation and improvement. By requiring both $b>c$ and $p<0.05$, the alerting rule is aligned with the practical objective of detecting harmful drift rather than any change whatsoever.
+
+\subsection{Empirical Example from the Monitoring Runs}
+
+To make the above definitions concrete, Tables~\ref{tab:mcnemar_gpt5} and~\ref{tab:mcnemar_gpt5mini} show example McNemar contingency tables from two real monitoring runs on the $n=300$ subset.
+
+\begin{table}[htbp]
+    \centering
+    \caption{McNemar contingency table for \texttt{gpt-5} between 8~March~2026 and 10~March~2026 on the 300-example monitoring subset.}
+    \label{tab:mcnemar_gpt5}
+    \begin{tabular}{c|cc}
+        & 2026-03-10 correct & 2026-03-10 wrong \\
+        \hline
+        2026-03-08 correct & 291 & 0 \\
+        2026-03-08 wrong   & 0   & 9 \\
+    \end{tabular}
+\end{table}
+
+Here the discordant counts are $(b,c) = (0, 0)$, so there are no instances whose correctness changed between the two dates. McNemar's test is undefined in this degenerate case, but operationally the absence of discordant pairs already implies that no temporal drift is detectable on the monitoring subset. The corresponding dashboard view is shown earlier in Figure~\ref{fig:mcnemar-dashboard}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{McNemar contingency table for \texttt{gpt-5.1-mini} between 8~March~2026 and 10~March~2026 on the 300-example monitoring subset.}
+    \label{tab:mcnemar_gpt5mini}
+    \begin{tabular}{c|cc}
+        & 2026-03-10 correct & 2026-03-10 wrong \\
+        \hline
+        2026-03-08 correct & 269 & 13 \\
+        2026-03-08 wrong   & 7   & 11 \\
+    \end{tabular}
+\end{table}
+
+In this second example, the discordant pairs are $(b,c) = (13, 7)$, yielding McNemar's chi-square statistic with continuity correction
+\[
+    \chi^2 = \frac{(|b-c|-1)^2}{b+c} \approx 1.26
+\]
+and an exact one-sided binomial $p$-value of approximately $0.26$. Because $b>c$ but $p>0.05$, the model exhibits a numerical decrease in accuracy but the evidence is insufficient to trigger a statistical drift alert under the chosen monitoring rule.
+
+\section{Model comparison and manual deployment choice}
+\label{sec:model-comparison-manual}
+
+Once performance has been measured, candidate models must be compared on dimensions that go beyond aggregate accuracy. Section~\ref{sec:classification-metrics} defines precision, recall, and F1 on the monitoring subset; Section~\ref{sec:formalisation-temporal} defines empirical accuracy $\hat{A}_t(m)$ for any $m \in \mathcal{M}$ on $\mathcal{D}_{300}$. Let
+\begin{equation}
+C_t(m)
+\end{equation}
+denote the average inference cost of model $m$ at time $t$, measured in USD per request (derived from logged token usage and batch pricing). The dashboard surfaces $\hat{A}_t(m)$, $\widehat{\mathrm{Prec}}_t(m)$, $\widehat{\mathrm{Rec}}_t(m)$, $\widehat{\mathrm{F}}_{1,t}(m)$, and $C_t(m)$ side by side for each candidate.
+
+\textbf{Campaign-specific preferences.} Marketing campaigns differ in how costly false positives are versus false negatives. A campaign that must avoid polluting a high-value funnel may prioritise \textbf{precision} (fewer irrelevant posts classified as relevant). A campaign aimed at near-complete coverage may prioritise \textbf{recall} (fewer relevant posts missed). No single scalar ranking captures this domain variation; in the implementation described here, \textbf{model switch decisions are taken manually} by operators who weigh the reported metrics together with per-campaign tolerance and budget. A closed-form deployment utility is deliberately \emph{not} fixed in this thesis: the appropriate trade-off remains under design.
+
+\textbf{Cost.} Relative API cost remains a first-class column in the operator dashboard: a more accurate model may still be rejected if its cost multiple is unjustified for the campaign, but that judgement is documented outside a single formula. Mean USD cost per request is not part of the static export in Table~\ref{tab:model-metrics-snapshot}; it is read from the same Langfuse traces as in Section~\ref{sec:metrics-dashboard}.
+
+\begin{table}[htbp]
+    \centering
+    \footnotesize
+    \begin{adjustbox}{max width=\linewidth}
+    \input{assets/metrics_export/metrics_tabular.tex}
+    \end{adjustbox}
+    \caption{Exported snapshot of confusion counts and classification metrics per candidate model (monitoring-style evaluation)}
+    \label{tab:model-metrics-snapshot}
+\end{table}
+
+\subsection{Decision Logic for Pipeline Adaptation}
+
+The monitoring architecture follows a simple decision process after each batch evaluation:
+\begin{enumerate}
+    \item \textbf{Monitor:} compute the paired drift statistic for the currently deployed model $m_{\mathrm{curr}}$ by comparing its correctness on $\mathcal{D}_{300}$ at time $t$ against the chosen baseline time point.
+    \item \textbf{Detect:} if the McNemar test indicates significant degradation, that is, if $b>c$ and $p<0.05$, register a drift event.
+    \item \textbf{Act:} for all available candidate models $m \in \mathcal{M}$, read off $\hat{A}_t(m)$, $\widehat{\mathrm{Prec}}_t(m)$, $\widehat{\mathrm{Rec}}_t(m)$, $\widehat{\mathrm{F}}_{1,t}(m)$, and $C_t(m)$ on the monitoring subset; \textbf{select a fallback or retain the incumbent by a manual, campaign-specific decision} recorded in operations (not by an automated $\arg\max$ of a single utility).
+\end{enumerate}
+
+If no fallback is judged acceptable, the system may initiate the prompt optimisation loop described in Chapter~4, adapting the prompt before replacing the underlying model API.
+
+Overall, this methodology separates the monitoring problem into two layers. First, McNemar's test determines whether a meaningful temporal degradation has occurred. Second, \textbf{human-in-the-loop model comparison} on accuracy, precision, recall, F1, and cost determines whether and which API model to deploy for the next campaign window.
+

@@ -1,0 +1,15 @@
+model,metric,value
+gpt-4.1-mini,accuracy,0.7993311036789298
+gpt-4.1-nano,accuracy,0.7333333333333333
+gpt-4.1-mini,precision,0.9947643979057592
+gpt-4.1-nano,precision,0.956989247311828
+gpt-4.1-mini,recall,0.7630522088353414
+gpt-4.1-nano,recall,0.712
+gpt-4.1-mini,f1,0.8636363636363636
+gpt-4.1-nano,f1,0.8165137614678899
+gpt-4.1-mini,specificity,0.98
+gpt-4.1-nano,specificity,0.84
+gpt-4.1-mini,balanced_accuracy,0.8715261044176708
+gpt-4.1-nano,balanced_accuracy,0.776
+gpt-4.1-mini,pr_auc,0.9775705107284097
+gpt-4.1-nano,pr_auc,0.954494623655914
