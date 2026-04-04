@@ -1,33 +1,38 @@
 \chapter{Data and Evaluation Setup}
+\label{ch:data}
 
-\section{Formal Problem Definition}
-To evaluate model drift rigorously, we must first define the classification task within a probabilistic framework. Let $\mathcal{X} \subset \mathbb{R}^d$ denote the high-dimensional input space of social-media posts (comprising text, metadata, and visual features) and $\mathcal{Y} = \{0, 1\}$ the binary label space, where $1$ indicates relevance to a campaign. 
+This chapter specifies the classification task, the reference benchmark, construction of the fixed monitoring subset $\mathcal{D}_n$ (with $n=300$), a size rationale aligned with the McNemar procedure in Section~\ref{sec:mcnemar-section}, and the interpretation of subset-based accuracy relative to the full benchmark. Repeated evaluation over time and the operational drift test are deferred to Section~\ref{sec:formalisation-temporal}.
 
-In the context of LLM-as-a-Service, the model is a non-stationary black box. We define the classifier as a function $f(x; \pi, \theta_t) \to \hat{y} \in \{0, 1\}$, where $\pi$ is a fixed prompt and $\theta_t$ represents the hidden, time-varying model weights. 
+\section{Formal problem definition}
 
-Under the zero-one loss function $\mathcal{L}(\hat{y}, y) = \mathbb{I}(\hat{y} \neq y)$, the \textbf{Expected Risk} (or true error rate) at time $t$ is:
+Let $\mathcal{X} \subset \mathbb{R}^d$ denote the input space of social-media posts (text, metadata, visual features) and $\mathcal{Y}=\{0,1\}$ the binary label space ($1$: campaign-relevant). Under LLM-as-a-Service, the deployed classifier is a non-stationary mapping $f(x;\pi,\theta_t)\mapsto \hat{y}\in\{0,1\}$ with fixed prompt $\pi$ and provider-controlled weights $\theta_t$.
+
+Under zero--one loss $\mathcal{L}(\hat{y},y)=\mathbb{I}(\hat{y}\neq y)$, the \textbf{population risk} at time $t$ is
 \begin{equation}
-    R_t(f) = \mathbb{E}_{(x,y) \sim P_t} [\mathbb{I}(f(x; \pi, \theta_t) \neq y)]
+    R_t(f) = \mathbb{E}_{(x,y)\sim P_t}\bigl[\mathbb{I}\bigl(f(x;\pi,\theta_t)\neq y\bigr)\bigr],
 \end{equation}
-Since the true data-generating distribution $P_t$ is unknown, we must estimate this risk empirically.
+for a data-generating distribution $P_t$. The distribution $P_t$ is not observed.
 
-\section{The Reference Benchmark vs. Operational Constraints}
-Let $\mathcal{D}_N$ be the reference benchmark consisting of $N = 1199$ manually labelled examples, establishing the ground truth. Evaluating all candidate models against $\mathcal{D}_N$ yields a highly precise empirical risk $\hat{R}_N$. 
+The thesis uses a \textbf{fixed labelled benchmark} $\mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^{N}$ with $N=1199$, treated as the reference population for offline evaluation. For any fixed $t$, the \textbf{benchmark accuracy}
+\begin{equation}
+    A_N(t) = \frac{1}{N}\sum_{i=1}^{N} \mathbb{I}\bigl(f(x_i;\pi,\theta_t)=y_i\bigr)
+\end{equation}
+is the empirical fraction of correct predictions on $\mathcal{D}_N$. It is the estimand for full-benchmark runs. Unless $\mathcal{D}_N$ is a probability sample from $P_t$, $A_N(t)$ need not equal $1-R_t(f)$; the two objects are not identified from each other without additional assumptions. Subsequent sections use $A_N$ and subset accuracy as operational targets; $R_t$ motivates non-stationarity of $f(\cdot;\pi,\theta_t)$.
 
-However, running inference on $N=1199$ instances weekly across multiple candidate models is economically prohibitive. We require a monitoring subset $\mathcal{D}_n \subset \mathcal{D}_N$ of size $n \ll N$. The central mathematical challenge is to select $\mathcal{D}_n$ such that it remains highly sensitive to temporal shifts in the parameters $\theta_t$, despite the significantly reduced sample size.
-
-\section{Reference benchmark and monitoring subset}
+\section{Reference benchmark, operational constraint, and monitoring subset}
 \label{sec:input-datasets}
 
-The two sets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored as fixed Langfuse datasets sharing one schema and label column (\texttt{campaign\_relevant}). Table~\ref{tab:dataset-summary} summarises their composition.
+Full-benchmark evaluation of every candidate at high frequency is prohibitively expensive. Monitoring uses a fixed subset $\mathcal{D}_n\subset\mathcal{D}_N$ with $n\ll N$ on which the pipeline repeats inference; here $n=300$. The design goal is \emph{sensitivity} to changes in $\theta_t$, not unbiased estimation of $A_N(t)$ from $\mathcal{D}_n$ alone.
+
+The sets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored as fixed Langfuse datasets with common schema and label column (\texttt{campaign\_relevant}). Table~\ref{tab:dataset-summary} summarises composition.
 
 \begin{table}[htbp]
     \centering
-    \caption{Full reference benchmark (\texttt{campaign\_relevance\_02e1a68ccb0f}) and monitoring subset (\texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}): size, class balance, and modality composition.}
+    \caption{Full reference benchmark (\texttt{campaign\_relevance\_02e1a68ccb0f}) and monitoring subset (\texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}): size, class balance, modality composition.}
     \label{tab:dataset-summary}
     \begin{tabular}{lcc}
         \toprule
-        & \textbf{Full benchmark} & \textbf{Monitoring subset} \\
+        & \textbf{Full benchmark} & \textbf{Monitoring subset ($\mathcal{D}_n$)} \\
         \midrule
         Number of posts ($N$ / $n$) & 1199 & 300 \\
         Relevant (\texttt{campaign\_relevant}${}=1$) & 682 (56.9\%) & 250 (83.3\%) \\
@@ -40,88 +45,59 @@ The two sets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored as fixed Langfuse da
     \end{tabular}
 \end{table}
 
-Each post is tagged as an \textbf{image post} (one image) or a \textbf{video post} (several frames). Both sets are \textbf{class-imbalanced}; the subset is far more positive-heavy than $\mathcal{D}_N$ (Table~\ref{tab:dataset-summary}), which follows from disagreement-based construction (Section~\ref{sec:informative-sampling-disagreement}). Accuracy figures on $\mathcal{D}_N$ and $\mathcal{D}_n$ are not interchangeable---prevalence differs, not only sample size.
+Each post is classified as an \textbf{image post} or a \textbf{video post} (multiple frames). Both sets are class-imbalanced; $\mathcal{D}_n$ is more positive-heavy than $\mathcal{D}_N$ (Table~\ref{tab:dataset-summary}), as a consequence of disagreement-based construction (Section~\ref{sec:informative-sampling-disagreement}). Accuracy on $\mathcal{D}_N$ and on $\mathcal{D}_n$ are not comparable by magnitude alone: prevalence and difficulty mix differ.
 
-Roughly three quarters of items are \textbf{video posts} in both splits; multi-frame requests carry more multimodal tokens than single-image ones. The subset is not a stratified copy of the full benchmark: it has a slightly larger fraction of image posts (78/300 vs.\ 288/1199) but still a \textbf{higher} mean images per post (5.87 vs.\ 4.93), so monitored runs are visually heavier and costlier to repeat. Subsequent empirical sections report metrics on $\mathcal{D}_n$ only; they characterise model behaviour on this fixed disagreement subset, not a simple random replicate of $\mathcal{D}_N$'s label prevalence or its image--video mix.
+Roughly three quarters of items are video posts in both splits; multi-frame requests incur higher multimodal token cost than single-image posts. The subset is not a stratified copy of $\mathcal{D}_N$: it has a slightly larger image-post fraction yet a higher mean images per post ($5.87$ vs.\ $4.93$), so monitored runs are on average visually heavier. Empirical metrics in later chapters are reported on the fixed $\mathcal{D}_n$ unless stated otherwise.
 
-\section{Informative Sampling via Model Disagreement}
+\section{Disagreement-based subset construction}
 \label{sec:informative-sampling-disagreement}
-A simple random sample (SRS) of size $n$ would yield an unbiased estimator of $R_t$. However, the vast majority of social-media posts are "easy" instances located far from the model's decision boundary, where the conditional probability $P(Y=1|X) \approx 1$ or $0$. These instances exhibit low prediction variance and are highly robust to small parameter shifts in $\theta_t$. 
 
-To maximize the sensitivity of our monitoring subset, we abandon uniform sampling in favor of \textbf{Uncertainty Sampling}. We construct $\mathcal{D}_n$ exclusively from instances where an initial ensemble of distinct models $\mathcal{M} = \{f_1, f_2, \dots, f_K\}$ exhibited disagreement:
+A simple random sample (SRS) of size $n$ from $\mathcal{D}_N$ yields an unbiased estimator of the \textbf{benchmark accuracy} $A_N(t)$ on $\mathcal{D}_N$ viewed as a finite population (simple random sampling without replacement). It does not, without further structure, target $R_t(f)$ under unknown $P_t$. Most benchmark items are easy for a given model ensemble; they show little cross-model variance and are insensitive to small shifts in $\theta_t$.
+
+To increase sensitivity to provider-side changes, $\mathcal{D}_n$ is built from \textbf{query-by-committee} disagreement: instances on which an ensemble of distinct models disagrees. Let $\mathcal{M}_{\mathrm{ens}}=\{f^{(1)},\ldots,f^{(K)}\}$ denote $K$ models evaluated on $\mathcal{D}_N$, and let $\hat{y}_{i}^{(k)}$ denote the predicted label for item $i$ by $f^{(k)}$. Define
 \begin{equation}
-    \mathcal{D}_{n} = \{ x_i \in \mathcal{D}_{N} \mid \exists f_j, f_k \in \mathcal{M} : \hat{y}_{i,j} \neq \hat{y}_{i,k} \}
+    \mathcal{D}_{n} = \left\{ x_i \in \mathcal{D}_{N} \;\middle|\; \exists\, k,\ell:\; \hat{y}_{i}^{(k)} \neq \hat{y}_{i}^{(\ell)} \right\},
 \end{equation}
+with a fixed selection rule on this pool yielding $n=300$ instances (the implementation fixes the disagreeing pool and its size). The objective is drift sensitivity, not minimum-variance estimation of $A_N(t)$ on $\mathcal{D}_n$.
 
-The purpose of this subset is not to estimate the global benchmark accuracy as efficiently as possible. Its purpose is to improve \emph{drift sensitivity}: if provider-side changes alter the classifier, those changes should appear first and most clearly on cases that are already hard or unstable. This is a statistical rather than geometric claim.
+\subsection{Disagreement score}
 
-\subsection{Why Disagreement Cases Are Informative}
-For each benchmark item $x_i$, let
+For each $x_i\in\mathcal{D}_N$, let
 \begin{equation}
-    r_i = \frac{1}{K}\sum_{m=1}^{K} \mathbb{I}\!\left(\hat{y}_{i,m}=1\right)
+    r_i = \frac{1}{K}\sum_{k=1}^{K} \mathbb{I}\!\left(\hat{y}_{i}^{(k)}=1\right),
+    \qquad
+    d_i = 4r_i(1-r_i)\in[0,1].
 \end{equation}
-denote the empirical fraction of ensemble models predicting relevance, and define the corresponding disagreement score
-\begin{equation}
-    d_i = 4r_i(1-r_i) \in [0,1].
-\end{equation}
-The score $d_i$ is zero under complete agreement ($r_i \in \{0,1\}$) and maximal at $r_i=0.5$, where the ensemble is evenly split. Thus $d_i$ is a simple observable measure of how controversial or unstable an instance is across candidate models.
+Then $d_i=0$ under full agreement ($r_i\in\{0,1\}$) and $d_i$ is maximal at $r_i=\tfrac{1}{2}$. The score $d_i$ measures cross-model controversy on item $i$.
 
-This yields an operational justification for disagreement-based monitoring. If a future provider-side update changes the behavior of a deployed model, the probability that the item flips from correct to incorrect, or vice versa, is expected to be larger on items with high $d_i$ than on items where all models already agree. In other words, disagreement cases are selected not because they provably lie on a smooth decision manifold, but because they are empirically the cases on which small modeling differences are already visible.
+\subsection{Temporal flips as a design target}
 
-\begin{proposition}[Disagreement Increases Sensitivity to Temporal Flips]
-Let $E_{i,t}=\mathbb{I}(\hat{y}_{i,t}=y_i)$ denote correctness of the deployed model on item $i$ at time $t$, and define the flip indicator between two monitoring dates $t_1<t_2$ by
+Let $F_i(t_1,t_2)\in\{0,1\}$ indicate that the \emph{correctness} of the deployed classifier on item $i$ differs between monitoring dates $t_1<t_2$. Section~\ref{sec:formalisation-temporal} defines correctness indicators $E_{i,t}$; equivalently $F_i(t_1,t_2)=\mathbb{I}(E_{i,t_1}\neq E_{i,t_2})$ for the deployment under study.
+
+\begin{proposition}[Higher disagreement and expected flips]
+\label{prop:disagreement-flips}
+If $P(F_i(t_1,t_2)=1\mid d_i)$ is non-decreasing in $d_i$, then for every $\tau\in[0,1]$,
 \begin{equation}
-    F_i(t_1,t_2)=\mathbb{I}\!\left(E_{i,t_1}\neq E_{i,t_2}\right).
-\end{equation}
-If the flip probability $P(F_i(t_1,t_2)=1 \mid d_i)$ is non-decreasing in the disagreement score $d_i$, then for any threshold $\tau \in [0,1]$,
-\begin{equation}
-    \mathbb{E}[F_i(t_1,t_2)\mid d_i \ge \tau] \ge \mathbb{E}[F_i(t_1,t_2)\mid d_i < \tau].
+    \mathbb{E}\bigl[F_i(t_1,t_2)\mid d_i\ge \tau\bigr] \ge \mathbb{E}\bigl[F_i(t_1,t_2)\mid d_i<\tau\bigr].
 \end{equation}
 \end{proposition}
 
 \begin{proof}
-The claim follows immediately from the monotonicity assumption. Conditioning on the event $d_i \ge \tau$ shifts the distribution of $d_i$ toward larger values, and hence cannot decrease the conditional mean of $F_i(t_1,t_2)$ when the regression function $d \mapsto P(F_i(t_1,t_2)=1\mid d)$ is non-decreasing.
+Immediate from the monotonicity assumption and the fact that conditioning on $d_i\ge\tau$ shifts mass toward larger $d_i$.
 \end{proof}
 
-The proposition is intentionally modest. It does not claim that disagreement items are an unbiased sample of the population, nor that they are literally the Bayes-optimal uncertainty set. It claims only that, under a transparent monotonicity assumption, filtering toward high-disagreement cases increases the expected rate of observable temporal flips. This is exactly the quantity relevant for a paired drift test such as McNemar's test.
+The proposition is conditional: it does not assert representativeness of $\mathcal{D}_n$ for $\mathcal{D}_N$. It motivates enriching the monitoring panel with high-$d_i$ items so that paired tests (Section~\ref{sec:mcnemar-section}) encounter more discordant correctness pairs when $\theta_t$ shifts.
 
-\section{Statistical Derivation of the Sample Size}
-Because the monitoring rule is based on a paired McNemar test, the sample-size argument must be expressed in terms of \emph{discordant pairs} rather than in terms of the variance of a single Bernoulli accuracy estimate.
+\section{Monitoring subset size}
+\label{sec:monitoring-sample-size}
 
-Let $b$ denote the number of items that were correct at time $t_1$ and incorrect at time $t_2$, and let $c$ denote the number of items that were incorrect at time $t_1$ and correct at time $t_2$. McNemar's test uses only the discordant total
+Section~\ref{sec:mcnemar-section} defines discordant counts $b$ (regressions) and $c$ (improvements) between $t_1$ and $t_2$ and the McNemar statistic. For \emph{design}, let $p_b=P(E_{i,t_1}=1,E_{i,t_2}=0)$ and $p_c=P(E_{i,t_1}=0,E_{i,t_2}=1)$ under the monitoring distribution on $\mathcal{D}_n$. Write $\rho=p_b+p_c$ for the discordance probability per item and $\delta=p_b-p_c$ for directional imbalance. On $\mathcal{D}_n$,
 \begin{equation}
-    m = b+c
+    \hat{A}_{t_2}-\hat{A}_{t_1}=\frac{c-b}{n}
 \end{equation}
-and, under the null hypothesis of no directional drift, treats
-\begin{equation}
-    B \mid m \sim \mathrm{Binomial}(m,0.5),
-\end{equation}
-where $B=b$ counts the regressions among the discordant pairs.
+(see Section~\ref{sec:mcnemar-section}). Detecting a benchmark-relevant drop in accuracy of at least $\Delta_{\mathrm{acc}}=0.05$ on the panel is related to $\delta$ and $\rho$; McNemar's power rises when $\rho$ is larger (more discordant pairs for fixed $n$).
 
-The practically relevant effect is not the marginal change in accuracy alone, but the directional imbalance
-\begin{equation}
-    \delta = p_b - p_c,
-\end{equation}
-where $p_b=P(E_{i,t_1}=1,E_{i,t_2}=0)$ and $p_c=P(E_{i,t_1}=0,E_{i,t_2}=1)$. Since
-\begin{equation}
-    \hat{A}_{t_2}-\hat{A}_{t_1}=\frac{c-b}{n},
-\end{equation}
-detecting a degradation of at least $\Delta=0.05$ in accuracy corresponds to detecting
-\begin{equation}
-    \delta \ge 0.05.
-\end{equation}
-
-To connect this effect size to McNemar's test, write
-\begin{equation}
-    \rho = p_b + p_c
-\end{equation}
-for the probability that an item is discordant between the two monitoring dates. Conditional on being discordant, the probability that the discordance is a regression is
-\begin{equation}
-    \pi = \frac{p_b}{p_b+p_c} = \frac{1}{2} + \frac{\delta}{2\rho}.
-\end{equation}
-Hence McNemar's test is more powerful when the monitored subset yields more discordant pairs, that is, when $\rho$ is larger.
-
-For a one-sided test at level $\alpha$, a normal approximation to the exact binomial test gives the design requirement
+A normal-approximation sample-size requirement for a one-sided level-$\alpha$ test with power $1-\beta$ takes the form
 \begin{equation}
     n \ge \frac{1}{\rho} \left(
         \frac{
@@ -130,63 +106,34 @@ For a one-sided test at level $\alpha$, a normal approximation to the exact bino
             \pi-0.5
         }
     \right)^2,
+    \qquad
+    \pi = \frac{1}{2}+\frac{\delta}{2\rho},
 \end{equation}
-where $1-\beta$ is the desired power. This formula makes the trade-off explicit:
-\begin{itemize}
-    \item if disagreement sampling successfully raises $\rho$, the same directional drift can be detected with fewer monitored items;
-    \item if temporal flips are rare, McNemar's test has little power regardless of the nominal sample size $n$;
-    \item therefore the effective design parameter is the expected number of discordant pairs $m \approx n\rho$, not $n$ in isolation.
-\end{itemize}
+with $\pi$ the conditional probability of a regression given discordance. Plausible planning ranges $\rho\in[0.10,0.15]$ on $\mathcal{D}_n$ and $\Delta_{\mathrm{acc}}=0.05$ imply $\pi\in[0.667,0.75]$. For $(\alpha,\beta)=(0.05,0.2)$, the implied discordant count $m=n\rho$ is about $23$--$29$, hence $n\approx m/\rho\in[190,290]$. Setting $n=300$ is a conservative operational choice yielding roughly $30$--$45$ discordant pairs when $\rho$ lies in that range, sufficient for one-sided McNemar-style alerts at $\Delta_{\mathrm{acc}}\approx 0.05$ under the stated regime. This is a planning value, not a universal lower bound.
 
-To obtain an operational target, consider the practically relevant drift threshold $\Delta=0.05$ and a conventional power target of $1-\beta=0.8$ at significance level $\alpha=0.05$. On the disagreement subset, a reasonable planning regime is that roughly $10\%$ to $15\%$ of items become discordant between two monitoring dates, so $\rho \in [0.10,0.15]$. Under a $5$ percentage-point degradation, this implies
+\section{Selection bias and importance weighting}
+\label{sec:selection-bias}
+
+Because $\mathcal{D}_n$ oversamples high-$d_i$ instances, the raw subset accuracy
 \begin{equation}
-    \pi = \frac{1}{2} + \frac{0.05}{2\rho}
-    \in [0.667,0.75].
+    \hat{A}_n(t)=\frac{1}{n}\sum_{i\in\mathcal{D}_n}\mathbb{I}\bigl(\hat{y}_{i,t}=y_i\bigr)
 \end{equation}
-Substituting $(\alpha,\beta)=(0.05,0.2)$, with $z_{1-\alpha}\approx1.645$ and $z_{1-\beta}\approx0.842$, gives a required discordant count of roughly
+is generally biased for $A_N(t)$: the estimands differ. The design \emph{accepts} that bias to amplify instability where ensemble disagreement is large. Temporal shifts in provider weights $\theta_t$ are expected to surface first on such items, improving power of the paired monitor relative to a uniform $\mathcal{D}_n$.
+
+Relating $\hat{A}_n$ to $A_N$ by inverse probability weighting requires a sampling design with known inclusion probabilities $q_i=P(i\in\mathcal{D}_n)>0$ for all $i\in\mathcal{D}_N$. The implemented rule is deterministic disagreement-based selection with $q_i=0$ for many $i$; Horvitz--Thompson (HT) recovery of $A_N$ from $\mathcal{D}_n$ alone is therefore not defined.
+
+\subsection{Horvitz--Thompson estimator under a positive design}
+
+If, hypothetically, $S_i\in\{0,1\}$ indicated inclusion with known $q_i>0$ for all $i=1,\ldots,N$, then
 \begin{equation}
-    m = n\rho \approx 23 \text{ to } 29.
+    \hat{A}_{\mathrm{HT}}(t) = \frac{1}{N}\sum_{i=1}^{N} \frac{S_i\,\mathbb{I}(\hat{y}_{i,t}=y_i)}{q_i}
 \end{equation}
-This translates into a total monitoring size of roughly
-\begin{equation}
-    n \approx \frac{m}{\rho} \in [190,290].
-\end{equation}
+is unbiased for $A_N(t)$ over the sampling design, with $\hat{y}_{i,t}$ fixed at $t$.
 
-On this basis, setting the monitoring subset size to $n=300$ is defensible as a conservative design choice: it is large enough to deliver around $30$--$45$ discordant pairs when $\rho$ lies in the intended operating range, which is sufficient for a one-sided McNemar alert to detect a degradation of about $5$ percentage points with usable power. The number $300$ should therefore be interpreted as a practical planning value under an assumed discordance regime, not as a universal mathematical minimum.
-
-\section{The Role of Selection Bias and Importance Weighting}
-
-Because $\mathcal{D}_{300}$ intentionally over-represents high-disagreement cases, the empirical accuracy calculated directly on this subset, $\hat{A}_n$, is generally a \textbf{biased estimator} of the global population accuracy $A_N$. In practice, one expects these items to be harder than a uniform sample from the full benchmark, so the subset accuracy will often be lower than the full-benchmark accuracy, but the sign and magnitude of that bias are empirical rather than universal mathematical facts.
-
-In standard statistical evaluation, selection bias is viewed as a flaw to be corrected. In the context of our drift monitoring framework, however, this bias is an operational requirement. We track the biased metric $\hat{A}_n$ because it isolates the exact region of the input space where temporal parameter shifts ($\Delta \theta_t$) manifest most strongly, thereby maximizing the statistical power of the alerting rule.
-
-Nevertheless, it is useful to relate this heavily biased subset to the full reference benchmark, rather than treating it as an arbitrary collection of hard cases. The relevant statistical language here is \textbf{importance weighting}: Horvitz--Thompson (HT) estimation of $A_N$ is defined for sampling designs in which inclusion is random with \emph{known} probabilities $q_i=P(S_i=1)$ that are strictly positive for every benchmark item ($q_i>0$ for all $i$). Only in that setting do inverse-probability weights $1/q_i$ map a biased sample back to the uniform population measure on the benchmark.
-
-\subsection{The Horvitz--Thompson Link}
-For a benchmark of size $N$, consider the classical setup in which $S_i \in \{0, 1\}$ indicates inclusion of the $i$-th reference instance and the design specifies known inclusion probabilities $q_i=P(S_i=1)$ with $q_i>0$ for all $i=1,\dots,N$. Then the global accuracy $A_N$ can be \emph{estimated unbiasedly} from the observed sample using the \textbf{Horvitz--Thompson (HT) estimator}:
-\begin{equation}
-    \hat{A}_{HT} = \frac{1}{N} \sum_{i=1}^{N} \frac{S_i \cdot \mathbb{I}(\hat{y}_i = y_i)}{q_i} = \frac{1}{N} \sum_{i \in \mathcal{D}_n} \frac{\mathbb{I}(\hat{y}_i = y_i)}{q_i}
-\end{equation}
-
-Here, the inverse probability $1/q_i$ acts as an importance weight that maps the biased sampling design back to the uniform population measure on the benchmark, \emph{provided} the positivity condition holds for every unit.
-
-\begin{proof}[Proof of Unbiasedness under a positive-probability design]
-Under the stated sampling mechanism, to show that $\hat{A}_{HT}$ is unbiased for the global accuracy $A_N$, we take its expectation over the design:
-\begin{equation}
-    \mathbb{E} [\hat{A}_{HT}] = \mathbb{E} \left[ \frac{1}{N} \sum_{i=1}^{N} \frac{S_i \cdot \mathbb{I}(\hat{y}_i = y_i)}{q_i} \right]
-\end{equation}
-By the linearity of expectation, and noting that the true labels and model predictions at a fixed time $t$ are deterministic with respect to the sampling mechanism:
-\begin{equation}
-    \mathbb{E} [\hat{A}_{HT}] = \frac{1}{N} \sum_{i=1}^{N} \frac{\mathbb{I}(\hat{y}_i = y_i)}{q_i} \mathbb{E}[S_i]
-\end{equation}
-Since $S_i$ is a Bernoulli random variable, its expected value is exactly its probability of occurrence, $\mathbb{E}[S_i] = q_i$. Substituting this yields:
-\begin{equation}
-    \mathbb{E} [\hat{A}_{HT}] = \frac{1}{N} \sum_{i=1}^{N} \frac{\mathbb{I}(\hat{y}_i = y_i)}{q_i} \cdot q_i = \frac{1}{N} \sum_{i=1}^{N} \mathbb{I}(\hat{y}_i = y_i) = A_N
-\end{equation}
+\begin{proof}
+$\mathbb{E}[\hat{A}_{\mathrm{HT}}(t)] = \frac{1}{N}\sum_i \mathbb{I}(\hat{y}_{i,t}=y_i)\,\mathbb{E}[S_i]/q_i = A_N(t)$.
 \end{proof}
 
-\subsection{Operational Utility: Signal Amplification}
-The HT construction above applies to random designs with $q_i>0$ across the full benchmark. The monitoring pipeline implemented in this thesis \emph{deliberately} uses a different rule: the subset is built deterministically from model--model disagreement (with a fixed-size selection among those cases), so agreement cases are excluded by construction and their operational inclusion probability is effectively zero. Horvitz--Thompson weights $1/q_i$ are therefore undefined for the bulk of the population under this design, and the disagreement subset alone does not support reconstruction of global accuracy $A_N$. To report $A_N$ alongside the same deployment, one would add a separate probabilistic component---for example a small simple random sample (SRS) from the full benchmark in addition to the uncertainty-focused subset---so that positive, known inclusion probabilities attach to all units of interest.
+\subsection{Monitoring objective}
 
-For monitoring, we prioritize the high-gain signal $\hat{A}_n$: the operational loop reports raw empirical accuracy on the disagreement subset rather than an HT-style estimate, because the objective is drift sensitivity, not population-level recovery of $A_N$. The rationale is rooted in \textbf{Signal-to-Noise Ratio (SNR) optimization}. Where applicable, importance weights $1/q_i$ smooth toward the global mean---appropriate for population estimation but diluting boundary errors that matter for \textbf{anomaly detection}. By using the raw subset metric, we preserve magnification of instability where the model is least stable. Thus $\hat{A}_n$ serves as a leading indicator of drift; it is not an unbiased estimator of $A_N$, and it is not HT-based recovery of full-benchmark performance, because the implemented system is not an HT-eligible design.
-
+HT-style weighting reweights toward the benchmark mean; for anomaly detection on a fixed panel, the thesis uses unweighted $\hat{A}_n(t)$ and related confusion-based metrics on $\mathcal{D}_n$ (Section~\ref{sec:classification-metrics}) as \emph{leading indicators} of drift, not as HT estimates of $A_N(t)$. If unbiased estimation of $A_N(t)$ alongside drift monitoring were required, one would add a separate random component (e.g.\ SRS from $\mathcal{D}_N$) with positive $q_i$ on all items of interest.

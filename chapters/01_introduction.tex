@@ -55,11 +55,11 @@ content of the post (text, metadata, and video frames).
   },
   {
     "role": "user",
-    "content": "Transcription: ..."
+    "content": "Hashtags: []"
   },
   {
     "role": "user",
-    "content": "Hashtags: []"
+    "content": "Transcription: ..."
   },
   {
     "role": "user",
@@ -94,6 +94,3 @@ The system prompt defines the classification criteria and the list of campaign
 brands. The user messages contain the multimodal content of the post,
 including captions, transcriptions, hashtags, and selected video frames. Figure~\ref{fig:payload-mapping} illustrates how the request combines instructions, textual content, and image inputs into one provider-facing payload. Results are restricted to binary response of is this post relevant or not to the requested topic.
 Section~\ref{sec:input-datasets} gives sizes, label mix, and modality statistics for the fixed Langfuse benchmarks used in evaluation.
-
-
-To evaluate model drift rigorously, we must first define the classification task within a probabilistic framework. 
