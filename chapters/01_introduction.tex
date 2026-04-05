@@ -37,7 +37,7 @@ The problem stated above is investigated through the following research question
 
 
 \section{Task Definition}
-\subsection{What do we do?}
+\subsection{Classification task}
 At a high level, the production pipeline takes each incoming social-media post and asks an LLM whether the content is relevant to a given marketing campaign. The model sees a structured description of the campaign (brands, slogans, product lines) together with the post's text, hashtags, and selected video frames, and must decide if at least one of the campaign entities is mentioned, visually present (e.g.\ logo), or otherwise clearly implied. The LLM returns a binary decision for every post in the batch, which is then used downstream for filtering and reporting.
 \subsection{Example LLM Request Payload}
 
@@ -92,5 +92,5 @@ content of the post (text, metadata, and video frames).
 
 The system prompt defines the classification criteria and the list of campaign
 brands. The user messages contain the multimodal content of the post,
-including captions, transcriptions, hashtags, and selected video frames. Figure~\ref{fig:payload-mapping} illustrates how the request combines instructions, textual content, and image inputs into one provider-facing payload. Results are restricted to binary response of is this post relevant or not to the requested topic.
+including captions, transcriptions, hashtags, and selected video frames. Figure~\ref{fig:payload-mapping} illustrates how the request combines instructions, textual content, and image inputs into one provider-facing payload. The model output is restricted to a binary relevance decision.
 Section~\ref{sec:input-datasets} gives sizes, label mix, and modality statistics for the fixed Langfuse benchmarks used in evaluation.

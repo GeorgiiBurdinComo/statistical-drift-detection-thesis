@@ -4,13 +4,12 @@
 \section{Transient versus sustained degradation}
 \label{sec:transient-provider-degradation}
 
-A drop in monitored accuracy does not necessarily indicate a permanent model failure. In practice, we observed cases where model performance temporarily degraded due to provider-side factors such as routing changes or infrastructure issues. For example, GPT-4.1 Mini experienced a significant drop in performance—falling even below Nano-level quality—on March 22--23, before recovering to its previous level after a few days.
+A statistically significant accuracy drop on $\mathcal{D}_n$ does not necessarily indicate a permanent change in model behaviour. Between 22 and 23~March~2026, \texttt{gpt-4.1-mini} exhibited subset accuracy below that of \texttt{gpt-4.1-nano}, yet returned to its prior level within two days without any intervention. Because the affected model was not in active deployment at the time, no corrective action was required.
 
-In our case, this did not require intervention since the affected model was not in active use. However, this highlights a non-obvious but important phenomenon: short-term degradation can resolve without action. Therefore, when a production model shows performance decline, it may be reasonable to first switch to a fallback model while continuing to monitor, anticipating possible recovery. Only if the degradation persists should more permanent prompt optimization be considered.
+This episode motivates a distinction between \emph{transient} and \emph{sustained} degradation. A transient drop may resolve autonomously, whereas sustained degradation warrants either a model switch or prompt optimisation (Chapter~\ref{ch:prompt-optimisation}). In the monitoring protocol, the recommended response to an initial alert is therefore to switch to a fallback model and continue observing; prompt optimisation is triggered only if the regression persists across multiple evaluation windows.
 
-Figure~\ref{fig:gpt41mini-transient-pit} shows real dashboard output on \(\mathcal{D}_n\) for
-8--28~March~2026. The figure illustrates this kind of transient behaviour:
-\texttt{gpt-4.1-mini} drops below a cheaper model \texttt{gpt-4.1-nano} for a short period at the 22nd and 23rd of March and later recovers
+Figure~\ref{fig:gpt41mini-transient-pit} shows the dashboard output on $\mathcal{D}_n$ for
+8--28~March~2026. \texttt{gpt-4.1-mini} temporarily falls below \texttt{gpt-4.1-nano} on 22--23~March before recovering.
 
 % Image is not versioned in this repository; place the export next to the thesis root if missing.
 \IfFileExists{assets/gpt41mini-accuracy-pit-2026-03.png}{%

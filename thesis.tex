@@ -45,15 +45,24 @@ Therefore, a framework is needed that can:
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Bibliography
 \usepackage[backend=bibtex,bibstyle=ieee,citestyle=numeric-comp,natbib=true,sorting=none,dashed=false]{biblatex}
+\usepackage{xcolor}
 \usepackage{bm}
 \usepackage{listings}
 \usepackage{graphicx}
 \usepackage{xurl}
 \usepackage{tikz}
-\usetikzlibrary{positioning,arrows.meta,calc,fit}
+\usetikzlibrary{positioning,arrows.meta,calc,fit,shapes.geometric}
+\usepackage[edges]{forest}
 \usepackage{float}
 \usepackage{placeins}
 \usepackage{adjustbox}
+% Preamble
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{ragged2e}
+\usepackage{array}
+
+
 
 \tikzset{
   figbox/.style={
@@ -80,6 +89,16 @@ Therefore, a framework is needed that can:
     ->,
     thick,
     >=Latex
+  },
+  figdiamond/.style={
+    draw,
+    diamond,
+    aspect=2.4,
+    align=center,
+    font=\footnotesize,
+    inner sep=1pt,
+    minimum width=22mm,
+    minimum height=11mm
   }
 }
 % already loaded above with 'fit'
@@ -90,6 +109,8 @@ Therefore, a framework is needed that can:
 \theoremstyle{plain}
 \newtheorem{assumption}{Assumption}
 \newtheorem{proposition}{Proposition}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
 
 \input{assets/metrics_export/metrics_macros.tex}
 

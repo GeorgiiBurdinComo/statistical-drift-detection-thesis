@@ -14,53 +14,9 @@ The implemented system separates three concerns: (i) dataset storage and stable 
     \item \textbf{Trace and reporting layer:} Langfuse holds traces and scores; exported CSV snapshots are committed under \texttt{streamlit\_app/} in the main evaluation repository and mirrored to the private Streamlit deployment repository, so the dashboard does not query Langfuse on every page load in the default path.
 \end{itemize}
 
-Figure~\ref{fig:workflow-swimlane} summarizes orchestration across GitHub Actions, provider batch APIs, Langfuse, and the reporting path. Figure~\ref{fig:overall-system-architecture} gives a complementary repository-level diagram.
-
-\begin{figure}[H]
-    \centering
-    \begin{adjustbox}{max width=\textwidth}
-    \begin{tikzpicture}[
-    node distance=4mm and 7mm,
-    lbl/.style={font=\scriptsize\bfseries, anchor=east, text width=16mm, align=right}
-    ]
-    \node[lbl] (L1) at (0,0) {GitHub Actions};
-    \node[figbox, right=9mm of L1] (g1) {\scriptsize Submit\\\texttt{run\_eval.py}};
-    \node[figbox, right=of g1] (g2) {\scriptsize Retrieve\\\texttt{poll\_and\_ingest.py}};
-    \node[figbox, right=of g2] (g3) {\scriptsize Sync\\\texttt{export\_langfuse\_csv.py}};
-    \draw[figarrow] (g1) -- (g2);
-    \draw[figarrow] (g2) -- (g3);
-
-    \node[lbl] (L2) at (0,-1.9) {Providers};
-    \node[figbox, right=9mm of L2] (p1) {\scriptsize Batch APIs\\OpenAI / Gemini / Claude};
-    \node[figbox, right=of p1] (p2) {\scriptsize Raw\\JSONL outputs};
-
-    \node[lbl] (L3) at (0,-3.8) {Langfuse};
-    \node[figbox, right=9mm of L3] (lf1) {\scriptsize Datasets};
-    \node[figbox, right=of lf1] (lf2) {\scriptsize Traces\\\& scores};
-
-    \node[lbl] (L4) at (0,-5.7) {Reporting};
-    \node[figbox, right=9mm of L4] (r1) {\scriptsize CSV commit to\\\texttt{llm-batch-eval}};
-    \node[figbox, right=of r1] (r2) {\scriptsize Mirror to private\\\texttt{llm-eval-dashboard}};
-    \node[figbox, right=of r2] (r3) {\scriptsize Hosted\\Streamlit app};
-
-    \draw[figarrow] (p1) -- (p2);
-    \draw[figarrow] (lf1) -- (lf2);
-    \draw[figarrow] (r1) -- (r2);
-    \draw[figarrow] (r2) -- (r3);
-    \end{tikzpicture}
-    \end{adjustbox}
-    \caption{Orchestration swimlane (conceptual): scheduled jobs chain submit, retrieve or ingest, and CSV export; provider APIs return batch outputs ingested into Langfuse; exported dashboard artifacts are committed to the evaluation repository, mirrored to the private dashboard repository, and served there by the hosted Streamlit application.}
-    \label{fig:workflow-swimlane}
-\end{figure}
+Figure~\ref{fig:ga-weekly-pipelines} (Section~\ref{sec:batch-process}) diagrams the three scheduled workflows, UTC times, and main scripts; Table~\ref{tab:artifact-inventory} summarizes artifacts and handoffs.
 
 The key architectural decision is the separation between one-time subset construction and repeated monitoring. A manual full-benchmark run on \(N=1199\) labelled examples is used once to define the disagreement-based subset, whereas the recurring weekly loop operates only on the fixed \(n=300\) monitoring set. This keeps repeated evaluation inexpensive while preserving paired comparability across time.
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{assets/System Architecture.png}
-    \caption{Repository-level view: Langfuse stores datasets and ingested traces; scheduled GitHub Actions run batch scripts; monitoring analytics are exported as CSV artifacts in the main evaluation repository and mirrored to the private Streamlit dashboard repository for hosting.}
-    \label{fig:overall-system-architecture}
-\end{figure}
 
 The same architecture therefore supports two run types:
 \begin{itemize}
@@ -97,6 +53,13 @@ After each run, outputs are written back into Langfuse as traces. Each trace sto
 
 The orchestrator \texttt{run\_eval.py} loads the eval subset, optionally ensures Gemini image uploads when any Gemini model is selected, dispatches each model to the corresponding \texttt{batch\_*.py} adapter, and writes a run manifest \texttt{data/batch\_ids.json} containing \texttt{run\_id}, \texttt{subset\_size}, and per-model batch identifiers. Between runs the workspace may clear \texttt{data/results/} before submission. Scheduled monitoring uses three GitHub Actions workflows (all times UTC): \textbf{Friday 05:00} submit batches; \textbf{Monday 05:00} poll, download, and ingest; \textbf{Monday 07:00} export Langfuse traces and scores to CSV under \texttt{streamlit\_app/}, commit those CSV snapshots back to the main evaluation repository \texttt{gocomo/llm-batch-eval}, and then mirror the full \texttt{streamlit\_app/} tree to the separate private dashboard repository \texttt{GeorgiiBurdinComo/llm-eval-dashboard}. The submit job saves \texttt{data/batch\_ids.json} to the Actions cache under a key derived from the submit run id; the retrieve job restores the latest matching cache entry so the retrieve workflow does not depend on downloading the submit workflow's artifact by name.
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{assets/fig-5-3-ga-pipeline.png}
+    \caption{Scheduled GitHub Actions pipelines for monitoring: \texttt{weekly\_drift\_monitoring.yml} submits batches via \texttt{run\_eval.py} (Friday 05:00 UTC); \texttt{weekly\_retrieve.yml} restores \texttt{data/batch\_ids.json}, runs \texttt{poll\_and\_ingest.py} and \texttt{ingest.py} for Langfuse traces and scores (Monday 05:00 UTC); \texttt{sync-streamlit-dashboard.yml} runs \texttt{export\_langfuse\_csv.py}, commits CSVs to \texttt{llm-batch-eval}, and mirrors \texttt{streamlit\_app/} to the private dashboard repository (Monday 07:00 UTC).}
+    \label{fig:ga-weekly-pipelines}
+\end{figure}
+
 Chronologically, one evaluation cycle consists of:
 \begin{enumerate}
     \item load the target split via the dataset loader (Langfuse dataset or CSV);
@@ -108,52 +71,7 @@ Chronologically, one evaluation cycle consists of:
     \item on a separate schedule, export Langfuse data to committed CSVs for the dashboard.
 \end{enumerate}
 
-This split reflects asynchronous provider batch semantics: submission, retrieval or ingestion, and dashboard synchronization are decoupled because results are not available immediately after submission. Figure~\ref{fig:weekly-monitoring-loop} shows the weekly schedule and main artifacts; Figure~\ref{fig:artifact-flow} shows the data artifact chain.
-
-\begin{figure}[H]
-    \centering
-    \begin{adjustbox}{max width=0.92\textwidth}
-    \begin{tikzpicture}[
-    node distance=8mm and 18mm
-    ]
-    
-    \node[figbox] (submitTime) {Friday\\05{:}00 UTC};
-    \node[figbox, below=of submitTime] (submitWf) {Github\\Workflow\\Submit\\Drift\\Monitoring};
-    \node[figbox, below=of submitWf] (runEval) {Repository\\Batch\\Scripts};
-    \node[figbox, below=of runEval] (batchIds) {Batch IDs\\\texttt{data/batch\_ids.json}};
-    
-    \node[figbox, right=32mm of submitTime] (retrieveTime) {Monday\\05{:}00 UTC};
-    \node[figbox, below=of retrieveTime] (retrieveWf) {Github\\Workflow\\Retrieve\\\& Ingest};
-    \node[figbox, below=of retrieveWf] (pollIngest) {Poll\\\& Download\\Results};
-    \node[figbox, below=of pollIngest] (results) {Result Files\\\texttt{data/results/*.jsonl}};
-    \node[figbox, below=of results] (traces) {Ingest\\Langfuse\\Traces\\/ Scores};
-    
-    \node[figbox, right=32mm of retrieveTime] (syncTime) {Monday\\07{:}00 UTC};
-    \node[figbox, below=of syncTime] (syncWf) {Github\\Workflow\\Sync\\Dashboard};
-    \node[figbox, below=of syncWf] (exportCsv) {Commit CSVs to\\\texttt{llm-batch-eval}};
-    \node[figbox, below=of exportCsv] (dashboard) {Mirror\\\texttt{streamlit\_app/} to\\private \texttt{llm-eval-dashboard}};
-    
-    \draw[figarrow] (submitTime) -- (submitWf);
-    \draw[figarrow] (submitWf) -- (runEval);
-    \draw[figarrow] (runEval) -- (batchIds);
-    
-    \draw[figarrow] (retrieveTime) -- (retrieveWf);
-    \draw[figarrow] (retrieveWf) -- (pollIngest);
-    \draw[figarrow] (pollIngest) -- (results);
-    \draw[figarrow] (results) -- (traces);
-    
-    \draw[figarrow] (syncTime) -- (syncWf);
-    \draw[figarrow] (syncWf) -- (exportCsv);
-    \draw[figarrow] (exportCsv) -- (dashboard);
-    
-    \draw[figarrow] (batchIds) -- (retrieveWf);
-    \draw[figarrow] (traces) -- (syncWf);
-    
-    \end{tikzpicture}
-    \end{adjustbox}
-    \caption{Weekly schedule (UTC): submit on Friday; retrieve, poll, and ingest on Monday morning; then commit exported CSV snapshots to the main evaluation repository and mirror the Streamlit application to the separate private dashboard repository two hours later. \texttt{data/batch\_ids.json} is passed from submit to retrieve via the Actions cache.}
-    \label{fig:weekly-monitoring-loop}
-\end{figure}
+This split reflects asynchronous provider batch semantics: submission, retrieval or ingestion, and dashboard synchronization are decoupled because results are not available immediately after submission.
 
 The concrete set of monitored models and token prices used for cost accounting is defined in \texttt{config/models.yaml} and summarized in Table~\ref{tab:monitored-models}.
 
@@ -166,9 +84,9 @@ The concrete set of monitored models and token prices used for cost accounting i
 \textbf{Provider} & \textbf{Models} \\
 \midrule
 OpenAI   & \texttt{gpt-5.4-2026-03-05}, \texttt{gpt-5.2}, \texttt{gpt-5.1}, \texttt{gpt-5}, \\
-         & \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, \texttt{gpt-4.1-mini}, \texttt{gpt-4.1-nano} \\
-Gemini   & \texttt{gemini-2.5-flash}\\
-Claude   & \texttt{claude-sonnet-4-6}, \texttt{claude-sonnet-4-5}, \texttt{claude-haiku-4-5} \\
+         & \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, \texttt{gpt-4.1-mini}, \texttt{gpt-4.1-nano}. \\
+Gemini   & \texttt{gemini-2.5-flash}. \\
+Claude   & \texttt{claude-sonnet-4-6}, \texttt{claude-sonnet-4-5}, \texttt{claude-haiku-4-5}. \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -243,57 +161,55 @@ Across all three providers, the parsed prediction is aligned with the same minim
 \subsection{Artifacts and cross-step data flow}
 \label{sec:artifacts-data-flow}
 
-Table~\ref{tab:artifact-inventory} lists the main files and stores. Figure~\ref{fig:artifact-flow} shows how they chain from dataset rows to dashboard inputs.
+Table~\ref{tab:artifact-inventory} lists the main artifacts with their provenance (who writes them and where they persist) and their downstream use in the pipeline.
 
+
+
+% Table
 \begin{table}[htbp]
 \centering
 \footnotesize
 \caption{Main artifacts and handoffs in the evaluation pipeline.}
 \label{tab:artifact-inventory}
-\begin{adjustbox}{max width=\linewidth}
-\begin{tabular}{p{2.7cm}p{2.2cm}p{2.2cm}p{2.1cm}p{3.2cm}}
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{\linewidth}{@{}L{3.6cm}Y Y@{}}
 \toprule
-\textbf{Artifact} & \textbf{Producer} & \textbf{Consumer} & \textbf{Storage} & \textbf{Purpose} \\
+\textbf{Artifact} & \textbf{Provenance} & \textbf{Downstream} \\
 \midrule
-\texttt{data/batch\_ids.json} & \texttt{run\_eval.py} & \texttt{poll\_and\_ingest.py} & Actions cache + workspace & Run manifest (batch ids per model) \\
-\texttt{batches/*.jsonl} & \texttt{batch\_*.py} & Provider batch APIs & Repository & Provider batch inputs \\
-\texttt{data/gemini\_image\_cache.json} & \texttt{upload\_gemini\_images.py} & \texttt{batch\_gemini.py} & Repository & URL to Files API URI \\
-\texttt{data/results/*.jsonl} & Provider download & Ingestion & Workspace & Raw outputs \\
-Langfuse traces \& scores & Ingestion & Export, app & Langfuse cloud & Join keys, tags, metrics \\
-\texttt{langfuse\_*.csv} & Export script & Hosted Streamlit app & \texttt{streamlit\_app/} in \texttt{llm-batch-eval}, then mirrored to \texttt{llm-eval-dashboard} & Dashboard snapshots \\
+
+\texttt{data/batch\_ids.json} &
+Produced by \texttt{run\_eval.py}; stored in the GitHub Actions cache and workspace. &
+Used by \texttt{poll\_and\_ingest.py} to poll provider batches until completion. The manifest records batch identifiers per model for the run. \\
+
+\texttt{batches/openai\_\{model\}.jsonl}\\
+\texttt{batches/claude\_\{model\}\_input.jsonl}\\
+\texttt{batches/gemini\_\{model\}.jsonl} &
+Produced by \texttt{batch\_openai.py}, \texttt{batch\_claude.py}, and \texttt{batch\_gemini.py}; stored under \texttt{batches/}. &
+Submitted to the OpenAI, Anthropic, and Gemini batch APIs. Each JSONL line corresponds to one evaluation request. \\
+
+\texttt{data/gemini\_image\_cache.json} &
+Produced by \texttt{upload\_gemini\_images.py}; stored in the repository. &
+Read by \texttt{batch\_gemini.py} when assembling Gemini batch inputs, mapping remote image URLs to uploaded Files API URIs. \\
+
+\texttt{data/results/}\newline
+\texttt{\{provider\}\_\{model\}.jsonl} &
+Downloaded from provider batch APIs; stored under \texttt{data/results/}. &
+Consumed by the ingestion step, which normalizes outputs and writes Langfuse traces and scores. \\
+
+Langfuse traces and scores &
+Produced by ingestion; stored in Langfuse cloud. &
+Read by \texttt{export\_langfuse\_csv.py} and by the Streamlit application for joins, tags, and derived metrics. \\
+
+\texttt{langfuse\_traces.csv}\\
+\texttt{langfuse\_scores.csv} &
+Produced by \texttt{export\_langfuse\_csv.py}; stored under \texttt{streamlit\_app/} in \texttt{llm-batch-eval} and mirrored to the private \texttt{llm-eval-dashboard} repository. &
+Loaded by the hosted Streamlit dashboard so routine views use committed snapshots rather than live Langfuse API calls. \\
+
 \bottomrule
-\end{tabular}
-\end{adjustbox}
+\end{tabularx}
 \end{table}
 
-\begin{figure}[H]
-    \centering
-    \begin{adjustbox}{max width=\textwidth}
-    \begin{tikzpicture}[
-    node distance=2mm
-    ]
-    \node[figboxsmall] (reference) {Langfuse\\or CSV\\rows};
-    \node[figboxsmall, right=of reference] (load) {\texttt{load\_dataset}};
-    \node[figboxsmall, right=of load] (submit) {\texttt{run\_eval}};
-    \node[figboxsmall, right=of submit] (ids) {\texttt{batch\_ids}\\\texttt{.json}};
-    \node[figboxsmall, right=of ids] (raw) {Raw\\\texttt{results/}};
-    \node[figboxsmall, right=of raw] (traces) {Langfuse\\traces};
-    \node[figboxsmall, right=of traces] (csv) {CSV in\\\texttt{llm-batch-eval}};
-    \node[figboxsmall, right=of csv] (mirror) {Mirror to\\private repo};
-    \node[figboxsmall, right=of mirror] (dash) {Hosted\\Streamlit};
-    \draw[figarrow] (reference) -- (load);
-    \draw[figarrow] (load) -- (submit);
-    \draw[figarrow] (submit) -- (ids);
-    \draw[figarrow] (ids) -- (raw);
-    \draw[figarrow] (raw) -- (traces);
-    \draw[figarrow] (traces) -- (csv);
-    \draw[figarrow] (csv) -- (mirror);
-    \draw[figarrow] (mirror) -- (dash);
-    \end{tikzpicture}
-    \end{adjustbox}
-    \caption{Artifact flow: normalized dataset rows drive batch submission and a manifest; retrieved JSONL is ingested into Langfuse; paginated API export produces CSV snapshots in the main evaluation repository, which are then mirrored to the private dashboard repository that serves the hosted Streamlit application.}
-    \label{fig:artifact-flow}
-\end{figure}
 
 \subsection{Ingestion, Scoring, and Exports}
 \label{sec:metrics-dashboard}
@@ -322,7 +238,7 @@ From \texttt{error\_type}, precision, recall, and F1 are computed per run on $\m
 
 The Streamlit dashboard does not query Langfuse on every interaction in the default path. The synchronization workflow runs \texttt{export\_langfuse\_csv.py}, which paginates the Langfuse public API for traces and scores over a configured time window, flattens nested fields, retains columns used by the app, and writes \texttt{streamlit\_app/langfuse\_traces.csv} and \texttt{langfuse\_scores.csv}. Those files are committed to the main evaluation repository \texttt{gocomo/llm-batch-eval}; the same workflow then mirrors \texttt{streamlit\_app/} to the private dashboard repository \texttt{GeorgiiBurdinComo/llm-eval-dashboard}, from which the hosted Streamlit application is served. This keeps analytics reproducible and avoids embedding long-lived Langfuse credentials in the hosted app.
 
-The dashboard exposes three main tabs. The overview tab shows per-model accuracy over time together with aggregated cost summaries from \texttt{cost\_usd}; the McNemar tab reports paired contingency tables and exact p-values for selected run pairs; and the utility-function tab combines accuracy and cost through a tunable penalty parameter $\lambda$ to support deployment trade-off analysis. Screenshots of the paired-drift and metric--cost or utility views are in Sections~\ref{sec:drift-results} and~\ref{sec:cost-aware-comparison}.
+The dashboard exposes three main tabs. The overview tab shows per-model accuracy over time together with aggregated cost summaries from \texttt{cost\_usd}; the McNemar tab reports paired contingency tables and exact p-values for selected run pairs; and the utility-function tab combines accuracy and cost through the expected-cost formulation $E_t[\mathcal{C}](m)$ (Section~\ref{sec:deployment-utility}) to support deployment trade-off analysis. Paired drift and metric--cost analyses are reported numerically in Sections~\ref{sec:drift-results} and~\ref{sec:cost-aware-comparison}.
 
 Exported CSVs also feed notebooks for inspection beyond the dashboard.
 \FloatBarrier
@@ -339,34 +255,36 @@ The empirical results are reported in four parts: the instantiated monitoring su
     \begin{adjustbox}{max width=0.92\textwidth}
     \begin{tikzpicture}[
     >=Latex,
-    node distance=10mm and 16mm
+    node distance=9mm and 14mm
     ]
     
     \node[figbox] (baseline) {Baseline\\Run\\Metrics};
     \node[figbox, right=of baseline] (newrun) {New\\Run\\Metrics};
+    \node[figbox, below=11mm of $(baseline)!0.5!(newrun)$] (drift) {DriftTest\\McNemar on fixed\\300-example subset};
     
-    \node[figbox, below=of newrun] (drift) {DriftTest\\McNemar on fixed\\300-example subset};
+    \node[figbox, left=24mm of drift] (deploy) {Deploy\\Current\\Setup};
+    \node[figbox, right=24mm of drift] (metriccost) {Compare\\metrics + cost};
     
-    \node[figbox, left=25mm of drift] (deploy) {Deploy\\Current\\Setup};
-    \node[figbox, right=25mm of drift] (metriccost) {Compare\\metrics + cost\\};
-    
-    \node[figbox, below=of metriccost] (decision) {Decision\\Node};
-    \node[figbox, left=of decision] (switch) {Switch\\Model};
-    \node[figbox, right=of decision] (gepa) {Run\\GEPA};
-    \node[figbox, below=of gepa] (reeval) {Re\\Evaluate};
+    \node[figdiamond, below=9mm of metriccost] (decision) {Choose\\corrective\\action};
+    \node[figbox, below left=7mm and 12mm of decision] (switch) {Switch\\Model};
+    \node[figbox, below right=7mm and 12mm of decision] (gepa) {Run\\GEPA};
+    \node[figbox, below=8mm of gepa] (reeval) {Re\\Evaluate};
     
     \draw[figarrow] (baseline) -- (drift);
     \draw[figarrow] (newrun) -- (drift);
     
-    \draw[figarrow] (drift) -- node[above, font=\scriptsize]{no drift} (deploy);
-    \draw[figarrow] (drift) -- node[above, font=\scriptsize]{drift} (metriccost);
+    \draw[figarrow] (drift) -- node[midway, above, font=\scriptsize, inner sep=1pt]{no drift} (deploy);
+    \draw[figarrow] (drift) -- node[midway, above, font=\scriptsize, inner sep=1pt]{drift} (metriccost);
     
     \draw[figarrow] (metriccost) -- (decision);
     \draw[figarrow] (decision) -- (switch);
     \draw[figarrow] (decision) -- (gepa);
     \draw[figarrow] (gepa) -- (reeval);
     
-    \draw[figarrow] (reeval.west) |- (metriccost.south);
+    % Re-evaluation feeds back into metric/cost comparison (compact loop on the right).
+    \coordinate (loopabove) at ($(metriccost.north)+(0,1.0)$);
+    \draw[figarrow, rounded corners=2.5pt]
+      (reeval.east) -- ++(0.9,0) |- (loopabove) -- (metriccost.north);
     
     \end{tikzpicture}
     \end{adjustbox}
@@ -380,11 +298,7 @@ The empirical results are reported in four parts: the instantiated monitoring su
 \subsection{Baseline and Instantiated Monitoring Subset}
 \label{sec:baseline-subset}
 
-The first empirical step is the one-time full-benchmark run on the \(N=1199\) reference dataset. Its purpose is to establish initial per-model behaviour on the full benchmark and to identify those examples on which model decisions diverge. These disagreement cases are the operational signal used to instantiate the smaller monitoring subset described in Chapter~\ref{ch:data}.
-
-This step therefore produces two outputs. First, it yields a full benchmark record that can be reused for broad model comparison. Second, it produces the fixed \(n=300\) disagreement-based monitoring set that is stored as a separate Langfuse dataset and then frozen for all later paired analyses.
-
-Once created, the monitoring subset becomes the empirical backbone of the thesis. All later drift statistics, dashboard views, and adaptation decisions are computed on this fixed set. The recurring evidence in the remainder of the chapter therefore comes from repeated reuse of the same 300 difficult cases rather than from re-sampling.
+A one-time full-benchmark run on $\mathcal{D}_N$ ($N=1199$) establishes initial per-model behaviour and identifies disagreement cases used to instantiate the monitoring subset (Chapter~\ref{ch:data}). The resulting $n=300$ disagreement-based set is stored as a separate Langfuse dataset and frozen; all subsequent drift statistics, dashboard views, and adaptation decisions are computed on this fixed panel.
 
 Table~\ref{tab:phase1-baseline-snapshot} gives a compact baseline after the subset is frozen: aggregate accuracy, precision, recall, and F1 for two API models that participate in the disagreement construction and in later monitoring. Counts $n$ refer to scored examples in that export, with one missing score for \texttt{gpt-4.1-mini}. Full-benchmark $\mathcal{D}_N$ aggregates are produced in the same way but are not duplicated here; the empirical focus is the frozen hard-case subset and comparable scalar summaries on~$\mathcal{D}_n$.
 
@@ -411,11 +325,13 @@ This subsection evaluates whether repeated runs on the fixed monitoring subset r
     \centering
     \caption{McNemar table for \texttt{gpt-5} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$.}
     \label{tab:mcnemar_gpt5}
-    \begin{tabular}{c|cc}
+    \begin{tabular}{lcc}
+        \toprule
         & 2026-03-10 correct & 2026-03-10 wrong \\
-        \hline
+        \midrule
         2026-03-08 correct & 291 & 0 \\
         2026-03-08 wrong   & 0   & 9 \\
+        \bottomrule
     \end{tabular}
 \end{table}
 
@@ -423,26 +339,21 @@ This subsection evaluates whether repeated runs on the fixed monitoring subset r
     \centering
     \caption{McNemar table for \texttt{gpt-5.1-mini} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$.}
     \label{tab:mcnemar_gpt5mini}
-    \begin{tabular}{c|cc}
+    \begin{tabular}{lcc}
+        \toprule
         & 2026-03-10 correct & 2026-03-10 wrong \\
-        \hline
+        \midrule
         2026-03-08 correct & 269 & 13 \\
         2026-03-08 wrong   & 7   & 11 \\
+        \bottomrule
     \end{tabular}
 \end{table}
 
-Two monitored examples illustrate the range of outcomes. For \texttt{gpt-5}, the run pair from 8~March~2026 to 10~March~2026 yields the contingency table in Table~\ref{tab:mcnemar_gpt5}. The discordant counts are \((b,c)=(0,0)\), so no monitored instance changed correctness between the two dates. In operational terms, this is the strongest possible evidence of short-term stability on the subset.
+Two monitored examples illustrate the range of outcomes. For \texttt{gpt-5}, the run pair from 8~March~2026 to 10~March~2026 yields the contingency table in Table~\ref{tab:mcnemar_gpt5}. The discordant counts are \((b,c)=(0,0)\), so no monitored instance changed correctness between the two dates. No temporal change in correctness is detectable on the subset for this interval.
 
 For \texttt{gpt-5.1-mini}, the corresponding run pair in Table~\ref{tab:mcnemar_gpt5mini} yields \((b,c)=(13,7)\): 20 instances change status (13 regressions, 7 recoveries). The one-sided test does not reach \(\alpha=0.05\); numerically, accuracy falls but the alert rule in Chapter~\ref{ch:drift} is not met.
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/Screenshot_2026-03-13_at_18.12.49-ab3bb230-c6fd-429c-b7d7-1a9af08a4170.png}
-    \caption{Streamlit paired-drift view for \texttt{gpt-5} (top: $(b,c)=(0,0)$) and \texttt{gpt-5.1-mini} (bottom: $(b,c)=(13,7)$).}
-    \label{fig:mcnemar-dashboard}
-\end{figure}
-
-The paired view distinguishes complete stability from mixed regressions and recoveries.
+The paired tables distinguish complete stability from mixed regressions and recoveries.
 
 \subsection{Candidate Comparison for Corrective Action}
 \label{sec:cost-aware-comparison}
@@ -452,24 +363,16 @@ This result block asks how a monitoring system should support choice among candi
 \paragraph{Authoritative export.}
 The \textbf{single authoritative numeric panel} for corrective-action comparison in this thesis is Table~\ref{tab:model-metrics-snapshot}. It is generated from \texttt{assets/metrics\_export/} (see \texttt{metrics\_wide.csv} and \texttt{export\_meta.json}) and input via \texttt{metrics\_tabular.tex}. The table lists confusion counts $(\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})$, threshold-based metrics, specificity, balanced accuracy, and PR--AUC for each candidate in one snapshot.
 
-Mean USD cost per request is \emph{not} in that static file; it is read from Langfuse traces as in Section~\ref{sec:metrics-dashboard}. For example, \texttt{gpt-4.1-mini} shows exported subset accuracy {\csname benchgpt41miniaccuracy\endcsname} versus \texttt{gpt-4.1-nano} {\csname benchgpt41nanoaccuracy\endcsname} on that snapshot. Figures~\ref{fig:metrics-by-model-bars} and~\ref{fig:utility-overview} support the same comparison visually: the former is a compact offline bar chart of the same metric dimensions across models on a fixed slice; the latter is the Streamlit dashboard view used to inspect trade-offs across date windows and model sets together with cost. The result is a \textbf{decision surface}---multiple metrics and cost---rather than a single universally best model. That matches the need to compare continued deployment, model switching, and prompt recovery under campaign-specific priorities.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/utility_overview.png}
-    \caption{Streamlit metric--cost comparison: accuracy, precision, recall, F1, mean cost (Chapter~\ref{ch:drift}).}
-    \label{fig:utility-overview}
-\end{figure}
-
+Mean USD cost per request is \emph{not} in that static file; it is read from Langfuse traces as in Section~\ref{sec:metrics-dashboard}. For example, \texttt{gpt-4.1-mini} shows exported subset accuracy {\csname benchgpt41miniaccuracy\endcsname} versus \texttt{gpt-4.1-nano} {\csname benchgpt41nanoaccuracy\endcsname} on that snapshot. The result is a multi-criteria comparison rather than a single universally best model, reflecting the need to weigh continued deployment, model switching, and prompt recovery under campaign-specific priorities.
 
 \begin{table}[htbp]
     \centering
     \footnotesize
+    \caption{Exported snapshot of confusion counts and classification metrics per candidate (evaluation on $\mathcal{D}_n$).}
+    \label{tab:model-metrics-snapshot}
     \begin{adjustbox}{max width=\linewidth}
     \input{assets/metrics_export/metrics_tabular.tex}
     \end{adjustbox}
-    \caption{Exported snapshot of confusion counts and classification metrics per candidate (evaluation on $\mathcal{D}_n$).}
-    \label{tab:model-metrics-snapshot}
 \end{table}
 
 \subsection{Prompt-Recovery Branch: Implemented but Not Triggered}

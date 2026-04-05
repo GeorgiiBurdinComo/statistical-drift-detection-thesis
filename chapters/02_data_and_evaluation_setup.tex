@@ -60,6 +60,49 @@ To increase sensitivity to provider-side changes, $\mathcal{D}_n$ is built from 
 \end{equation}
 with a fixed selection rule on this pool yielding $n=300$ instances (the implementation fixes the disagreeing pool and its size). The objective is drift sensitivity, not minimum-variance estimation of $A_N(t)$ on $\mathcal{D}_n$.
 
+\subsection{Geometry of the decision boundary}
+
+In representation learning it is common to assume the \emph{manifold hypothesis}: nominally high-dimensional data concentrate near a lower-dimensional submanifold~\cite{cayton2005,fefferman2016}, which supports inductive bias in deep models~\cite{bengio2013}.
+
+\begin{assumption}[Data manifold]
+The input space $\mathcal{X}\subset\mathbb{R}^d$ is a smooth, compact Riemannian manifold.
+\end{assumption}
+
+For an ensemble $\mathcal{M}_{\mathrm{ens}}$, let $p_m:\mathcal{X}\to[0,1]$ denote a smooth scoring function for model $m$ (e.g.\ a calibrated positive-class probability or a sigmoid of a logit), and define the \emph{consensus} function
+\begin{equation}
+    \bar{p}(x) = \frac{1}{K}\sum_{m=1}^{K} p_m(x).
+\end{equation}
+
+\begin{definition}[Consensus decision boundary]
+The ensemble decision boundary is the level set
+\begin{equation}
+    \mathcal{B} = \bar{p}^{-1}(0.5) = \left\{ x\in\mathcal{X} \mid \bar{p}(x)=0.5 \right\}.
+\end{equation}
+\end{definition}
+
+\begin{proposition}
+If $0.5$ is a regular value of $\bar{p}$ (i.e.\ $\nabla \bar{p}(x)\neq 0$ for all $x\in\mathcal{B}$), then by the regular level set theorem, $\mathcal{B}$ is a smooth submanifold of $\mathcal{X}$ of codimension~$1$.
+\end{proposition}
+
+\subsection{Disagreement and proximity to \texorpdfstring{$\mathcal{B}$}{the boundary}}
+
+\begin{assumption}[Bounded ensemble divergence]
+For all $m\in\{1,\ldots,K\}$,
+\begin{equation}
+    \sup_{x\in\mathcal{X}} \left| p_m(x) - \bar{p}(x) \right| \le \epsilon.
+\end{equation}
+\end{assumption}
+
+\begin{proposition}[Disagreement bounds distance to $0.5$ in $\bar{p}$]
+If for some $x$ there exist $j,k$ with $p_j(x)<0.5$ and $p_k(x)\ge 0.5$, then $\bar{p}(x)\in[0.5-\epsilon,\,0.5+\epsilon]$.
+\end{proposition}
+
+\begin{proof}
+By the assumption, $\bar{p}(x)-\epsilon \le p_j(x) < 0.5$ implies $\bar{p}(x) < 0.5+\epsilon$, and $\bar{p}(x)+\epsilon \ge p_k(x) \ge 0.5$ implies $\bar{p}(x) \ge 0.5-\epsilon$.
+\end{proof}
+
+Thus ensemble disagreement isolates instances in an $\epsilon$-neighbourhood of the consensus threshold in $\bar{p}$: geometrically, a tube around $\mathcal{B}$. In the limit $\epsilon\to 0$, the Bernoulli variance $A(1-A)$ for a hard decision at that threshold is maximal ($0.25$ at $A=0.5$), which motivates pairing disagreement-based construction with the sample-size discussion in Section~\ref{sec:monitoring-sample-size}.
+
 \subsection{Disagreement score}
 
 For each $x_i\in\mathcal{D}_N$, let
@@ -96,6 +139,8 @@ Section~\ref{sec:mcnemar-section} defines discordant counts $b$ (regressions) an
     \hat{A}_{t_2}-\hat{A}_{t_1}=\frac{c-b}{n}
 \end{equation}
 (see Section~\ref{sec:mcnemar-section}). Detecting a benchmark-relevant drop in accuracy of at least $\Delta_{\mathrm{acc}}=0.05$ on the panel is related to $\delta$ and $\rho$; McNemar's power rises when $\rho$ is larger (more discordant pairs for fixed $n$).
+
+The choice $\Delta_{\mathrm{acc}}=0.05$ is tied to the \textbf{minimum detectable effect} relative to label noise. In production annotation, human inter-annotator disagreement on borderline posts induces an irreducible error rate on the order of $\epsilon_{\mathrm{noise}}\approx 0.05$; drifts smaller than that are not reliably distinguishable from background labelling variability. The planning calculation below therefore treats $\Delta_{\mathrm{acc}}=0.05$ as an operational margin aligned with that floor, not as a universal statistical identity.
 
 A normal-approximation sample-size requirement for a one-sided level-$\alpha$ test with power $1-\beta$ takes the form
 \begin{equation}
@@ -134,6 +179,10 @@ is unbiased for $A_N(t)$ over the sampling design, with $\hat{y}_{i,t}$ fixed at
 $\mathbb{E}[\hat{A}_{\mathrm{HT}}(t)] = \frac{1}{N}\sum_i \mathbb{I}(\hat{y}_{i,t}=y_i)\,\mathbb{E}[S_i]/q_i = A_N(t)$.
 \end{proof}
 
-\subsection{Monitoring objective}
+\subsection{Monitoring objective and signal amplification}
 
-HT-style weighting reweights toward the benchmark mean; for anomaly detection on a fixed panel, the thesis uses unweighted $\hat{A}_n(t)$ and related confusion-based metrics on $\mathcal{D}_n$ (Section~\ref{sec:classification-metrics}) as \emph{leading indicators} of drift, not as HT estimates of $A_N(t)$. If unbiased estimation of $A_N(t)$ alongside drift monitoring were required, one would add a separate random component (e.g.\ SRS from $\mathcal{D}_N$) with positive $q_i$ on all items of interest.
+The Horvitz--Thompson construction recovers $A_N(t)$ by reweighting included instances inversely with $q_i$, thereby mapping the monitoring measure back toward the uniform benchmark measure. That reweighting \emph{down-weights} frequent error types on the disagreement-enriched panel when their inclusion probabilities are low: it is appropriate for unbiased \emph{population} estimation.
+
+For drift \emph{detection}, the goal is different: maximise sensitivity to temporal changes in $\theta_t$ where the classifier is unstable. Large importance weights $1/q_i$ would suppress the contribution of boundary-heavy errors to the aggregate score, ``flattening'' the signal toward the global mean and reducing contrast for anomaly monitoring. Reporting the raw biased empirical accuracy $\hat{A}_n(t)$ (and confusion structure on $\mathcal{D}_n$) therefore acts as a high-gain monitoring signal on the fixed panel; the HT framework above still formalises how a positively designed subset would link to $A_N(t)$ if unbiased recovery were required.
+
+The thesis uses unweighted $\hat{A}_n(t)$ and related confusion-based metrics on $\mathcal{D}_n$ (Section~\ref{sec:classification-metrics}) as leading indicators of drift, not as HT estimates of $A_N(t)$. If unbiased estimation of $A_N(t)$ alongside drift monitoring were required, one would add a separate random component (e.g.\ SRS from $\mathcal{D}_N$) with positive $q_i$ on all items of interest.
