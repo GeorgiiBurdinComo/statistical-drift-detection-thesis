@@ -1,7 +1,7 @@
 \chapter{Drift Monitoring and Model Selection Methodology}
 \label{ch:drift}
 
-Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. This chapter specifies repeated evaluation on $\mathcal{D}_n$, paired drift detection via McNemar's test, classification metrics for reporting and candidate comparison, a cost-based expected-cost utility as one formalisation of deployment choice, and manual operator overrides. The estimand is \emph{change in deployment behaviour on $\mathcal{D}_n$}; it does not identify the population risk $R_t(f)$ from Chapter~\ref{ch:data} without additional assumptions.
+Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. This chapter specifies repeated evaluation on $\mathcal{D}_n$, paired drift detection via McNemar's test, classification metrics for reporting and candidate comparison, and manual operator overrides. A cost-based expected-cost utility for deployment ranking is developed in Chapter~\ref{ch:cost-deployment-utility}. The estimand is \emph{change in deployment behaviour on $\mathcal{D}_n$}; it does not identify the population risk $R_t(f)$ from Chapter~\ref{ch:data} without additional assumptions.
 
 \section{Temporal evaluation on a fixed panel}
 \label{sec:formalisation-temporal}
@@ -147,102 +147,8 @@ When the pipeline exposes scored outputs (not only hard labels), a precision--re
 
 Candidate models $m\in\mathcal{M}_{\mathrm{cand}}$ are compared using $\hat{A}_t(m)$, $\widehat{\mathrm{Prec}}_t(m)$, $\widehat{\mathrm{Rec}}_t(m)$, $\widehat{\mathrm{F}}_{1,t}(m)$, and average inference cost $C_t(m)$ (USD per request from logged usage and pricing), all on $\mathcal{D}_n$. Campaigns differ in the relative cost of false positives and false negatives.
 
-While the thesis presents a cost-based utility in Section~\ref{sec:deployment-utility} as one formalisation of the accuracy--cost trade-off, final deployment decisions incorporate \emph{manual} judgment alongside these metrics (tolerance to error types, budget, latency, provider policy).
+While Chapter~\ref{ch:cost-deployment-utility} presents a cost-based utility as one formalisation of the accuracy--cost trade-off, final deployment decisions incorporate \emph{manual} judgment alongside these metrics (tolerance to error types, budget, latency, provider policy).
 
-Two decision layers are kept separate: (i) paired significance of degradation for $m_{\mathrm{curr}}$ via Section~\ref{sec:mcnemar-section}; (ii) multi-criteria comparison of candidates using the metrics above and $C_t(m)$, optionally summarised by the expected cost $E_t[\mathcal{C}](m)$ below. If no acceptable fallback exists, prompt optimisation may be attempted before changing the API model (Chapter~\ref{chap:prompt-optimisation}). Exported numeric panels and dashboards used in experiments are described in Chapter~\ref{chap:system-architecture}.
-
-\section{Cost-aware deployment utility}
-\label{sec:deployment-utility}
-
-This section derives a per-request expected cost that combines inference expenditure with asymmetric misclassification penalties, giving operators a single scalar for model ranking.
-
-\subsection{Cost components}
-
-Every request to model $m$ at evaluation time $t$ incurs two costs:
-\begin{enumerate}
-    \item \textbf{Inference cost} $C_t(m)$: the API charge in USD per request, observed from logged usage and pricing (same units as in Section~\ref{sec:model-comparison-manual}).
-    \item \textbf{Business error cost}: a penalty that depends on the prediction outcome. Correct predictions (TP, TN) incur no additional cost. Misclassifications carry:
-    \begin{itemize}
-        \item $C_{\mathrm{FP}}$: cost of a false positive (e.g.\ an irrelevant post flagged as relevant triggers unnecessary downstream processing),
-        \item $C_{\mathrm{FN}}$: cost of a false negative (e.g.\ a relevant post is missed, causing a gap in campaign coverage).
-    \end{itemize}
-\end{enumerate}
-
-\subsection{Derivation of per-request expected cost}
-
-\paragraph{Step 1: confusion-matrix decomposition.}
-On an evaluation batch $\mathcal{D}_n$ of $n$ labelled items, model $m$ at time $t$ produces confusion counts $\mathrm{TP}_t(m)$, $\mathrm{FP}_t(m)$, $\mathrm{TN}_t(m)$, $\mathrm{FN}_t(m)$ with $\mathrm{TP}_t+\mathrm{FP}_t+\mathrm{TN}_t+\mathrm{FN}_t=n$.
-
-\paragraph{Step 2: total batch cost.}
-Summing inference and error costs over the batch:
-\begin{equation}
-    \mathrm{TotalCost}_t(m)
-    = \underbrace{n \cdot C_t(m)}_{\text{inference}}
-    + \underbrace{C_{\mathrm{FP}}\cdot\mathrm{FP}_t(m)
-    + C_{\mathrm{FN}}\cdot\mathrm{FN}_t(m)}_{\text{business error cost}}.
-\end{equation}
-
-\paragraph{Step 3: per-request expected cost.}
-Dividing by $n$ yields the expected cost per request:
-\begin{equation}
-\label{eq:expected-cost}
-    E_t[\mathcal{C}](m)
-    = C_t(m)
-    + \frac{C_{\mathrm{FP}}\cdot\mathrm{FP}_t(m)
-          + C_{\mathrm{FN}}\cdot\mathrm{FN}_t(m)}{n}.
-\end{equation}
-
-\paragraph{Step 4: model selection rule.}
-The preferred deployment model minimises expected cost:
-\begin{equation}
-\label{eq:model-selection}
-    m_t^\star
-    \;\in\;
-    \arg\min_{m\in\mathcal{M}_{\mathrm{cand}}}\;
-    E_t[\mathcal{C}](m).
-\end{equation}
-
-\subsection{Rate form}
-
-Let $\hat{\pi}_t=(\mathrm{TP}_t+\mathrm{FN}_t)/n$ denote the empirical positive prevalence on $\mathcal{D}_n$. Then
-\[
-    \frac{\mathrm{FP}_t(m)}{n}
-    = \widehat{\mathrm{FPR}}_t(m)\,(1-\hat{\pi}_t),
-    \qquad
-    \frac{\mathrm{FN}_t(m)}{n}
-    = \widehat{\mathrm{FNR}}_t(m)\,\hat{\pi}_t,
-\]
-so~\eqref{eq:expected-cost} is equivalently
-\begin{equation}
-\label{eq:expected-cost-rate}
-    E_t[\mathcal{C}](m)
-    = C_t(m)
-    + C_{\mathrm{FP}}\,\widehat{\mathrm{FPR}}_t(m)\,(1-\hat{\pi}_t)
-    + C_{\mathrm{FN}}\,\widehat{\mathrm{FNR}}_t(m)\,\hat{\pi}_t.
-\end{equation}
-This form makes explicit that the FN penalty is weighted by prevalence $\hat{\pi}_t$ and the FP penalty by $1-\hat{\pi}_t$.
-
-\subsection{Operator parameters}
-
-Two business parameters must be supplied:
-\begin{itemize}
-    \item $C_{\mathrm{FP}}$: monetary cost of one false positive,
-    \item $C_{\mathrm{FN}}$: monetary cost of one false negative.
-\end{itemize}
-For \emph{ranking} models only their ratio $r=C_{\mathrm{FN}}/C_{\mathrm{FP}}$ matters, because the absolute scale of $C_{\mathrm{FP}}$ cancels in $\arg\min$. $r$ answers the question: ``how many false-positive reviews is one missed relevant post worth?''
-
-\paragraph{Remark on prevalence and the monitoring panel.}
-On the full benchmark ($n=1199$; $682$ positive, $517$ negative) the prevalence is $\hat{\pi}\approx0.569$. On the monitoring panel ($n=300$; $250$ positive, $50$ negative) it is $\hat{\pi}\approx0.833$. Because the panel is $83\%$ positive, FN errors are roughly five times more likely than FP errors by base rate alone. A model with high $\widehat{\mathrm{FNR}}$ is therefore heavily penalised on the monitoring set even before applying $C_{\mathrm{FN}}$. The dataset used to evaluate $E_t[\mathcal{C}]$ should match the production class distribution.
-
-\subsection{Monitor--detect--act pipeline}
-
-After each batch evaluation the following logic applies:
-\begin{enumerate}
-    \item \textbf{Monitor:} compute McNemar statistics for $m_{\mathrm{curr}}$ on $\mathcal{D}_n$ relative to a chosen baseline time.
-    \item \textbf{Detect:} register a drift event if $b>c$ and the one-sided $p$-value is below $\alpha$ (Section~\ref{sec:mcnemar-section}).
-    \item \textbf{Act:} compare candidates via $E_t[\mathcal{C}](m)$; operators set $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$ (or equivalently $r$) to reflect campaign priorities. If no acceptable fallback exists, trigger prompt optimisation (Chapter~\ref{chap:prompt-optimisation}) before switching the API model identifier.
-\end{enumerate}
-
-The selected deployment model is $m_t^\star$ from~\eqref{eq:model-selection}; when operators prefer not to commit to a single scalar rule, they choose $m_{\mathrm{curr}}$ from the same metrics without computing $E_t[\mathcal{C}]$.
+Two decision layers are kept separate: (i) paired significance of degradation for $m_{\mathrm{curr}}$ via Section~\ref{sec:mcnemar-section}; (ii) multi-criteria comparison of candidates using the metrics above and $C_t(m)$, optionally summarised by the expected cost $E_t[\mathcal{C}](m)$ in Chapter~\ref{ch:cost-deployment-utility}. If no acceptable fallback exists, prompt optimisation may be attempted before changing the API model (Chapter~\ref{chap:prompt-optimisation}). Exported numeric panels and dashboards used in experiments are described in Chapter~\ref{chap:system-architecture}.
 
 
