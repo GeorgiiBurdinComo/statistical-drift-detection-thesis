@@ -296,6 +296,9 @@ Table~\ref{tab:phase1-baseline-snapshot} gives a compact baseline after the subs
     \end{tabular}
 \end{table}
 
+\paragraph{Interpretation for monitoring.}
+This baseline is descriptive rather than inferential: it fixes the initial error profile on $\mathcal{D}_n$ against which later runs are compared. Operationally, it determines which error type dominates before any alert is considered (FN-heavy vs FP-heavy), which in turn controls whether later model switches should prioritize recall or specificity under the campaign's cost tolerance (Chapter~\ref{ch:cost-deployment-utility}).
+
 \subsection{Longitudinal Monitoring Results}
 \label{sec:drift-results}
 
@@ -335,10 +338,27 @@ For \texttt{gpt-5.1-mini}, the corresponding run pair in Table~\ref{tab:mcnemar_
 
 The paired tables distinguish complete stability from mixed regressions and recoveries.
 
+\paragraph{Interpretation for alerts.}
+The two examples illustrate the required separation between statistical evidence and descriptive movement. For \texttt{gpt-5}, no discordant pairs means no detectable behavioural change. For \texttt{gpt-5.1-mini}, the net direction is negative ($b>c$), but evidence is insufficient at the configured threshold. In the monitor--detect--act logic, this state is treated as \emph{watch-and-compare}: keep observing drift evidence while preparing fallback comparisons using the metric/cost panel.
+
 \subsection{Candidate Comparison for Corrective Action}
 \label{sec:cost-aware-comparison}
 
 This result block asks how a monitoring system should support choice among candidate corrective actions once predictive quality and cost are both visible. Each monitored run yields empirical accuracy, precision, recall, and F1 on the fixed subset together with mean per-request cost (Chapter~3). Operators compare candidates manually: some campaigns tolerate more false positives than others, so no single ranking rule is imposed in the experiments reported here.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[node distance=8mm and 12mm]
+        \node[figbox, text width=35mm] (drift) {1) Drift evidence\\McNemar on fixed panel};
+        \node[figbox, right=of drift, text width=35mm] (profile) {2) Error profile\\Accuracy / Precision / Recall / F1 / Specificity};
+        \node[figbox, right=of profile, text width=35mm] (cost) {3) Decision utility\\Expected cost\\$E_t[\mathcal{C}](m)$};
+
+        \draw[figarrow] (drift) -- (profile);
+        \draw[figarrow] (profile) -- (cost);
+    \end{tikzpicture}
+    \caption{Recommended reading order for corrective-action decisions: inferential drift signal first, descriptive metric profile second, cost-aware ranking third. Metric definitions are in Chapter~\ref{ch:drift}; utility is in Chapter~\ref{ch:cost-deployment-utility}.}
+    \label{fig:decision-reading-order}
+\end{figure}
 
 \paragraph{Authoritative export.}
 The \textbf{single authoritative numeric panel} for corrective-action comparison in this thesis is Table~\ref{tab:model-metrics-snapshot}. It is generated from \texttt{assets/metrics\_export/} (see \texttt{metrics\_wide.csv} and \texttt{export\_meta.json}) and input via \texttt{metrics\_tabular.tex}. The table lists confusion counts $(\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})$, threshold-based metrics, specificity, balanced accuracy, and PR--AUC for each candidate in one snapshot.
@@ -354,6 +374,9 @@ Mean USD cost per request is \emph{not} in that static file; it is read from Lan
     \input{assets/metrics_export/metrics_tabular.tex}
     \end{adjustbox}
 \end{table}
+
+\paragraph{Interpretation for corrective action.}
+This panel is the descriptive comparison layer after drift evidence has been evaluated. Models with similar aggregate accuracy can still imply different operational risk because their FP/FN mixes differ; therefore, table reading should prioritize confusion structure and class-conditional metrics before selecting by scalar utility. Final action remains campaign-dependent: a high-recall candidate is preferable under high FN penalties, while a high-specificity candidate is preferable when analyst triage capacity is constrained.
 
 \subsection{Prompt-Recovery Branch: Implemented but Not Triggered}
 \label{sec:prompt-recovery-results}

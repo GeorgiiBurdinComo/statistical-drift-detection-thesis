@@ -241,11 +241,17 @@ The algorithm returns the candidate with best aggregate performance on $D_{\math
   \draw[figarrow] (imp) -| node[near start, above, font=\scriptsize]{No}  (disc);
   \draw[figarrow] (imp) -| node[near start, above, font=\scriptsize]{Yes} (add);
 
-  % Feedback: horizontal bar below both branches, then right-and-up to budget
-  \draw (disc.south) -- ++(0,-6mm);
-  \draw (add.south)  -- ++(0,-6mm);
-  \draw ($(disc.south)+(0,-6mm)$) -- ($(add.south)+(0,-6mm)$);
-  \draw[figarrow] ($(add.south)+(0,-6mm)$) -- ++(8mm,0) |- (budget.east);
+  % Feedback loop: merge both outcomes, then loop back cleanly to decision
+  \coordinate (disc_out) at ($(disc.south)+(0,-6mm)$);
+  \coordinate (add_out)  at ($(add.south)+(0,-6mm)$);
+  \coordinate (join)     at ($(disc_out)!0.5!(add_out)$);
+  \coordinate (loop_r)   at ($(add_out)+(14mm,0)$);
+
+  \draw (disc.south) -- (disc_out);
+  \draw (add.south)  -- (add_out);
+  \draw (disc_out) -- (join);
+  \draw (add_out)  -- (join);
+  \draw[figarrow] (join) -- (loop_r) |- (budget.east);
 \end{tikzpicture}
 \caption{GEPA iteration loop~\cite{agrawal2025gepa}. At each step a parent prompt is sampled from the Pareto frontier $\mathcal{F}_k$, mutated by the reflection model, and accepted into the pool only when the minibatch score improves; the loop continues until the rollout budget is exhausted.}
 \label{fig:gepa-loop}
@@ -360,7 +366,7 @@ Prompt optimisation is \emph{not} a substitute for monitoring. It is the adaptiv
   \node[apobox, right=7mm of det]  (trig) {Trigger\\APO};
   \node[apobox, right=7mm of trig] (opt)  {Optimise\\prompt on $\mathcal{D}_{\mathrm{opt}}$};
   \node[apobox, right=7mm of opt]  (rev)  {Re-evaluate\\on $\mathcal{D}_n$};
-  \node[apobox, right=7mm of rev]  (cmp)  {Compare\\with fallbacks};
+  \node[apobox, right=7mm of rev]  (cmp)  {Compare\\with fallback model(s)};
 
   \draw[arr] (det)  -- (trig);
   \draw[arr] (trig) -- (opt);
