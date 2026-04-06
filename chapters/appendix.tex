@@ -55,3 +55,68 @@
     \end{tabular}
 \end{table}
 
+\section{Per-metric ranking charts (monitoring snapshot)}
+\label{app:per-metric-ranking-charts}
+
+The following charts are supplementary visualizations of the exported monitoring snapshot from \texttt{assets/metrics\_export/}. They complement, but do not replace, the main decision tables in Chapters~\ref{ch:cost-deployment-utility} and~\ref{chap:system-architecture}.
+
+\IfFileExists{assets/fig-metric-accuracy.png}{%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/fig-metric-accuracy.png}
+    \caption{Per-model ranking by accuracy on $\mathcal{D}_n$.}
+\end{figure}
+}{}
+
+\IfFileExists{assets/fig-metric-balanced_accuracy.png}{%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/fig-metric-balanced_accuracy.png}
+    \caption{Per-model ranking by balanced accuracy on $\mathcal{D}_n$.}
+\end{figure}
+}{}
+
+\IfFileExists{assets/fig-metric-f1.png}{%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/fig-metric-f1.png}
+    \caption{Per-model ranking by F1 score on $\mathcal{D}_n$.}
+\end{figure}
+}{}
+
+\IfFileExists{assets/fig-metric-pr_auc.png}{%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/fig-metric-pr_auc.png}
+    \caption{Per-model ranking by PR--AUC on $\mathcal{D}_n$.}
+\end{figure}
+}{}
+
+\IfFileExists{assets/fig-metric-precision.png}{%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/fig-metric-precision.png}
+    \caption{Per-model ranking by precision on $\mathcal{D}_n$.}
+\end{figure}
+}{}
+
+\IfFileExists{assets/fig-metric-recall.png}{%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/fig-metric-recall.png}
+    \caption{Per-model ranking by recall on $\mathcal{D}_n$.}
+\end{figure}
+}{}
+
+\IfFileExists{assets/fig-metric-specificity.png}{%
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{assets/fig-metric-specificity.png}
+    \caption{Per-model ranking by specificity on $\mathcal{D}_n$.}
+\end{figure}
+}{}
+
+
+
+{}
+

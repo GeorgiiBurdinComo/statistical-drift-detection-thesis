@@ -91,3 +91,20 @@ After each batch evaluation the following logic applies:
 \end{enumerate}
 
 The selected deployment model is $m_t^\star$ from~\eqref{eq:model-selection}; when operators prefer not to commit to a single scalar rule, they choose $m_{\mathrm{curr}}$ from the same metrics without computing $E_t[\mathcal{C}]$.
+
+\section{Expected-cost snapshot on the monitoring panel}
+\label{sec:expected-cost-snapshot}
+
+For the empirical candidate-comparison stage, this thesis uses a single exported expected-cost panel generated from \texttt{assets/metrics\_export/expected\_cost.csv}. The panel is included in Table~\ref{tab:expected-cost-snapshot} and corresponds to the same monitoring snapshot used for the classification metrics table in Chapter~\ref{chap:system-architecture}. This keeps deployment ranking consistent with the scalar utility in~\eqref{eq:expected-cost}.
+
+\begin{table}[htbp]
+    \centering
+    \footnotesize
+    \caption{Exported expected-cost snapshot per candidate on $\mathcal{D}_n$.}
+    \label{tab:expected-cost-snapshot}
+    \begin{adjustbox}{max width=\linewidth}
+    \input{assets/metrics_export/expected_cost_tabular.tex}
+    \end{adjustbox}
+\end{table}
+
+The values in Table~\ref{tab:expected-cost-snapshot} are interpreted under the fixed penalty setup used in the export. If campaign priorities change, operators update $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$ and recompute the panel before selecting $m_t^\star$.
