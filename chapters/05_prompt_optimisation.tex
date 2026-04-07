@@ -69,6 +69,7 @@ with final selection $\pi^\star \in \arg\max_{\pi \in \mathcal{C}_K} J_t(\pi)$. 
 
 \begin{figure}[p]
 \centering
+\resizebox{0.95\textwidth}{!}{%
 \begin{forest}
   forked edges,
   for tree={
@@ -77,64 +78,69 @@ with final selection $\pi^\star \in \arg\max_{\pi \in \mathcal{C}_K} J_t(\pi)$. 
     rounded corners=2pt,
     align=center,
     font=\scriptsize,
+    anchor=west,
+    parent anchor=east,
+    child anchor=west,
     inner sep=3pt,
     l sep=6mm,
     s sep=1.2mm,
-    minimum height=6mm,
-    text width=22mm,
     fill=gray!8,
   },
+  where level=1{tier=level1}{},
+  where level=2{tier=level2}{},
+  where level=3{tier=level3}{},
   [{\rotatebox{90}{\parbox{68mm}{\centering\scriptsize Prompt optimisation anatomy}}},
-    fill=violet!20, minimum width=8mm, minimum height=68mm, text width=5mm, inner sep=0pt
-    [Seed Prompts §3, fill=orange!25, text width=18mm
-      [Manual Instructions §3.1, fill=orange!15, text width=52mm]
-      [Instruction-induction via LLMs §3.2, fill=orange!15, text width=52mm]
+    fill=violet!20, inner sep=1pt
+    [Seed Prompts §3, fill=orange!25
+      [Manual Instructions §3.1, fill=orange!15]
+      [Instruction-induction via LLMs §3.2, fill=orange!15]
     ]
-    [Inference evaluation\\and feedback §4, fill=yellow!40, text width=18mm
-      [Numeric score §4.1, fill=yellow!25, text width=22mm
-        [Task accuracy §4.1.1, fill=yellow!15, text width=36mm]
-        [Reward model score §4.1.2, fill=yellow!15, text width=36mm]
-        [Entropy-based §4.1.3, fill=yellow!15, text width=36mm]
-        [Negative log-likelihood §4.1.4, fill=yellow!15, text width=36mm]
+    [Inference evaluation\\and feedback §4, fill=yellow!40
+      [Numeric score §4.1, fill=yellow!25
+        [Task accuracy §4.1.1, fill=yellow!15]
+        [Reward model score §4.1.2, fill=yellow!15]
+        [Entropy-based §4.1.3, fill=yellow!15]
+        [Negative log-likelihood §4.1.4, fill=yellow!15]
       ]
-      [LLM Feedback §4.2, fill=yellow!25, text width=22mm
-        [Improving single candidate §4.2.1, fill=yellow!15, text width=36mm]
-        [Improving multiple candidates §4.2.2, fill=yellow!15, text width=36mm]
+      [LLM Feedback §4.2, fill=yellow!25
+        [Improving single candidate §4.2.1, fill=yellow!15]
+        [Improving multiple candidates §4.2.2, fill=yellow!15]
       ]
-      [Human Feedback §4.3, fill=yellow!15, text width=60mm]
+      [Human Feedback §4.3, fill=yellow!15]
     ]
-    [Candidate prompt\\generation §5, fill=blue!15, text width=18mm
-      [Heuristic-based\\edits §5.1, fill=blue!10, text width=22mm
-        [Monte Carlo Sampling §5.1.1, fill=gray!8, text width=36mm]
-        [Genetic Algorithm §5.1.2, fill=gray!8, text width=36mm]
-        [Word / phrase edits §5.1.3, fill=gray!8, text width=36mm]
-        [Vocabulary pruning §5.1.4, fill=gray!8, text width=36mm]
+    [Candidate prompt\\generation §5, fill=blue!15
+      [Heuristic-based\\edits §5.1, fill=blue!10
+        [Monte Carlo Sampling §5.1.1, fill=gray!8]
+        [Genetic Algorithm §5.1.2, fill=gray!8]
+        [Word / phrase edits §5.1.3, fill=gray!8]
+        [Vocabulary pruning §5.1.4, fill=gray!8]
       ]
-      [Editing with auxiliary\\trained NN §5.2, fill=blue!10, text width=22mm
-        [Reinforcement Learning §5.2.1, fill=gray!8, text width=36mm]
-        [LLM Finetuning §5.2.2, fill=gray!8, text width=36mm]
-        [Generative Adversarial\\Networks §5.2.3, fill=gray!8, text width=36mm]
+      [Editing with auxiliary\\trained NN §5.2, fill=blue!10
+        [Reinforcement Learning §5.2.1, fill=gray!8]
+        [LLM Finetuning §5.2.2, fill=gray!8]
+        [Generative Adversarial\\Networks §5.2.3, fill=gray!8]
       ]
-      [Metaprompt design §5.3, fill=gray!8, text width=60mm]
-      [Coverage-based §5.4, fill=blue!10, text width=22mm
-        [Single prompt expansion §5.4.1, fill=gray!8, text width=36mm]
-        [Mixture of experts §5.4.2, fill=gray!8, text width=36mm]
-        [Ensemble methods §5.4.3, fill=gray!8, text width=36mm]
+      [Metaprompt design §5.3, fill=gray!8]
+      [Coverage-based §5.4, fill=blue!10
+        [Single prompt expansion §5.4.1, fill=gray!8]
+        [Mixture of experts §5.4.2, fill=gray!8]
+        [Ensemble methods §5.4.3, fill=gray!8]
       ]
-      [Program Synthesis §5.5, fill=gray!8, text width=60mm]
+      [Program Synthesis §5.5, fill=gray!8]
     ]
-    [Filter and retain\\promising candidates §6, fill=red!15, text width=18mm
-      [TopK Greedy Search §6.1, fill=red!10, text width=60mm]
-      [Upper confidence bound\\and variants §6.2, fill=red!10, text width=60mm]
-      [Region-based joint search §6.3, fill=red!10, text width=60mm]
-      [Meta-heuristic ensemble §6.4, fill=red!10, text width=60mm]
+    [Filter and retain\\promising candidates §6, fill=red!15
+      [TopK Greedy Search §6.1, fill=red!10]
+      [Upper confidence bound\\and variants §6.2, fill=red!10]
+      [Region-based joint search §6.3, fill=red!10]
+      [Meta-heuristic ensemble §6.4, fill=red!10]
     ]
-    [Iteration depth §7, fill=teal!25, text width=18mm
-      [Fixed steps §7.1, fill=teal!10, text width=60mm]
-      [Variable steps §7.2, fill=teal!10, text width=60mm]
+    [Iteration depth §7, fill=teal!25
+      [Fixed steps §7.1, fill=teal!10]
+      [Variable steps §7.2, fill=teal!10]
     ]
   ]
 \end{forest}
+}
 \caption{Taxonomy of automatic prompt optimisation methods~\cite{ramnath2025survey}.}
 \label{fig:apo-taxonomy}
 \end{figure}
@@ -209,54 +215,8 @@ GEPA maintains a candidate pool, initially the base system $\Phi$. Training data
 The algorithm returns the candidate with best aggregate performance on $D_{\mathrm{pareto}}$. GEPA+Merge adds crossover between lineages~\cite{agrawal2025gepa}. Reported benchmarks indicate favourable sample efficiency relative to methods such as GRPO under comparable budgets~\cite{agrawal2025gepa}.
 
 \begin{figure}[ht]
-\centering
-\begin{tikzpicture}[node distance=5mm, font=\small]
-  \node[figbox, text width=36mm] (init) {Initialise $\mathcal{P} = \{\Phi\}$};
-  \node[figdiamond, below=8mm of init] (budget) {Budget\\exhausted?};
-  \node[figbox, text width=36mm, below=8mm of budget] (sel)
-      {Select $\Phi_k \sim \mathrm{Sample}(\mathcal{F}_k)$};
-  \node[figbox, text width=36mm, below=5mm of sel] (roll)
-      {Rollout on $D_{\mathrm{feedback}}$; collect traces};
-  \node[figbox, text width=36mm, below=5mm of roll] (mut)
-      {Reflective mutation $\to \tilde{\pi}_k$};
-  \node[figbox, text width=36mm, below=5mm of mut] (ev)
-      {Eval $\tilde{\pi}_k$ on minibatch};
-  \node[figdiamond, below=8mm of ev] (imp) {Minibatch\\score improved?};
 
-  \node[figbox, text width=20mm, below left=10mm and 3mm of imp]  (disc)
-      {Discard $\tilde{\pi}_k$};
-  \node[figbox, text width=28mm, below right=10mm and 3mm of imp] (add)
-      {Add $\tilde{\pi}_k$ to $\mathcal{P}$;\\score on $D_{\mathrm{pareto}}$};
-
-  \node[figbox, text width=28mm, right=18mm of budget] (ret)
-      {Return $\Phi^{\star} = \arg\max_{\mathcal{P}} \mathrm{score}$};
-
-  \draw[figarrow] (init)   -- (budget);
-  \draw[figarrow] (budget) -- node[above, font=\scriptsize]{Yes} (ret);
-  \draw[figarrow] (budget) -- node[right, font=\scriptsize]{No}  (sel);
-  \draw[figarrow] (sel) -- (roll);
-  \draw[figarrow] (roll) -- (mut);
-  \draw[figarrow] (mut) -- (ev);
-  \draw[figarrow] (ev)  -- (imp);
-  \draw[figarrow] (imp) -| node[near start, above, font=\scriptsize]{No}  (disc);
-  \draw[figarrow] (imp) -| node[near start, above, font=\scriptsize]{Yes} (add);
-
-  % Feedback loop: merge both outcomes, then loop back cleanly to decision
-  \coordinate (disc_out) at ($(disc.south)+(0,-6mm)$);
-  \coordinate (add_out)  at ($(add.south)+(0,-6mm)$);
-  \coordinate (join)     at ($(disc_out)!0.5!(add_out)$);
-  \coordinate (loop_r)   at ($(add_out)+(14mm,0)$);
-
-  \draw (disc.south) -- (disc_out);
-  \draw (add.south)  -- (add_out);
-  \draw (disc_out) -- (join);
-  \draw (add_out)  -- (join);
-  \draw[figarrow] (join) -- (loop_r) |- (budget.east);
-\end{tikzpicture}
-\caption{GEPA iteration loop~\cite{agrawal2025gepa}. At each step a parent prompt is sampled from the Pareto frontier $\mathcal{F}_k$, mutated by the reflection model, and accepted into the pool only when the minibatch score improves; the loop continues until the rollout budget is exhausted.}
-\label{fig:gepa-loop}
-\end{figure}
-
+  \end{figure}
 \subsection{Core design principles}
 
 \paragraph{Black-box optimisation.}
@@ -355,26 +315,5 @@ Prompt optimisation is \emph{not} a substitute for monitoring. It is the adaptiv
     \item Re-evaluate the recovered prompt on $\mathcal{D}_n$ and compare with alternative models using the metrics and optional utility in Section~\ref{sec:model-comparison-manual}.
 \end{enumerate}
 
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[
-  arr/.style={->, thick, >=Latex},
-  apobox/.style={draw, rounded corners=3pt, align=center, font=\footnotesize,
-                 minimum height=10mm, text width=22mm, inner sep=4pt, fill=gray!10},
-]
-  \node[apobox] (det)  {Drift\\detection on $\mathcal{D}_n$};
-  \node[apobox, right=7mm of det]  (trig) {Trigger\\APO};
-  \node[apobox, right=7mm of trig] (opt)  {Optimise\\prompt on $\mathcal{D}_{\mathrm{opt}}$};
-  \node[apobox, right=7mm of opt]  (rev)  {Re-evaluate\\on $\mathcal{D}_n$};
-  \node[apobox, right=7mm of rev]  (cmp)  {Compare\\with fallback model(s)};
-
-  \draw[arr] (det)  -- (trig);
-  \draw[arr] (trig) -- (opt);
-  \draw[arr] (opt)  -- (rev);
-  \draw[arr] (rev)  -- (cmp);
-\end{tikzpicture}
-\caption{Prompt optimisation inside the monitoring pipeline; APO follows a supported drift signal or explicit recovery decision.}
-\label{fig:apo-monitoring-integration}
-\end{figure}
 
 Recovered prompts use the same reporting as batch evaluations; the concrete implementation is documented in Chapter~\ref{chap:system-architecture}.

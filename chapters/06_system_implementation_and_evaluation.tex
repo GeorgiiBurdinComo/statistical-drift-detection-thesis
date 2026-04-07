@@ -378,13 +378,6 @@ Mean USD cost per request is \emph{not} in that static file; it is read from Lan
 \paragraph{Interpretation for corrective action.}
 This panel is the descriptive comparison layer after drift evidence has been evaluated. Models with similar aggregate accuracy can still imply different operational risk because their FP/FN mixes differ; therefore, table reading should prioritize confusion structure and class-conditional metrics before selecting by scalar utility. Final action remains campaign-dependent: a high-recall candidate is preferable under high FN penalties, while a high-specificity candidate is preferable when analyst triage capacity is constrained.
 
-\subsection{Prompt-Recovery Branch: Implemented but Not Triggered}
-\label{sec:prompt-recovery-results}
-
-GEPA is implemented as a conditional recovery path after an alert under Section~\ref{sec:mcnemar-section}: start from the deployed prompt; build an optimisation set from hard and disagreement cases; run GEPA under a fixed budget; select from the frontier; re-evaluate on $\mathcal{D}_n$. Recovery is reported with the same discordant and aggregate metrics as model switching (Chapter~\ref{chap:prompt-optimisation}).
-
-In the monitoring window used for this thesis, no run satisfies the alert rule strongly enough to document a production GEPA intervention here. The contribution of this result block is therefore an \emph{implemented} mechanism rather than an observed recovery episode. A full before/after prompt comparison for a verified episode would be reported in Chapter~\ref{chap:degradation-case-study}.
-
 \FloatBarrier
 
 \section{Limitations}
