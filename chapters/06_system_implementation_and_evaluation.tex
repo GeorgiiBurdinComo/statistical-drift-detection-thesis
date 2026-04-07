@@ -62,17 +62,17 @@ The orchestrator \texttt{run\_eval.py} loads the eval subset, optionally ensures
 
 \paragraph{Provider-specific batch adapters.}
 \label{sec:provider-adapters}
-The logical task is provider-invariant: every request asks for the same campaign-relevance classification under the same structured output constraints. Differences are isolated in the batch adapters. Table~\ref{tab:provider-adapters} summarizes how each backend maps the shared \texttt{body} to its native batch format.
+The inference task is identical across providers: classify each example as campaign-relevant (binary \texttt{campaign\_relevant}) using the same multimodal input and the same JSON-schema-constrained output shape. What differs is only the adapter layer required by each provider API. Table~\ref{tab:provider-adapters} therefore compares transport-level mapping decisions, not task semantics or evaluation criteria.
 
 \begin{table}[htbp]
 \centering
 \footnotesize
-\caption{Provider adapters over the shared request \texttt{body} (multimodal \texttt{input} + JSON schema for \texttt{campaign\_relevant}).}
+\caption{Provider-specific adapter mapping for one shared classification task (\texttt{campaign\_relevant}) and one shared request body (multimodal \texttt{input} + JSON schema).}
 \label{tab:provider-adapters}
 \begin{adjustbox}{max width=\linewidth}
 \begin{tabular}{p{1.8cm}p{3.6cm}p{3.2cm}p{3.5cm}}
 \toprule
-\textbf{Provider} & \textbf{Batch wire format} & \textbf{Structured output} & \textbf{Images / ids} \\
+\textbf{Provider} & \textbf{Batch submission format} & \textbf{Schema / response constraint} & \textbf{Provider-specific preprocessing} \\
 \midrule
 OpenAI & JSONL: \texttt{POST} \texttt{/v1/responses} per row & \texttt{text.format} JSON schema & Multimodal \texttt{input}; image URLs \\
 Gemini & Native batch JSONL; uploaded file & \texttt{responseSchema} + JSON MIME type & URLs $\rightarrow$ Files \texttt{fileUri}; cache TTL $\approx$47\,h; rows may be skipped if URLs missing \\
@@ -194,8 +194,8 @@ Table~\ref{tab:artifact-inventory} summarizes the main artifacts, their provenan
 Produced by \texttt{run\_eval.py}; stored in the GitHub Actions cache and workspace. &
 Used by \texttt{poll\_and\_ingest.py} to poll provider batches until completion. The manifest records batch identifiers per model for the run. \\
 
-\texttt{batches/openai\_\{model\}.jsonl}\\
-\texttt{batches/claude\_\{model\}\_input.jsonl}\\
+\texttt{batches/openai\_\{model\}.jsonl}\newline
+\texttt{batches/claude\_\{model\}\_input.jsonl}\newline
 \texttt{batches/gemini\_\{model\}.jsonl} &
 Produced by \texttt{batch\_openai.py}, \texttt{batch\_claude.py}, and \texttt{batch\_gemini.py}; stored under \texttt{batches/}. &
 Submitted to the OpenAI, Anthropic, and Gemini batch APIs. Each JSONL line corresponds to one evaluation request. \\
@@ -213,7 +213,7 @@ Langfuse traces and scores &
 Produced by ingestion; stored in Langfuse cloud. &
 Read by \texttt{export\_langfuse\_csv.py} and by the Streamlit application for joins, tags, and derived metrics. \\
 
-\texttt{langfuse\_traces.csv}\\
+\texttt{langfuse\_traces.csv}\newline
 \texttt{langfuse\_scores.csv} &
 Produced by \texttt{export\_langfuse\_csv.py}; stored under \texttt{streamlit\_app/} in \texttt{llm-batch-eval} and mirrored to the private \texttt{llm-eval-dashboard} repository. &
 Loaded by the hosted Streamlit dashboard so routine views use committed snapshots rather than live Langfuse API calls. \\
