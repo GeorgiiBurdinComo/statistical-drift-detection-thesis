@@ -62,24 +62,26 @@ The orchestrator \texttt{run\_eval.py} loads the eval subset, optionally ensures
 
 \paragraph{Provider-specific batch adapters.}
 \label{sec:provider-adapters}
-The inference task is identical across providers: classify each example as campaign-relevant (binary \texttt{campaign\_relevant}) using the same multimodal input and the same JSON-schema-constrained output shape. What differs is only the adapter layer required by each provider API. Table~\ref{tab:provider-adapters} therefore compares transport-level mapping decisions, not task semantics or evaluation criteria.
+The inference task is identical across providers: classify each example as campaign-relevant (binary \texttt{campaign\_relevant}) using the same multimodal input and the same JSON-schema-constrained output shape. What differs is only the adapter layer required by each provider API. Table~\ref{tab:provider-adapters} shows exactly what is mapped in that layer and why: batch wire format, response-shape enforcement, and provider-only preprocessing that must happen before submission. This comparison is transport-level only; task semantics and evaluation criteria remain unchanged.
 
 \begin{table}[htbp]
 \centering
 \footnotesize
-\caption{Provider-specific adapter mapping for one shared classification task (\texttt{campaign\_relevant}) and one shared request body (multimodal \texttt{input} + JSON schema).}
+\caption{Adapter-layer mapping for one shared task and one shared request body: what changes per provider and why.}
 \label{tab:provider-adapters}
-\begin{adjustbox}{max width=\linewidth}
-\begin{tabular}{p{1.8cm}p{3.6cm}p{3.2cm}p{3.5cm}}
-\toprule
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{|p{1.8cm}|p{3.5cm}|p{3.6cm}|p{5.4cm}|}
+\hline
 \textbf{Provider} & \textbf{Batch submission format} & \textbf{Schema / response constraint} & \textbf{Provider-specific preprocessing} \\
-\midrule
-OpenAI & JSONL: \texttt{POST} \texttt{/v1/responses} per row & \texttt{text.format} JSON schema & Multimodal \texttt{input}; image URLs \\
-Gemini & Native batch JSONL; uploaded file & \texttt{responseSchema} + JSON MIME type & URLs $\rightarrow$ Files \texttt{fileUri}; cache TTL $\approx$47\,h; rows may be skipped if URLs missing \\
-Claude & Staging JSONL + Messages Batches & Anthropic \texttt{output\_config} schema & Sanitized \texttt{custom\_id}; remap on download \\
-\bottomrule
+\hline
+OpenAI & JSONL rows with \texttt{POST /v1/responses} & \texttt{text.format} with JSON schema & Reuse canonical multimodal \texttt{input}; keep image URLs as-is \\
+\hline
+Gemini & Native batch JSONL upload & \texttt{responseSchema} with JSON MIME type & Convert URLs to Files API \texttt{fileUri}; use upload cache (TTL \(\approx\) 47 h); skip rows with missing media \\
+\hline
+Claude & Staging JSONL then Messages Batches API & Anthropic \texttt{output\_config} schema & Sanitize \texttt{custom\_id} for submission; remap IDs on result download \\
+\hline
 \end{tabular}
-\end{adjustbox}
 \end{table}
 
 \paragraph{Gemini image preprocessing.}
@@ -171,7 +173,7 @@ The script \texttt{export\_langfuse\_csv.py} paginates the Langfuse public API f
 The same workflow mirrors the full \texttt{streamlit\_app/} tree to the private dashboard repository \texttt{GeorgiiBurdinComo/llm-eval-dashboard}, from which the hosted Streamlit application is served. This keeps analytics reproducible and avoids embedding long-lived Langfuse credentials in the hosted app.
 
 \paragraph{Dashboard.}
-The dashboard exposes three main tabs. The overview tab shows per-model accuracy over time together with aggregated cost summaries from \texttt{cost\_usd}; the McNemar tab reports paired contingency tables and exact p-values for selected run pairs; and the utility-function tab combines accuracy and cost through the expected-cost formulation $E_t[\mathcal{C}](m)$ (Chapter~\ref{ch:cost-deployment-utility}) to support deployment trade-off analysis. Exported CSVs also feed notebooks for inspection beyond the dashboard.
+The dashboard exposes three main tabs. The overview tab shows per-model accuracy over time together with aggregated cost summaries from \texttt{cost\_usd}; the McNemar tab reports paired contingency tables and exact p-values for selected run pairs; and the utility-function tab combines accuracy and cost through the expected-cost formulation $E_t[\mathcal{C}](m)$ (Chapter~\ref{ch:cost-deployment-utility}) to support deployment trade-off analysis. In that utility tab, the trade-off control is parameterized as $R=C_{\mathrm{FP}}/C_{\mathrm{FN}}$, i.e.\ one false positive is treated as costly as $R$ false negatives. Exported CSVs also feed notebooks for inspection beyond the dashboard.
 
 \subsection{Artifacts and Cross-Step Data Flow}
 \label{sec:artifacts-data-flow}
@@ -344,7 +346,7 @@ The two examples illustrate the required separation between statistical evidence
 \subsection{Candidate Comparison for Corrective Action}
 \label{sec:cost-aware-comparison}
 
-This result block asks how a monitoring system should support choice among candidate corrective actions once predictive quality and cost are both visible. Each monitored run yields empirical accuracy, precision, recall, and F1 on the fixed subset together with mean per-request cost (Chapter~3). Operators compare candidates manually: some campaigns tolerate more false positives than others, so no single ranking rule is imposed in the experiments reported here.
+This result block asks how a monitoring system should support choice among candidate corrective actions once predictive quality and cost are both visible. Each monitored run yields empirical accuracy, precision, recall, and F1 on the fixed subset together with mean per-request cost (Chapter~3). However, because the monitoring subset is disagreement-enriched and not distribution-representative, the expected-cost ranking used for deployment decisions is computed on the full benchmark $\mathcal{D}_N$. Operators compare candidates manually: some campaigns tolerate more false positives than others, so no single ranking rule is imposed in the experiments reported here.
 
 \begin{figure}[htbp]
     \centering
@@ -363,7 +365,7 @@ This result block asks how a monitoring system should support choice among candi
 \paragraph{Authoritative export.}
 The \textbf{single authoritative numeric panel} for corrective-action comparison in this thesis is Table~\ref{tab:model-metrics-snapshot}. It is generated from \texttt{assets/metrics\_export/} (see \texttt{metrics\_wide.csv} and \texttt{export\_meta.json}) and input via \texttt{metrics\_tabular.tex}. The table lists confusion counts $(\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})$, threshold-based metrics, specificity, balanced accuracy, and PR--AUC for each candidate in one snapshot.
 
-Mean USD cost per request is \emph{not} in that static file; it is read from Langfuse traces as in Section~\ref{sec:metrics-dashboard}. For example, \texttt{gpt-4.1-mini} shows exported subset accuracy {\csname benchgpt41miniaccuracy\endcsname} versus \texttt{gpt-4.1-nano} {\csname benchgpt41nanoaccuracy\endcsname} on that snapshot. The result is a multi-criteria comparison rather than a single universally best model, reflecting the need to weigh continued deployment, model switching, and prompt recovery under campaign-specific priorities.
+Mean USD cost per request is \emph{not} in that static file; it is read from Langfuse traces as in Section~\ref{sec:metrics-dashboard}. For example, \texttt{gpt-4.1-mini} shows exported subset accuracy {\csname benchgpt41miniaccuracy\endcsname} versus \texttt{gpt-4.1-nano} {\csname benchgpt41nanoaccuracy\endcsname} on that snapshot. For scalar deployment ranking, Chapter~\ref{ch:cost-deployment-utility} then applies $E_t[\mathcal{C}](m)$ on $\mathcal{D}_N$ with the explicit ratio input $R=C_{\mathrm{FP}}/C_{\mathrm{FN}}$ (equivalently $C_{\mathrm{FN}}/C_{\mathrm{FP}}=1/R$). The result is a multi-criteria comparison rather than a single universally best model, reflecting the need to weigh continued deployment, model switching, and prompt recovery under campaign-specific priorities.
 
 \begin{table}[htbp]
     \centering

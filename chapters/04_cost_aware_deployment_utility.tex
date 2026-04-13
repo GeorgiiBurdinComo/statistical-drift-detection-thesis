@@ -1,14 +1,14 @@
 \chapter{Cost-aware Deployment Utility}
 \label{ch:cost-deployment-utility}
 
-This chapter derives a per-request expected cost that combines inference expenditure with asymmetric misclassification penalties, giving operators a single scalar for model ranking. It builds on the metrics and candidate comparison setup in Chapter~\ref{ch:drift} (Sections~\ref{sec:classification-metrics} and~\ref{sec:model-comparison-manual}).
+This chapter formalises deployment selection by combining inference expenditure with asymmetric misclassification penalties. When business-error costs can be specified, the result is a per-request expected cost that yields a single scalar ranking over candidate models. When such costs cannot be named reliably, the same utility is treated as a parametric decision rule and analysed through break-even boundaries and constraint-based selection. The chapter builds on the metrics and candidate comparison setup in Chapter~\ref{ch:drift} (Sections~\ref{sec:classification-metrics} and~\ref{sec:model-comparison-manual}).
 
 \section{Cost components}
 
 Every request to model $m$ at evaluation time $t$ incurs two costs:
 \begin{enumerate}
     \item \textbf{Inference cost} $C_t(m)$: the API charge in USD per request, observed from logged usage and pricing (same units as in Section~\ref{sec:model-comparison-manual}).
-    \item \textbf{Business error cost}: a penalty that depends on the prediction outcome. Correct predictions (TP, TN) incur no additional cost. Misclassifications carry:
+    \item \textbf{Business error cost}: a penalty that depends on the prediction outcome. Correct predictions (TP, TN) incur no additional business cost. Misclassifications carry:
     \begin{itemize}
         \item $C_{\mathrm{FP}}$: cost of a false positive (e.g.\ an irrelevant post flagged as relevant triggers unnecessary downstream processing),
         \item $C_{\mathrm{FN}}$: cost of a false negative (e.g.\ a relevant post is missed, causing a gap in campaign coverage).
@@ -18,7 +18,10 @@ Every request to model $m$ at evaluation time $t$ incurs two costs:
 \section{Derivation of per-request expected cost}
 
 \paragraph{Step 1: confusion-matrix decomposition.}
-On an evaluation batch $\mathcal{D}_n$ of $n$ labelled items, model $m$ at time $t$ produces confusion counts $\mathrm{TP}_t(m)$, $\mathrm{FP}_t(m)$, $\mathrm{TN}_t(m)$, $\mathrm{FN}_t(m)$ with $\mathrm{TP}_t+\mathrm{FP}_t+\mathrm{TN}_t+\mathrm{FN}_t=n$.
+On an evaluation batch $\mathcal{D}_n$ of $n$ labelled items, model $m$ at time $t$ produces confusion counts $\mathrm{TP}_t(m)$, $\mathrm{FP}_t(m)$, $\mathrm{TN}_t(m)$, $\mathrm{FN}_t(m)$ with
+\[
+\mathrm{TP}_t(m)+\mathrm{FP}_t(m)+\mathrm{TN}_t(m)+\mathrm{FN}_t(m)=n.
+\]
 
 \paragraph{Step 2: total batch cost.}
 Summing inference and error costs over the batch:
@@ -39,8 +42,8 @@ Dividing by $n$ yields the expected cost per request:
           + C_{\mathrm{FN}}\cdot\mathrm{FN}_t(m)}{n}.
 \end{equation}
 
-\paragraph{Step 4: model selection rule.}
-The preferred deployment model minimises expected cost:
+\paragraph{Step 4: model selection rule under fixed costs.}
+If operators can specify $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$, the preferred deployment model minimises expected cost:
 \begin{equation}
 \label{eq:model-selection}
     m_t^\star
@@ -69,17 +72,205 @@ so~\eqref{eq:expected-cost} is equivalently
 \end{equation}
 Here $\widehat{\mathrm{FPR}}_t$ and $\widehat{\mathrm{FNR}}_t$ are the confusion-derived rates from Chapter~\ref{ch:drift} (Section~\ref{sec:classification-metrics}), so the utility remains directly anchored to the same TP/FP/TN/FN accounting used for metric reporting. This form makes explicit that the FN penalty is weighted by prevalence $\hat{\pi}_t$ and the FP penalty by $1-\hat{\pi}_t$.
 
-\section{Operator parameters}
+\section{Operator parameters under uncertainty}
+\label{sec:operator-parameters-uncertainty}
 
-Two business parameters must be supplied:
-\begin{itemize}
-    \item $C_{\mathrm{FP}}$: monetary cost of one false positive,
-    \item $C_{\mathrm{FN}}$: monetary cost of one false negative.
-\end{itemize}
-For \emph{ranking} models only their ratio $r=C_{\mathrm{FN}}/C_{\mathrm{FP}}$ matters, because the absolute scale of $C_{\mathrm{FP}}$ cancels in $\arg\min$. $r$ answers the question: ``how many false-positive reviews is one missed relevant post worth?''
+In practice, operators may be unable to assign reliable monetary values to $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$. In that case, the expected-cost utility is treated not as a single point estimate but as a parametric decision rule. Write
+\[
+C_{\mathrm{FP}}=\lambda R,
+\qquad
+C_{\mathrm{FN}}=\lambda,
+\]
+where
+\[
+R=\frac{C_{\mathrm{FP}}}{C_{\mathrm{FN}}},
+\qquad
+\lambda>0.
+\]
+Here $R$ is the relative FP--FN trade-off and $\lambda$ is the overall scale of business-error severity relative to inference cost.
 
-\paragraph{Remark on prevalence and the monitoring panel.}
-On the full benchmark ($n=1199$; $682$ positive, $517$ negative) the prevalence is $\hat{\pi}\approx0.569$. On the monitoring panel ($n=300$; $250$ positive, $50$ negative) it is $\hat{\pi}\approx0.833$. Because the panel is $83\%$ positive, FN errors are roughly five times more likely than FP errors by base rate alone. A model with high $\widehat{\mathrm{FNR}}$ is therefore heavily penalised on the monitoring set even before applying $C_{\mathrm{FN}}$. The dataset used to evaluate $E_t[\mathcal{C}]$ should match the production class distribution.
+Substituting into~\eqref{eq:expected-cost} gives
+\begin{equation}
+\label{eq:expected-cost-lambda-R}
+    E_t[\mathcal{C}](m)
+    = C_t(m)
+    + \lambda\cdot\frac{R\,\mathrm{FP}_t(m)+\mathrm{FN}_t(m)}{n}.
+\end{equation}
+Equivalently, in rate form,
+\begin{equation}
+\label{eq:expected-cost-rate-lambda-R}
+    E_t[\mathcal{C}](m)
+    = C_t(m)
+    + \lambda\Bigl(
+        R\,\widehat{\mathrm{FPR}}_t(m)\,(1-\hat{\pi}_t)
+        + \widehat{\mathrm{FNR}}_t(m)\,\hat{\pi}_t
+      \Bigr).
+\end{equation}
+
+This parameterization separates two distinct questions: how much more costly a false positive is than a false negative (captured by $R$), and how important business errors are relative to inference cost (captured by $\lambda$). Because the inference term $C_t(m)$ remains fixed in USD and is not scaled by $\lambda$, model ranking depends in general on both $R$ and $\lambda$, not only on their ratio. The reciprocal form
+\[
+r=\frac{C_{\mathrm{FN}}}{C_{\mathrm{FP}}}=\frac{1}{R}
+\]
+can also be used, but this thesis reports deployment comparisons in the $R$-parameterization for consistency.
+
+\section{Pairwise break-even analysis}
+\label{sec:break-even-analysis}
+
+For two candidate models $m_i,m_j\in\mathcal{M}_{\mathrm{cand}}$, define the pairwise differences
+\[
+\Delta C_t^{ij}=C_t(m_i)-C_t(m_j),\qquad
+\Delta \mathrm{FP}_t^{ij}=\mathrm{FP}_t(m_i)-\mathrm{FP}_t(m_j),\qquad
+\Delta \mathrm{FN}_t^{ij}=\mathrm{FN}_t(m_i)-\mathrm{FN}_t(m_j).
+\]
+Then $m_i$ is preferred to $m_j$ under~\eqref{eq:expected-cost} iff
+\[
+\Delta C_t^{ij}
++
+\frac{
+C_{\mathrm{FP}}\Delta \mathrm{FP}_t^{ij}
++
+C_{\mathrm{FN}}\Delta \mathrm{FN}_t^{ij}
+}{n}
+\le 0.
+\]
+
+The break-even boundary between the two models is therefore
+\begin{equation}
+\label{eq:break-even-count}
+    \Delta C_t^{ij}
+    +
+    \frac{
+    C_{\mathrm{FP}}\Delta \mathrm{FP}_t^{ij}
+    +
+    C_{\mathrm{FN}}\Delta \mathrm{FN}_t^{ij}
+    }{n}
+    =0.
+\end{equation}
+Under the parameterization $C_{\mathrm{FP}}=\lambda R$ and $C_{\mathrm{FN}}=\lambda$, this becomes
+\begin{equation}
+\label{eq:break-even-lambda-R}
+    \Delta C_t^{ij}
+    +
+    \lambda\cdot
+    \frac{
+    R\,\Delta \mathrm{FP}_t^{ij}
+    +
+    \Delta \mathrm{FN}_t^{ij}
+    }{n}
+    =0.
+\end{equation}
+
+For fixed $R$, the break-even severity level is
+\begin{equation}
+\label{eq:lambda-breakpoint}
+    \lambda_{ij}^\star(R)
+    =
+    -\frac{n\,\Delta C_t^{ij}}
+    {R\,\Delta \mathrm{FP}_t^{ij}+\Delta \mathrm{FN}_t^{ij}},
+\end{equation}
+provided the denominator is nonzero. For fixed $\lambda$, the break-even trade-off ratio is
+\begin{equation}
+\label{eq:R-breakpoint}
+    R_{ij}^\star(\lambda)
+    =
+    -\frac{n\,\Delta C_t^{ij}/\lambda+\Delta \mathrm{FN}_t^{ij}}
+    {\Delta \mathrm{FP}_t^{ij}},
+\end{equation}
+provided $\Delta \mathrm{FP}_t^{ij}\neq 0$.
+
+These breakpoints identify parameter values at which deployment preference switches from one candidate to another. Across all candidate pairs, the resulting boundaries partition the admissible $(R,\lambda)$ plane into regions within which the minimiser of~\eqref{eq:expected-cost-lambda-R} is constant. When the relevant denominator is zero, no finite breakpoint exists in that one-dimensional slice. When the solution is outside the admissible region $(R\ge 0,\lambda>0)$, no operational switch occurs for nonnegative cost assumptions.
+
+\paragraph{Dominance.}
+If, for some pair $(m_i,m_j)$,
+\[
+C_t(m_i)\le C_t(m_j),\qquad
+\mathrm{FP}_t(m_i)\le \mathrm{FP}_t(m_j),\qquad
+\mathrm{FN}_t(m_i)\le \mathrm{FN}_t(m_j),
+\]
+with at least one strict inequality, then $m_i$ dominates $m_j$ for all $C_{\mathrm{FP}},C_{\mathrm{FN}}\ge 0$. Such dominated candidates can be removed before sensitivity analysis.
+
+\section{Constraint-based selection without monetary elicitation}
+\label{sec:constraint-based-selection}
+
+When operators cannot assign reliable monetary values to $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$, model selection can instead be formulated as constrained optimisation over operational tolerances. Let $\mathcal{F}_t\subseteq\mathcal{M}_{\mathrm{cand}}$ denote the feasible set under operator-defined constraints, and let $J_t(m)$ be a secondary objective over feasible candidates. The deployment rule becomes
+\[
+m_t^\star\in\arg\min_{m\in\mathcal{F}_t} J_t(m),
+\]
+with the specific form determined by the operational requirement.
+
+\paragraph{Recall-constrained cost minimisation.}
+If the business can specify a minimum acceptable recall $\tau_{\mathrm{rec}}$, define
+\[
+\mathcal{F}_t^{\mathrm{rec}}(\tau_{\mathrm{rec}})
+=
+\left\{
+m\in\mathcal{M}_{\mathrm{cand}}:
+\widehat{\mathrm{Recall}}_t(m)\ge\tau_{\mathrm{rec}}
+\right\}.
+\]
+Then select
+\begin{equation}
+\label{eq:recall-constrained-selection}
+    m_t^\star(\tau_{\mathrm{rec}})
+    \in
+    \arg\min_{m\in\mathcal{F}_t^{\mathrm{rec}}(\tau_{\mathrm{rec}})}
+    C_t(m).
+\end{equation}
+Since $\widehat{\mathrm{Recall}}_t(m)=1-\widehat{\mathrm{FNR}}_t(m)$, this is equivalent to requiring
+\[
+\widehat{\mathrm{FNR}}_t(m)\le 1-\tau_{\mathrm{rec}}.
+\]
+
+\paragraph{Budget-constrained miss-rate minimisation.}
+If the business can specify a per-request inference budget $B$, define
+\[
+\mathcal{F}_t^{\mathrm{bud}}(B)
+=
+\left\{
+m\in\mathcal{M}_{\mathrm{cand}}:
+C_t(m)\le B
+\right\}.
+\]
+Then select
+\begin{equation}
+\label{eq:budget-constrained-selection}
+    m_t^\star(B)
+    \in
+    \arg\min_{m\in\mathcal{F}_t^{\mathrm{bud}}(B)}
+    \widehat{\mathrm{FNR}}_t(m),
+\end{equation}
+or equivalently
+\[
+m_t^\star(B)
+\in
+\arg\max_{m\in\mathcal{F}_t^{\mathrm{bud}}(B)}
+\widehat{\mathrm{Recall}}_t(m).
+\]
+
+\paragraph{Precision-constrained recall maximisation.}
+If unnecessary downstream processing must be limited, operators may specify a minimum acceptable precision $\tau_{\mathrm{prec}}$. Define
+\[
+\mathcal{F}_t^{\mathrm{prec}}(\tau_{\mathrm{prec}})
+=
+\left\{
+m\in\mathcal{M}_{\mathrm{cand}}:
+\widehat{\mathrm{Precision}}_t(m)\ge\tau_{\mathrm{prec}}
+\right\}.
+\]
+Then select
+\begin{equation}
+\label{eq:precision-constrained-selection}
+    m_t^\star(\tau_{\mathrm{prec}})
+    \in
+    \arg\max_{m\in\mathcal{F}_t^{\mathrm{prec}}(\tau_{\mathrm{prec}})}
+    \widehat{\mathrm{Recall}}_t(m).
+\end{equation}
+
+These constrained rules change only when a threshold crosses one of the observed candidate metric values or inference costs, so the resulting deployment decision is piecewise constant and operationally interpretable. If the feasible set is empty, no candidate satisfies the current operational requirements and prompt optimisation is triggered before any API-model switch is made.
+
+\section{Remark on prevalence and evaluation scope}
+
+On the full benchmark ($n=1199$; $682$ positive, $517$ negative) the prevalence is $\hat{\pi}\approx0.569$. On the monitoring panel ($n=300$; $250$ positive, $50$ negative) it is $\hat{\pi}\approx0.833$. Because that panel is strongly disagreement-enriched and class-skewed, it is suitable for drift detection but not representative for deployment-cost estimation or constrained deployment selection. Therefore, the expected-cost comparisons, break-even analysis, and constrained-selection results in this thesis are reported on the full dataset $\mathcal{D}_N$ so that FP/FN trade-offs are weighted under a distribution closer to operational usage.
 
 \section{Monitor--detect--act pipeline}
 
@@ -87,24 +278,29 @@ After each batch evaluation the following logic applies:
 \begin{enumerate}
     \item \textbf{Monitor:} compute McNemar statistics for $m_{\mathrm{curr}}$ on $\mathcal{D}_n$ relative to a chosen baseline time.
     \item \textbf{Detect:} register a drift event if $b>c$ and the one-sided $p$-value is below $\alpha$ (Section~\ref{sec:mcnemar-section}).
-    \item \textbf{Act:} compare candidates via $E_t[\mathcal{C}](m)$; operators set $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$ (or equivalently $r$) to reflect campaign priorities. If no acceptable fallback exists, trigger prompt optimisation (Chapter~\ref{chap:prompt-optimisation}) before switching the API model identifier.
+    \item \textbf{Act:} evaluate candidate models on the full benchmark $\mathcal{D}_N$ using one of two decision paths:
+    \begin{enumerate}
+        \item if credible monetary assumptions are available, compare candidates via $E_t[\mathcal{C}](m)$ and inspect pairwise break-even boundaries over plausible $(R,\lambda)$ values;
+        \item if monetary elicitation is unavailable, apply a constrained selection rule such as~\eqref{eq:recall-constrained-selection}, \eqref{eq:budget-constrained-selection}, or~\eqref{eq:precision-constrained-selection}.
+    \end{enumerate}
+    If no acceptable fallback exists, if the feasible set is empty, or if model preference is unstable across plausible parameter values, trigger prompt optimisation (Chapter~\ref{chap:prompt-optimisation}) for the shortlisted models, re-evaluate them on $\mathcal{D}_N$, and switch the API model identifier only after this full-dataset re-comparison.
 \end{enumerate}
 
-The selected deployment model is $m_t^\star$ from~\eqref{eq:model-selection}; when operators prefer not to commit to a single scalar rule, they choose $m_{\mathrm{curr}}$ from the same metrics without computing $E_t[\mathcal{C}]$.
+When fixed costs are available, the selected deployment model is $m_t^\star$ from~\eqref{eq:model-selection}. When costs are uncertain or unavailable, the selected model is the feasible optimum under the chosen constrained rule.
 
-\section{Expected-cost snapshot on the monitoring panel}
+\section{Expected-cost snapshot on the full benchmark}
 \label{sec:expected-cost-snapshot}
 
-For the empirical candidate-comparison stage, this thesis uses a single exported expected-cost panel generated from \texttt{assets/metrics\_export/expected\_cost.csv}. The panel is included in Table~\ref{tab:expected-cost-snapshot} and corresponds to the same monitoring snapshot used for the classification metrics table in Chapter~\ref{chap:system-architecture}. This keeps deployment ranking consistent with the scalar utility in~\eqref{eq:expected-cost}.
+For empirical illustration, this thesis includes a single exported expected-cost panel generated from \texttt{assets/metrics\_export/expected\_cost.csv}. The panel is included in Table~\ref{tab:expected-cost-snapshot} and is computed on the full benchmark $\mathcal{D}_N$ (not the monitoring subset), so the displayed ranking follows~\eqref{eq:expected-cost} under the full-data class distribution for one fixed penalty configuration.
 
 \begin{table}[htbp]
     \centering
     \footnotesize
-    \caption{Exported expected-cost snapshot per candidate on $\mathcal{D}_n$.}
+    \caption{Illustrative expected-cost snapshot per candidate on $\mathcal{D}_N$ for one fixed penalty configuration.}
     \label{tab:expected-cost-snapshot}
     \begin{adjustbox}{max width=\linewidth}
     \input{assets/metrics_export/expected_cost_tabular.tex}
     \end{adjustbox}
 \end{table}
 
-The values in Table~\ref{tab:expected-cost-snapshot} are interpreted under the fixed penalty setup used in the export. If campaign priorities change, operators update $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$ and recompute the panel before selecting $m_t^\star$.
+This table should be interpreted as one slice through the broader parametric decision model developed in this chapter. If campaign priorities change, operators may recompute the export for different $(C_{\mathrm{FP}},C_{\mathrm{FN}})$ values, inspect the corresponding break-even boundaries, or fall back to the constrained selection rules when direct monetary calibration is not reliable.
