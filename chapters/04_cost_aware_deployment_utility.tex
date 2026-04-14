@@ -7,8 +7,8 @@ This chapter formalises deployment selection by combining inference expenditure 
 
 Every request to model $m$ at evaluation time $t$ incurs two costs:
 \begin{enumerate}
-    \item \textbf{Inference cost} $C_t(m)$: the API charge in USD per request, observed from logged usage and pricing (same units as in Section~\ref{sec:model-comparison-manual}).
-    \item \textbf{Business error cost}: a penalty that depends on the prediction outcome. Correct predictions (TP, TN) incur no additional business cost. Misclassifications carry:
+    \item Inference cost $C_t(m)$: the API charge in USD per request, observed from logged usage and pricing (same units as in Section~\ref{sec:model-comparison-manual}).
+    \item Business error cost: a penalty that depends on the prediction outcome. Correct predictions (TP, TN) incur no additional business cost. Misclassifications carry:
     \begin{itemize}
         \item $C_{\mathrm{FP}}$: cost of a false positive (e.g.\ an irrelevant post flagged as relevant triggers unnecessary downstream processing),
         \item $C_{\mathrm{FN}}$: cost of a false negative (e.g.\ a relevant post is missed, causing a gap in campaign coverage).
@@ -276,9 +276,9 @@ On the full benchmark ($n=1199$; $682$ positive, $517$ negative) the prevalence 
 
 After each batch evaluation the following logic applies:
 \begin{enumerate}
-    \item \textbf{Monitor:} compute McNemar statistics for $m_{\mathrm{curr}}$ on $\mathcal{D}_n$ relative to a chosen baseline time.
-    \item \textbf{Detect:} register a drift event if $b>c$ and the one-sided $p$-value is below $\alpha$ (Section~\ref{sec:mcnemar-section}).
-    \item \textbf{Act:} evaluate candidate models on the full benchmark $\mathcal{D}_N$ using one of two decision paths:
+    \item Monitor: compute McNemar statistics for $m_{\mathrm{curr}}$ on $\mathcal{D}_n$ relative to a chosen baseline time.
+    \item Detect: register a drift event if $b>c$ and the one-sided $p$-value is below $\alpha$ (Section~\ref{sec:mcnemar-section}).
+    \item Act: evaluate candidate models on the full benchmark $\mathcal{D}_N$ using one of two decision paths:
     \begin{enumerate}
         \item if credible monetary assumptions are available, compare candidates via $E_t[\mathcal{C}](m)$ and inspect pairwise break-even boundaries over plausible $(R,\lambda)$ values;
         \item if monetary elicitation is unavailable, apply a constrained selection rule such as~\eqref{eq:recall-constrained-selection}, \eqref{eq:budget-constrained-selection}, or~\eqref{eq:precision-constrained-selection}.

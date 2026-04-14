@@ -29,7 +29,7 @@ For binary classification, $\ell(f_t(x_i;\pi),y_i)=\mathbb{I}(f_t(x_i;\pi)=y_i)$
     \arg\max_{\pi \in \mathcal{P}} J_t(\pi).
 \end{equation}
 
-The search space $\mathcal{P}$ is discrete; objectives are black-box (outputs only); each candidate requires repeated API calls. Practical methods approximate $\arg\max$ by iterative \emph{generate--evaluate--update} schemes. Let $\mathcal{C}_k$ be candidates at iteration $k$, $\mathcal{E}_k=\mathrm{Eval}(\mathcal{C}_k,\mathcal{D}_{\mathrm{opt}})$ feedback, and $\mathcal{U}$ an update rule:
+The search space $\mathcal{P}$ is discrete; objectives are black-box (outputs only); each candidate requires repeated API calls. Practical methods approximate $\arg\max$ by iterative generate--evaluate--update schemes. Let $\mathcal{C}_k$ be candidates at iteration $k$, $\mathcal{E}_k=\mathrm{Eval}(\mathcal{C}_k,\mathcal{D}_{\mathrm{opt}})$ feedback, and $\mathcal{U}$ an update rule:
 \begin{align}
     \mathcal{C}_0 &= \mathrm{Init}(\mathcal{D}_{\mathrm{opt}}), \\
     \mathcal{E}_k &= \mathrm{Eval}(\mathcal{C}_k,\mathcal{D}_{\mathrm{opt}}), \\
@@ -149,12 +149,12 @@ Survey work organises APO into a common pipeline (seed, generate, evaluate, filt
 
 \subsection{Gradient-based and soft-prompt methods}
 
-In \emph{soft prompting}, a trainable continuous vector $\mathbf{p}$ is prepended to input embeddings~\cite{lester2021prompt,li2021prefix}. With downstream loss $\mathcal{L}$,
+In soft prompting, a trainable continuous vector $\mathbf{p}$ is prepended to input embeddings~\cite{lester2021prompt,li2021prefix}. With downstream loss $\mathcal{L}$,
 \begin{equation}
     \mathbf{p}_{k+1} = \mathbf{p}_k - \eta \nabla_{\mathbf{p}} \mathcal{L}(\mathbf{p}_k),
     \qquad \eta>0.
 \end{equation}
-\emph{Hard} prompt search may use token-level gradients to rank substitutions~\cite{shin2020autoprompt}. These approaches require access to internal representations or gradients and are generally incompatible with opaque LLM APIs.
+Hard prompt search may use token-level gradients to rank substitutions~\cite{shin2020autoprompt}. These approaches require access to internal representations or gradients and are generally incompatible with opaque LLM APIs.
 
 \subsection{Reinforcement-learning approaches}
 
@@ -206,11 +206,11 @@ This work uses GEPA (Genetic--Pareto Evolutionary Prompt Optimisation)~\cite{agr
 
 GEPA maintains a candidate pool, initially the base system $\Phi$. Training data are split into a feedback set $D_{\mathrm{feedback}}$ and a validation set $D_{\mathrm{pareto}}$; optimisation stops when a rollout budget is exhausted. At iteration $k$:
 \begin{enumerate}
-    \item \textbf{Candidate selection.} Sample a parent from the Pareto-filtered pool (not necessarily the single global best).
-    \item \textbf{Module selection.} Choose one module to update (e.g.\ round-robin over pipeline modules).
-    \item \textbf{Minibatch rollout.} Execute the parent on a minibatch from $D_{\mathrm{feedback}}$; collect outputs, traces, and evaluator feedback.
-    \item \textbf{Reflective prompt update.} A reflection language model proposes a revised prompt from the trace and textual feedback (semantic mutation, not random token edits).
-    \item \textbf{Acceptance and validation.} Re-evaluate on the minibatch; accept into the pool if the minibatch score improves over the parent, then score on $D_{\mathrm{pareto}}$. Discard otherwise.
+    \item Candidate selection. Sample a parent from the Pareto-filtered pool (not necessarily the single global best).
+    \item Module selection. Choose one module to update (e.g.\ round-robin over pipeline modules).
+    \item Minibatch rollout. Execute the parent on a minibatch from $D_{\mathrm{feedback}}$; collect outputs, traces, and evaluator feedback.
+    \item Reflective prompt update. A reflection language model proposes a revised prompt from the trace and textual feedback (semantic mutation, not random token edits).
+    \item Acceptance and validation. Re-evaluate on the minibatch; accept into the pool if the minibatch score improves over the parent, then score on $D_{\mathrm{pareto}}$. Discard otherwise.
 \end{enumerate}
 The algorithm returns the candidate with best aggregate performance on $D_{\mathrm{pareto}}$. GEPA+Merge adds crossover between lineages~\cite{agrawal2025gepa}. Reported benchmarks indicate favourable sample efficiency relative to methods such as GRPO under comparable budgets~\cite{agrawal2025gepa}.
 
@@ -307,7 +307,7 @@ The monitoring and optimisation material are intentionally rich in disagreement 
 \section{Integration into the monitoring loop}
 \label{sec:apo-monitoring-integration}
 
-Prompt optimisation is \emph{not} a substitute for monitoring. It is the adaptive response once Chapter~\ref{ch:drift} has established statistically supported degradation or when operators trigger recovery. Operationally:
+Prompt optimisation is not a substitute for monitoring. It is the adaptive response once Chapter~\ref{ch:drift} has established statistically supported degradation or when operators trigger recovery. Operationally:
 \begin{enumerate}
     \item Monitor the deployed model on the fixed subset $\mathcal{D}_n$.
     \item Detect degradation using the paired rule in Section~\ref{sec:mcnemar-section} (or equivalent operator decision).

@@ -1,3 +1,13 @@
 model,balanced_accuracy
-gpt-4.1-mini,0.8715261044176708
-gpt-4.1-nano,0.776
+claude-haiku-4-5,0.868
+claude-sonnet-4-5,0.908
+claude-sonnet-4-6,0.9099999999999999
+gemini-2.5-flash,0.8140000000000001
+gpt-4.1-mini,0.874
+gpt-4.1-nano,0.74
+gpt-5,0.9
+gpt-5-mini,0.922
+gpt-5-nano,0.9019999999999999
+gpt-5.1,0.9219999999999999
+gpt-5.2,0.9179999999999999
+gpt-5.4,0.9019678714859438

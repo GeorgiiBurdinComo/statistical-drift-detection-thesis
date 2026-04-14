@@ -8,7 +8,7 @@ This chapter describes the implemented monitoring system, the experimental setup
 
 The monitoring system is implemented as a set of Python scripts orchestrated by three scheduled GitHub Actions workflows (Figure~\ref{fig:ga-weekly-pipelines}). Each workflow handles one stage of the evaluation cycle: submitting batch jobs to provider APIs (Friday), retrieving and ingesting results into Langfuse (Monday morning), and exporting CSV snapshots for the hosted Streamlit dashboard (Monday afternoon). Table~\ref{tab:artifact-inventory} in Section~\ref{sec:artifacts-data-flow} summarizes artifacts and handoffs across these stages.
 
-The architecture supports two run types. A \emph{benchmark run} evaluates all models on the full \(N=1199\) reference dataset (approximately USD~90 per pass) and is used once to construct the monitoring subset. A \emph{monitoring run} evaluates models on the frozen \(n=300\) disagreement-based subset (approximately USD~20 per pass) and runs weekly to produce the longitudinal evidence analysed later in this chapter.
+The architecture supports two run types. A benchmark run evaluates all models on the full \(N=1199\) reference dataset (approximately USD~90 per pass) and is used once to construct the monitoring subset. A monitoring run evaluates models on the frozen \(n=300\) disagreement-based subset (approximately USD~20 per pass) and runs weekly to produce the longitudinal evidence analysed later in this chapter.
 
 The concrete set of monitored models and token prices used for cost accounting is defined in \texttt{config/models.yaml} and summarized in Table~\ref{tab:monitored-models}.
 
@@ -18,7 +18,7 @@ The concrete set of monitored models and token prices used for cost accounting i
 \label{tab:monitored-models}
 \begin{tabular}{ll}
 \toprule
-\textbf{Provider} & \textbf{Models} \\
+Provider & Models \\
 \midrule
 OpenAI   & \texttt{gpt-5.4-2026-03-05}, \texttt{gpt-5.2}, \texttt{gpt-5.1}, \texttt{gpt-5}, \\
          & \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, \texttt{gpt-4.1-mini}, \texttt{gpt-4.1-nano}. \\
@@ -42,20 +42,20 @@ The pipeline runs in three stages, each triggered by a separate GitHub Actions w
 \subsection{Workflow~1: Submit Batches}
 \label{sec:batch-process}
 
-\paragraph{Schedule.} \texttt{weekly\_drift\_monitoring.yml} runs every \textbf{Friday at 05:00 UTC}.
+\paragraph{Schedule.} \texttt{weekly\_drift\_monitoring.yml} runs every Friday at 05:00 UTC.
 
 \paragraph{Data sources.}
 \label{sec:dataset-storage}
 The implementation uses two Langfuse datasets:
 \begin{itemize}
-    \item \textbf{Reference benchmark} (\(N=1199\)): \href{https://cloud.langfuse.com/project/cmkqnvv3z016aad08kqtjim2n/datasets/cmlfi3uo0003yad07e75cd7e3}{Langfuse link};
-    \item \textbf{Monitoring subset} (\(n=300\)): \href{https://cloud.langfuse.com/project/cmkqnvv3z016aad08kqtjim2n/datasets/cmmjjduz501c6ad07vbuln8m8/items}{Langfuse link}.
+    \item Reference benchmark (\(N=1199\)): \href{https://cloud.langfuse.com/project/cmkqnvv3z016aad08kqtjim2n/datasets/cmlfi3uo0003yad07e75cd7e3}{Langfuse link};
+    \item Monitoring subset (\(n=300\)): \href{https://cloud.langfuse.com/project/cmkqnvv3z016aad08kqtjim2n/datasets/cmmjjduz501c6ad07vbuln8m8/items}{Langfuse link}.
 \end{itemize}
 
 Langfuse acts as the single source of truth. Each row carries a stable \texttt{custom\_id} reused end-to-end across batch submission, result files, ingested traces, CSV exports, and statistical analyses. Each row includes the campaign description, post text, transcription, hashtags, media references, frame references where applicable, and the binary ground-truth label \texttt{campaign\_relevant}. The 300-example monitoring dataset is selected once from the full benchmark and then held fixed, so paired McNemar comparisons are not confounded by changes in sample composition.
 
 \paragraph{Request normalization.}
-Rows are normalized to a shared structure \texttt{\{custom\_id, body, campaign\_relevant\}}. The \texttt{body} follows an OpenAI-style \emph{Responses} request object: a template from \texttt{config/request\_template.json} is merged with per-item multimodal \texttt{input} when loading from Langfuse. A local CSV path is also supported so the frozen subset can be replayed without live Langfuse access. The same representation is passed to all provider adapters, so only transport and provider-specific constraints differ downstream.
+Rows are normalized to a shared structure \texttt{\{custom\_id, body, campaign\_relevant\}}. The \texttt{body} follows an OpenAI-style Responses request object: a template from \texttt{config/request\_template.json} is merged with per-item multimodal \texttt{input} when loading from Langfuse. A local CSV path is also supported so the frozen subset can be replayed without live Langfuse access. The same representation is passed to all provider adapters, so only transport and provider-specific constraints differ downstream.
 
 \paragraph{Orchestration.}
 The orchestrator \texttt{run\_eval.py} loads the eval subset, optionally ensures Gemini image uploads when any Gemini model is selected, and dispatches each model to the corresponding \texttt{batch\_*.py} adapter. Each adapter serializes the canonical request body into the provider's native batch format, uploads the JSONL file, and submits an asynchronous batch job. The orchestrator collects the returned batch identifiers into a run manifest \texttt{data/batch\_ids.json} (containing \texttt{run\_id}, \texttt{subset\_size}, and per-model batch identifiers), which is saved to the GitHub Actions cache so the retrieve workflow can restore it.
@@ -73,7 +73,7 @@ The inference task is identical across providers: classify each example as campa
 \renewcommand{\arraystretch}{1.25}
 \begin{tabular}{|p{1.8cm}|p{3.5cm}|p{3.6cm}|p{5.4cm}|}
 \hline
-\textbf{Provider} & \textbf{Batch submission format} & \textbf{Schema / response constraint} & \textbf{Provider-specific preprocessing} \\
+Provider & Batch submission format & Schema / response constraint & Provider-specific preprocessing \\
 \hline
 OpenAI & JSONL rows with \texttt{POST /v1/responses} & \texttt{text.format} with JSON schema & Reuse canonical multimodal \texttt{input}; keep image URLs as-is \\
 \hline
@@ -133,7 +133,7 @@ Across all three providers, the parsed prediction is aligned with the same minim
 \subsection{Workflow~2: Retrieve and Ingest}
 \label{sec:metrics-dashboard}
 
-\paragraph{Schedule.} \texttt{weekly\_retrieve.yml} runs every \textbf{Monday at 05:00 UTC}.
+\paragraph{Schedule.} \texttt{weekly\_retrieve.yml} runs every Monday at 05:00 UTC.
 
 \paragraph{Polling and download.}
 The script \texttt{poll\_and\_ingest.py} restores \texttt{data/batch\_ids.json} from the Actions cache, polls each provider's batch API until all jobs complete, and downloads the result JSONL files into \texttt{data/results/}.
@@ -164,7 +164,7 @@ From \texttt{error\_type}, precision, recall, and F1 are computed per run on $\m
 
 \subsection{Workflow~3: Dashboard Sync}
 
-\paragraph{Schedule.} \texttt{sync-streamlit-dashboard.yml} runs every \textbf{Monday at 07:00 UTC} and on pushes to \texttt{main} that change \texttt{streamlit\_app/}.
+\paragraph{Schedule.} \texttt{sync-streamlit-dashboard.yml} runs every Monday at 07:00 UTC and on pushes to \texttt{main} that change \texttt{streamlit\_app/}.
 
 \paragraph{CSV export.}
 The script \texttt{export\_langfuse\_csv.py} paginates the Langfuse public API for traces and scores over a configured time window, flattens nested fields, retains columns used by the app, and writes \texttt{streamlit\_app/langfuse\_traces.csv} and \texttt{langfuse\_scores.csv}. Those files are committed to the main evaluation repository \texttt{gocomo/llm-batch-eval}.
@@ -189,7 +189,7 @@ Table~\ref{tab:artifact-inventory} summarizes the main artifacts, their provenan
 \renewcommand{\arraystretch}{1.18}
 \begin{tabularx}{\linewidth}{@{}L{3.6cm}Y Y@{}}
 \toprule
-\textbf{Artifact} & \textbf{Provenance} & \textbf{Downstream} \\
+Artifact & Provenance & Downstream \\
 \midrule
 
 \texttt{data/batch\_ids.json} &
@@ -341,7 +341,7 @@ For \texttt{gpt-5.1-mini}, the corresponding run pair in Table~\ref{tab:mcnemar_
 The paired tables distinguish complete stability from mixed regressions and recoveries.
 
 \paragraph{Interpretation for alerts.}
-The two examples illustrate the required separation between statistical evidence and descriptive movement. For \texttt{gpt-5}, no discordant pairs means no detectable behavioural change. For \texttt{gpt-5.1-mini}, the net direction is negative ($b>c$), but evidence is insufficient at the configured threshold. In the monitor--detect--act logic, this state is treated as \emph{watch-and-compare}: keep observing drift evidence while preparing fallback comparisons using the metric/cost panel.
+The two examples illustrate the required separation between statistical evidence and descriptive movement. For \texttt{gpt-5}, no discordant pairs means no detectable behavioural change. For \texttt{gpt-5.1-mini}, the net direction is negative ($b>c$), but evidence is insufficient at the configured threshold. In the monitor--detect--act logic, this state is treated as watch-and-compare: keep observing drift evidence while preparing fallback comparisons using the metric/cost panel.
 
 \subsection{Candidate Comparison for Corrective Action}
 \label{sec:cost-aware-comparison}
@@ -363,9 +363,9 @@ This result block asks how a monitoring system should support choice among candi
 \end{figure}
 
 \paragraph{Authoritative export.}
-The \textbf{single authoritative numeric panel} for corrective-action comparison in this thesis is Table~\ref{tab:model-metrics-snapshot}. It is generated from \texttt{assets/metrics\_export/} (see \texttt{metrics\_wide.csv} and \texttt{export\_meta.json}) and input via \texttt{metrics\_tabular.tex}. The table lists confusion counts $(\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})$, threshold-based metrics, specificity, balanced accuracy, and PR--AUC for each candidate in one snapshot.
+The single authoritative numeric panel for corrective-action comparison in this thesis is Table~\ref{tab:model-metrics-snapshot}. It is generated from \texttt{assets/metrics\_export/} (see \texttt{metrics\_wide.csv} and \texttt{export\_meta.json}) and input via \texttt{metrics\_tabular.tex}. The table lists confusion counts $(\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})$, accuracy, precision, recall, F$_1$, specificity, and balanced accuracy for each candidate in one snapshot (hard labels only; Section~\ref{sec:classification-metrics}).
 
-Mean USD cost per request is \emph{not} in that static file; it is read from Langfuse traces as in Section~\ref{sec:metrics-dashboard}. For example, \texttt{gpt-4.1-mini} shows exported subset accuracy {\csname benchgpt41miniaccuracy\endcsname} versus \texttt{gpt-4.1-nano} {\csname benchgpt41nanoaccuracy\endcsname} on that snapshot. For scalar deployment ranking, Chapter~\ref{ch:cost-deployment-utility} then applies $E_t[\mathcal{C}](m)$ on $\mathcal{D}_N$ with the explicit ratio input $R=C_{\mathrm{FP}}/C_{\mathrm{FN}}$ (equivalently $C_{\mathrm{FN}}/C_{\mathrm{FP}}=1/R$). The result is a multi-criteria comparison rather than a single universally best model, reflecting the need to weigh continued deployment, model switching, and prompt recovery under campaign-specific priorities.
+Mean USD cost per request is not in that static file; it is read from Langfuse traces as in Section~\ref{sec:metrics-dashboard}. For example, \texttt{gpt-4.1-mini} shows exported subset accuracy {\csname benchgpt41miniaccuracy\endcsname} versus \texttt{gpt-4.1-nano} {\csname benchgpt41nanoaccuracy\endcsname} on that snapshot. For scalar deployment ranking, Chapter~\ref{ch:cost-deployment-utility} then applies $E_t[\mathcal{C}](m)$ on $\mathcal{D}_N$ with the explicit ratio input $R=C_{\mathrm{FP}}/C_{\mathrm{FN}}$ (equivalently $C_{\mathrm{FN}}/C_{\mathrm{FP}}=1/R$). The result is a multi-criteria comparison rather than a single universally best model, reflecting the need to weigh continued deployment, model switching, and prompt recovery under campaign-specific priorities.
 
 \begin{table}[htbp]
     \centering

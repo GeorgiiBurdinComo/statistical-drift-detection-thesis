@@ -3,7 +3,7 @@
 \section{Context and Motivation}
 Industrial classification pipelines increasingly rely on Large Language Model (LLM) providers that expose their systems through application programming interfaces. In such settings, the deployed model can be viewed as a non-stationary black-box function $f_t(x)$ whose internal parameters and update schedule are controlled by the provider rather than by the user. As a result, the behaviour of the same API-accessible model may change over time even when the downstream task, the prompt, and the evaluation procedure remain fixed.
 
-The practical motivation for this thesis arises from the author's two-year work experience at \textbf{GOCOMO GmbH}. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, event, or other marketing entity. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, manual verification is not scalable, and automated classification becomes a necessary operational component.
+The practical motivation for this thesis arises from the author's two-year work experience at GOCOMO GmbH. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, event, or other marketing entity. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, manual verification is not scalable, and automated classification becomes a necessary operational component.
 
 However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade due to silent provider-side updates. In a business-critical pipeline, such degradation must be detected early. At the same time, repeated full-scale benchmarking on a large labelled dataset is costly. This creates a need for a monitoring methodology that is statistically informative, operationally feasible, and economically justified.
 
@@ -26,11 +26,11 @@ Accordingly, the thesis does not study model drift merely as an observational ph
 The problem stated above is investigated through the following research questions:
 
 \begin{enumerate}
-    \item[\textbf{RQ1:}] How can the campaign-relevance detection task be formally represented as a binary classification problem for non-stationary black-box LLM APIs?
-    \item[\textbf{RQ2:}] How can a reduced monitoring subset be derived from a larger reference benchmark so that routine evaluation remains substantially cheaper while preserving sensitivity to model drift?
-    \item[\textbf{RQ3:}] Which statistical criteria and alerting rules are appropriate for detecting practically significant performance degradation over time?
-    \item[\textbf{RQ4:}] How should candidate models be compared and selected when deployment decisions depend on predictive quality, inference cost, and campaign-specific error tolerance?
-    \item[\textbf{RQ5:}] To what extent can prompt optimisation improve or recover task performance after drift has been detected, and how can such optimisation be integrated into the monitoring loop?
+    \item[RQ1:] How can the campaign-relevance detection task be formally represented as a binary classification problem for non-stationary black-box LLM APIs?
+    \item[RQ2:] How can a reduced monitoring subset be derived from a larger reference benchmark so that routine evaluation remains substantially cheaper while preserving sensitivity to model drift?
+    \item[RQ3:] Which statistical criteria and alerting rules are appropriate for detecting practically significant performance degradation over time?
+    \item[RQ4:] How should candidate models be compared and selected when deployment decisions depend on predictive quality, inference cost, and campaign-specific error tolerance?
+    \item[RQ5:] To what extent can prompt optimisation improve or recover task performance after drift has been detected, and how can such optimisation be integrated into the monitoring loop?
 \end{enumerate}
 
 \section{Task Definition}
@@ -133,20 +133,20 @@ During evaluation, each social-media post is converted into a structured request
 
 % conceptual blocks on right
 \node[box, anchor=north west] (prompt) at (10.2,-0.7) {
-    \textbf{Campaign definition}\\[2pt]
+    Campaign definition\\[2pt]
     System prompt with\\
     brands, slogans, products,\\
     and relevance criteria
 };
 
 \node[box, below=1.0cm of prompt] (text) {
-    \textbf{Post context}\\[2pt]
+    Post context\\[2pt]
     Caption, transcription,\\
     hashtags, mentions, metadata
 };
 
 \node[box, below=1.0cm of text] (media) {
-    \textbf{Visual content}\\[2pt]
+    Visual content\\[2pt]
     Selected video frames\\
     or attached images
 };
@@ -154,14 +154,14 @@ During evaluation, each social-media post is converted into a structured request
 \node[labelbox] at ($(prompt.north)!0.5!(prompt.north east)+(-1.7,0.35)$) {ABSTRACT INPUT GROUPS};
 
 \node[proc, right=2.5cm of text] (model) {
-    \textbf{LLM classifier}\\[4pt]
+    LLM classifier\\[4pt]
     Multimodal mapping\\[4pt]
     $f(\text{prompt},\text{ context},\text{ media}) \rightarrow y$\\[4pt]
     where $y \in \{0,1\}$
 };
 
 \node[outputbox, right=2.5cm of model] (output) {
-    \textbf{Binary decision}\\[4pt]
+    Binary decision\\[4pt]
     $y = 1$: relevant\\
     $y = 0$: not relevant
 };

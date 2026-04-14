@@ -1,2 +1,12 @@
-gpt-4.1-mini	0.871526104418
-gpt-4.1-nano	0.776
+claude-haiku-4-5	0.868
+claude-sonnet-4-5	0.908
+claude-sonnet-4-6	0.91
+gemini-2.5-flash	0.814
+gpt-4.1-mini	0.874
+gpt-4.1-nano	0.74
+gpt-5	0.9
+gpt-5-mini	0.922
+gpt-5-nano	0.902
+gpt-5.1	0.922
+gpt-5.2	0.918
+gpt-5.4	0.901967871486

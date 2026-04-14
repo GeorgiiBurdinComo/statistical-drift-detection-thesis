@@ -1,12 +1,12 @@
 \chapter{Drift Monitoring and Model Selection Methodology}
 \label{ch:drift}
 
-Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. This chapter specifies repeated evaluation on $\mathcal{D}_n$, paired drift detection via McNemar's test, classification metrics for reporting and candidate comparison, and manual operator overrides. A cost-based expected-cost utility for deployment ranking is developed in Chapter~\ref{ch:cost-deployment-utility}. The estimand is \emph{change in deployment behaviour on $\mathcal{D}_n$}; it does not identify the population risk $R_t(f)$ from Chapter~\ref{ch:data} without additional assumptions.
+Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. This chapter specifies repeated evaluation on $\mathcal{D}_n$, paired drift detection via McNemar's test, classification metrics for reporting and candidate comparison, and manual operator overrides. A cost-based expected-cost utility for deployment ranking is developed in Chapter~\ref{ch:cost-deployment-utility}. The estimand is change in deployment behaviour on $\mathcal{D}_n$; it does not identify the population risk $R_t(f)$ from Chapter~\ref{ch:data} without additional assumptions.
 
 \section{Temporal evaluation on a fixed panel}
 \label{sec:formalisation-temporal}
 
-Let $t\in\{1,\ldots,T\}$ index discrete evaluation batches (e.g.\ weekly). At each $t$, each model under study is evaluated on the \emph{same} $\mathcal{D}_n$. Cross-time differences are attributable to changes in predictions or parsing, not to resampling of items.
+Let $t\in\{1,\ldots,T\}$ index discrete evaluation batches (e.g.\ weekly). At each $t$, each model under study is evaluated on the same $\mathcal{D}_n$. Cross-time differences are attributable to changes in predictions or parsing, not to resampling of items.
 
 For instance $i$ and time $t$, let $\hat{y}_{i,t}\in\{0,1\}$ be the predicted label and
 \begin{equation}
@@ -18,12 +18,12 @@ For any $m\in\mathcal{M}_{\mathrm{cand}}$, let $\hat{y}_{i,t}(m)$ denote $m$'s p
 \begin{equation}
     \hat{A}_t(m) = \frac{1}{n}\sum_{i=1}^{n} \mathbb{I}\bigl(\hat{y}_{i,t}(m)=y_i\bigr).
 \end{equation}
-For $m=m_{\mathrm{curr}}$, write $\hat{A}_t:=\hat{A}_t(m_{\mathrm{curr}})=\frac{1}{n}\sum_{i=1}^n E_{i,t}$. The sequence $(\hat{A}_t)_{t=1}^T$ is \emph{not} a sequence of independent Bernoulli means: the same units are reused. Marginal comparisons of $\hat{A}_{t_1}$ and $\hat{A}_{t_2}$ that assume independence (e.g.\ two-proportion $z$-tests) overstate precision. Drift detection uses paired structure via $(E_{i,t_1},E_{i,t_2})$ (Section~\ref{sec:mcnemar-section}).
+For $m=m_{\mathrm{curr}}$, write $\hat{A}_t:=\hat{A}_t(m_{\mathrm{curr}})=\frac{1}{n}\sum_{i=1}^n E_{i,t}$. The sequence $(\hat{A}_t)_{t=1}^T$ is not a sequence of independent Bernoulli means: the same units are reused. Marginal comparisons of $\hat{A}_{t_1}$ and $\hat{A}_{t_2}$ that assume independence (e.g.\ two-proportion $z$-tests) overstate precision. Drift detection uses paired structure via $(E_{i,t_1},E_{i,t_2})$ (Section~\ref{sec:mcnemar-section}).
 
 \section{Statistical drift detection via McNemar's test}
 \label{sec:mcnemar-section}
 
-Drift analysis targets \emph{per-instance} changes in correctness between times $t_1$ and $t_2$, not the marginal difference $\hat{A}_{t_2}-\hat{A}_{t_1}$ alone.
+Drift analysis targets per-instance changes in correctness between times $t_1$ and $t_2$, not the marginal difference $\hat{A}_{t_2}-\hat{A}_{t_1}$ alone.
 
 \subsection{Contingency table}
 
@@ -62,7 +62,7 @@ Let $p_b$ and $p_c$ denote population counterparts of $b/n$ and $c/n$ under the 
 \end{equation}
 approximately $\chi^2_1$ for large $m=b+c$ (when $b+c>0$).
 
-A \textbf{statistical drift alert} is registered when (i) $b>c$ and (ii) the one-sided $p$-value is below $\alpha=0.05$. Condition (i) excludes net improvements. If $b+c=0$, the test is degenerate and no directional conclusion is drawn.
+A statistical drift alert is registered when (i) $b>c$ and (ii) the one-sided $p$-value is below $\alpha=0.05$. Condition (i) excludes net improvements. If $b+c=0$, the test is degenerate and no directional conclusion is drawn.
 
 \subsection{Empirical examples from monitoring runs}
 
@@ -110,70 +110,60 @@ with an exact one-sided binomial $p$-value of approximately $0.26$. Although $b>
 \section{Classification metrics on the monitoring subset}
 \label{sec:classification-metrics}
 
-All metrics below are computed on $\mathcal{D}_n$ (Section~\ref{sec:informative-sampling-disagreement}). They describe behaviour on the \emph{disagreement-enriched} panel: ranks and levels need not match full-benchmark $A_N(t)$ (Section~\ref{sec:selection-bias}).
+All metrics below are computed on $\mathcal{D}_n$ (Section~\ref{sec:informative-sampling-disagreement}). They describe behaviour on the disagreement-enriched panel: ranks and levels need not match full-benchmark $A_N(t)$ (Section~\ref{sec:selection-bias}).
 
 Let $\mathrm{TP}_t$, $\mathrm{FP}_t$, $\mathrm{TN}_t$, and $\mathrm{FN}_t$ be confusion counts on $\mathcal{D}_n$ at time $t$ for a given model and a fixed rule mapping provider output to $\hat{y}_{i,t}\in\{0,1\}$. Omit each ratio when its denominator is zero.
 
-\begin{figure}[htbp]
-    \centering
-    \begin{tikzpicture}[node distance=8mm and 10mm]
-        \node[figboxsmall, text width=28mm] (predpos) {Predicted\\positive};
-        \node[figboxsmall, below=of predpos, text width=28mm] (predneg) {Predicted\\negative};
-
-        \node[figboxsmall, right=of predpos, text width=28mm] (actualpos) {Actual\\positive};
-        \node[figboxsmall, right=of predneg, text width=28mm] (actualneg) {Actual\\negative};
-
-        \node[figboxsmall, right=of actualpos, text width=26mm] (tpfp) {$\mathrm{TP}$ / $\mathrm{FP}$\\(precision)};
-        \node[figboxsmall, right=of actualneg, text width=26mm] (tnfn) {$\mathrm{TN}$ / $\mathrm{FN}$\\(specificity)};
-
-        \draw[figarrow] (predpos) -- (actualpos);
-        \draw[figarrow] (predpos) -- (actualneg);
-        \draw[figarrow] (predneg) -- (actualpos);
-        \draw[figarrow] (predneg) -- (actualneg);
-        \draw[figarrow] (actualpos) -- (tpfp);
-        \draw[figarrow] (actualneg) -- (tnfn);
-    \end{tikzpicture}
-    \caption{Confusion-structure view for threshold metrics on $\mathcal{D}_n$: precision depends on predicted positives ($\mathrm{TP}$, $\mathrm{FP}$), recall on actual positives ($\mathrm{TP}$, $\mathrm{FN}$), and specificity on actual negatives ($\mathrm{TN}$, $\mathrm{FP}$).}
-    \label{fig:metric-dependency-map}
-\end{figure}
 
 \paragraph{Accuracy.}
 Empirical accuracy is
 \begin{equation}
     \widehat{\mathrm{Acc}}_t = \frac{\mathrm{TP}_t+\mathrm{TN}_t}{\mathrm{TP}_t+\mathrm{TN}_t+\mathrm{FP}_t+\mathrm{FN}_t},
 \end{equation}
-equal to $\hat{A}_t$ for the same model and threshold. It summarises global correctness but weights errors by class prevalence on $\mathcal{D}_n$.
+ summarises global correctness but weights errors by class prevalence on $\mathcal{D}_n$.
 
-\paragraph{Precision, recall, and F1.}
+\paragraph{Precision.}
 \begin{equation}
-    \widehat{\mathrm{Prec}}_t = \frac{\mathrm{TP}_t}{\mathrm{TP}_t+\mathrm{FP}_t},
-    \qquad
-    \widehat{\mathrm{Rec}}_t = \frac{\mathrm{TP}_t}{\mathrm{TP}_t+\mathrm{FN}_t},
-    \qquad
+    \widehat{\mathrm{Prec}}_t = \frac{\mathrm{TP}_t}{\mathrm{TP}_t+\mathrm{FP}_t}.
+\end{equation}
+Precision is positive predictive value.
+
+\paragraph{Recall.}
+\begin{equation}
+    \widehat{\mathrm{Rec}}_t = \frac{\mathrm{TP}_t}{\mathrm{TP}_t+\mathrm{FN}_t}.
+\end{equation}
+Recall is sensitivity on the positive class.
+
+\paragraph{$F_1$ score.}
+\begin{equation}
     \widehat{\mathrm{F}}_{1,t} = \frac{2\,\widehat{\mathrm{Prec}}_t\,\widehat{\mathrm{Rec}}_t}{\widehat{\mathrm{Prec}}_t+\widehat{\mathrm{Rec}}_t}.
 \end{equation}
-Precision is positive predictive value; recall is sensitivity on the positive class. The $F_1$ score is their harmonic mean when both are defined and $\widehat{\mathrm{Prec}}_t+\widehat{\mathrm{Rec}}_t>0$.
+The $F_1$ score is the harmonic mean of precision and recall when both are defined and $\widehat{\mathrm{Prec}}_t+\widehat{\mathrm{Rec}}_t>0$.
 
-\paragraph{Specificity and balanced accuracy.}
+\paragraph{Specificity.}
 \begin{equation}
-    \widehat{\mathrm{Spec}}_t = \frac{\mathrm{TN}_t}{\mathrm{TN}_t+\mathrm{FP}_t},
-    \qquad
+    \widehat{\mathrm{Spec}}_t = \frac{\mathrm{TN}_t}{\mathrm{TN}_t+\mathrm{FP}_t}.
+\end{equation}
+Specificity measures true-negative performance.
+
+\paragraph{Balanced accuracy.}
+\begin{equation}
     \widehat{\mathrm{BA}}_t = \tfrac{1}{2}\bigl(\widehat{\mathrm{Rec}}_t + \widehat{\mathrm{Spec}}_t\bigr).
 \end{equation}
 Balanced accuracy mitigates inflation of raw accuracy under prevalence skew on the panel.
 
-\paragraph{Ranking summaries.}
-When the pipeline exposes scored outputs (not only hard labels), a precision--recall curve traces $(\widehat{\mathrm{Rec}},\widehat{\mathrm{Prec}})$ over thresholds; its area (PR--AUC) summarises ranking quality in $[0,1]$ and can be more informative than ROC--AUC under imbalance. Drift \emph{alerts} remain based on McNemar on hard correctness (Section~\ref{sec:mcnemar-section}), not on PR--AUC.
+\paragraph{Hard labels only.}
+The monitoring pipeline maps provider outputs to a single hard label $\hat{y}_{i,t}\in\{0,1\}$ via a fixed parsing rule; no per-example graded score is logged for the experiments in this thesis. The metrics above are therefore computed from one confusion table per model and batch. Threshold-sweep summaries of precision versus recall are not defined on hard labels alone and are omitted. Drift alerts remain based on McNemar on hard correctness (Section~\ref{sec:mcnemar-section}).
 
 \paragraph{When to trust which metric.}
-On the disagreement-enriched panel, prevalence is high (Chapter~\ref{ch:data}), so raw accuracy can hide asymmetric errors. Recall should dominate when missed relevant posts are expensive (high FN burden), while specificity should dominate when over-flagging irrelevant posts is operationally costly (high FP burden). Precision is useful when analyst workload is constrained by false alarms. PR--AUC is most informative for threshold-free ranking quality under class imbalance; McNemar remains the inferential test for drift alerts.
+On the disagreement-enriched panel, prevalence is high (Chapter~\ref{ch:data}), so raw accuracy can hide asymmetric errors. Recall should dominate when missed relevant posts are expensive (high FN burden), while specificity should dominate when over-flagging irrelevant posts is operationally costly (high FP burden). Precision is useful when analyst workload is constrained by false alarms. McNemar remains the inferential test for drift alerts.
 
 \section{Model comparison and deployment choice}
 \label{sec:model-comparison-manual}
 
 Candidate models $m\in\mathcal{M}_{\mathrm{cand}}$ are compared using $\hat{A}_t(m)$, $\widehat{\mathrm{Prec}}_t(m)$, $\widehat{\mathrm{Rec}}_t(m)$, $\widehat{\mathrm{F}}_{1,t}(m)$, and average inference cost $C_t(m)$ (USD per request from logged usage and pricing), all on $\mathcal{D}_n$. Campaigns differ in the relative cost of false positives and false negatives.
 
-While Chapter~\ref{ch:cost-deployment-utility} presents a cost-based utility as one formalisation of the accuracy--cost trade-off, final deployment decisions incorporate \emph{manual} judgment alongside these metrics (tolerance to error types, budget, latency, provider policy).
+While Chapter~\ref{ch:cost-deployment-utility} presents a cost-based utility as one formalisation of the accuracy--cost trade-off, final deployment decisions incorporate manual judgment alongside these metrics (tolerance to error types, budget, latency, provider policy).
 
 Two decision layers are kept separate: (i) paired significance of degradation for $m_{\mathrm{curr}}$ via Section~\ref{sec:mcnemar-section}; (ii) multi-criteria comparison of candidates using the metrics above and $C_t(m)$, optionally summarised by the expected cost $E_t[\mathcal{C}](m)$ in Chapter~\ref{ch:cost-deployment-utility}. If no acceptable fallback exists, prompt optimisation may be attempted before changing the API model (Chapter~\ref{chap:prompt-optimisation}). Exported numeric panels and dashboards used in experiments are described in Chapter~\ref{chap:system-architecture}.
 
