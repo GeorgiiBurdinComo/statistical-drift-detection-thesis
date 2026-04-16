@@ -282,18 +282,18 @@ The empirical results are reported in four parts: the instantiated monitoring su
 
 A one-time full-benchmark run on $\mathcal{D}_N$ ($N=1199$) establishes initial per-model behaviour and identifies disagreement cases used to instantiate the monitoring subset (Chapter~\ref{ch:data}). The resulting $n=300$ disagreement-based set is stored as a separate Langfuse dataset and frozen; all subsequent drift statistics, dashboard views, and adaptation decisions are computed on this fixed panel.
 
-Table~\ref{tab:phase1-baseline-snapshot} gives a compact baseline after the subset is frozen: aggregate accuracy, precision, recall, and F1 for two API models that participate in the disagreement construction and in later monitoring. Counts $n$ refer to scored examples in that export, with one missing score for \texttt{gpt-4.1-mini}. Full-benchmark $\mathcal{D}_N$ aggregates are produced in the same way but are not duplicated here; the empirical focus is the frozen hard-case subset and comparable scalar summaries on~$\mathcal{D}_n$.
+Table~\ref{tab:phase1-baseline-snapshot} gives a compact baseline excerpt from the current metrics export (\texttt{assets/metrics\_export}, last score day 2026-04-13): aggregate accuracy, precision, recall, and F1 for two monitored models. Full-benchmark $\mathcal{D}_N$ aggregates are produced in the same way but are not duplicated here; the empirical focus is the frozen hard-case subset and comparable scalar summaries on~$\mathcal{D}_n$.
 
 \begin{table}[htbp]
     \centering
-    \caption{Baseline snapshot: classification metrics on the frozen monitoring subset after construction (batch export, last score day 2026-03-28).}
+    \caption{Baseline excerpt: classification metrics on the frozen monitoring subset (metrics export, last score day 2026-04-13).}
     \label{tab:phase1-baseline-snapshot}
     \begin{tabular}{lccccc}
         \toprule
         Model & $n$ & Accuracy & Precision & Recall & F1 \\
         \midrule
-        \texttt{gpt-4.1-mini} & 299 & {\csname benchgpt41miniaccuracy\endcsname} & {\csname benchgpt41miniprecision\endcsname} & {\csname benchgpt41minirecall\endcsname} & {\csname benchgpt41minif1\endcsname} \\
-        \texttt{gpt-4.1-nano}  & 300 & {\csname benchgpt41nanoaccuracy\endcsname} & {\csname benchgpt41nanoprecision\endcsname} & {\csname benchgpt41nanorecall\endcsname} & {\csname benchgpt41nanof1\endcsname} \\
+        \texttt{gpt-4.1-mini} & 300 & 0.8033 & 0.9948 & 0.7680 & 0.8668 \\
+        \texttt{gpt-4.1-nano}  & 300 & 0.7000 & 0.9444 & 0.6800 & 0.7907 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -308,40 +308,40 @@ This subsection evaluates whether repeated runs on the fixed monitoring subset r
 
 \begin{table}[htbp]
     \centering
-    \caption{McNemar table for \texttt{gpt-5} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$.}
-    \label{tab:mcnemar_gpt5}
+    \caption{McNemar table for \texttt{gpt-4.1-mini} between 6~April~2026 and 13~April~2026 on $\mathcal{D}_n$.}
+    \label{tab:mcnemar_gpt41mini}
     \begin{tabular}{lcc}
         \toprule
-        & 2026-03-10 correct & 2026-03-10 wrong \\
+        & 2026-04-13 correct & 2026-04-13 wrong \\
         \midrule
-        2026-03-08 correct & 291 & 0 \\
-        2026-03-08 wrong   & 0   & 9 \\
+        2026-04-06 correct & 231 & 10 \\
+        2026-04-06 wrong   & 10  & 49 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \begin{table}[htbp]
     \centering
-    \caption{McNemar table for \texttt{gpt-5.1-mini} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$.}
-    \label{tab:mcnemar_gpt5mini}
+    \caption{McNemar table for \texttt{gpt-4.1-nano} between 6~April~2026 and 13~April~2026 on $\mathcal{D}_n$.}
+    \label{tab:mcnemar_gpt41nano}
     \begin{tabular}{lcc}
         \toprule
-        & 2026-03-10 correct & 2026-03-10 wrong \\
+        & 2026-04-13 correct & 2026-04-13 wrong \\
         \midrule
-        2026-03-08 correct & 269 & 13 \\
-        2026-03-08 wrong   & 7   & 11 \\
+        2026-04-06 correct & 184 & 22 \\
+        2026-04-06 wrong   & 26  & 68 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-Two monitored examples illustrate the range of outcomes. For \texttt{gpt-5}, the run pair from 8~March~2026 to 10~March~2026 yields the contingency table in Table~\ref{tab:mcnemar_gpt5}. The discordant counts are \((b,c)=(0,0)\), so no monitored instance changed correctness between the two dates. No temporal change in correctness is detectable on the subset for this interval.
+Two monitored examples illustrate the range of outcomes on a recent run pair. For \texttt{gpt-4.1-mini}, the pair from 6~April~2026 to 13~April~2026 yields the contingency table in Table~\ref{tab:mcnemar_gpt41mini}. The discordant counts are \((b,c)=(10,10)\), so gains and losses exactly balance and no directional change is visible.
 
-For \texttt{gpt-5.1-mini}, the corresponding run pair in Table~\ref{tab:mcnemar_gpt5mini} yields \((b,c)=(13,7)\): 20 instances change status (13 regressions, 7 recoveries). The one-sided test does not reach \(\alpha=0.05\); numerically, accuracy falls but the alert rule in Chapter~\ref{ch:drift} is not met.
+For \texttt{gpt-4.1-nano}, the corresponding run pair in Table~\ref{tab:mcnemar_gpt41nano} yields \((b,c)=(22,26)\): 48 instances change status (22 regressions, 26 recoveries). The one-sided test does not reach \(\alpha=0.05\); despite substantial churn, the net direction is not degradation under the alert rule in Chapter~\ref{ch:drift}.
 
-The paired tables distinguish complete stability from mixed regressions and recoveries.
+The paired tables distinguish balanced drift (\texttt{gpt-4.1-mini}) from high-churn but net-improving movement (\texttt{gpt-4.1-nano}).
 
 \paragraph{Interpretation for alerts.}
-The two examples illustrate the required separation between statistical evidence and descriptive movement. For \texttt{gpt-5}, no discordant pairs means no detectable behavioural change. For \texttt{gpt-5.1-mini}, the net direction is negative ($b>c$), but evidence is insufficient at the configured threshold. In the monitor--detect--act logic, this state is treated as watch-and-compare: keep observing drift evidence while preparing fallback comparisons using the metric/cost panel.
+The two examples illustrate the required separation between statistical evidence and descriptive movement. For \texttt{gpt-4.1-mini}, equal discordance in both directions means no directional effect. For \texttt{gpt-4.1-nano}, many instances flip status, but the net direction is not degradation ($b<c$), so the one-sided alert condition is not met. In the monitor--detect--act logic, this state is treated as watch-and-compare: keep observing drift evidence while preparing fallback comparisons using the metric/cost panel.
 
 \subsection{Candidate Comparison for Corrective Action}
 \label{sec:cost-aware-comparison}
