@@ -266,9 +266,9 @@ where $a(\cdot;\widehat{J}_k)$ is an acquisition function balancing exploration 
 \section{GEPA}
 \label{sec:gepa}
 
-This work uses GEPA (Genetic--Pareto Evolutionary Prompt Optimisation)~\cite{agrawal2025gepa}. Within the taxonomy above, GEPA is a population-based black-box optimiser that combines evolutionary search, LLM-guided reflective mutation, and Pareto-based candidate selection.
+The optimisation component uses GEPA (Genetic--Pareto Evolutionary Prompt Optimisation)~\cite{agrawal2025gepa}. Within the taxonomy above, GEPA is a population-based black-box optimiser that combines evolutionary search, LLM-guided reflective mutation, and Pareto-based candidate selection.
 
-In the original paper, GEPA is formulated for compound AI systems $\Phi$ that may contain several prompt-bearing modules. In the present thesis, the deployed classifier has only one prompt-bearing module, so a candidate system can be identified with its prompt $\pi$. This reduces the notation without changing the core optimisation logic: the search remains budget-constrained, black-box, and instance-sensitive.
+In the original paper, GEPA is formulated for compound AI systems $\Phi$ that may contain several prompt-bearing modules. In the deployment setting considered here, the classifier has only one prompt-bearing module, so a candidate system can be identified with its prompt $\pi$. This reduces the notation without changing the core optimisation logic: the search remains budget-constrained, black-box, and instance-sensitive.
 
 \subsection{Algorithmic workflow}
 
@@ -336,7 +336,7 @@ The search stops when the rollout budget $B$ is exhausted. The final returned ca
 \draw[arr] (pareto.west) -| node[pos=0.75, below, font=\scriptsize]{update pool} (pool.south);
 \draw[arr] (acc.north) to[out=90,in=90,looseness=1.4] node[midway, above, font=\scriptsize]{reject} (pool.north);
 \end{tikzpicture}
-\caption{Operational view of GEPA in the single-prompt setting used in this thesis.}
+\caption{Operational view of GEPA in the single-prompt setting under consideration.}
 \label{fig:gepa-loop}
 \end{figure}
 
@@ -368,7 +368,7 @@ be the validation part of the optimisation data used for Pareto-based selection.
     \ell\!\left(f_t(x_i;\pi),y_i\right),
     \qquad i=1,\dots,n_p.
 \end{equation}
-In the binary classification setting of this thesis, $v_i(\pi)\in\{0,1\}$ and coincides with correctness:
+In the binary classification setting considered here, $v_i(\pi)\in\{0,1\}$ and coincides with correctness:
 \begin{equation}
     v_i(\pi)=\mathbb{I}\!\left(f_t(x_i;\pi)=y_i\right).
 \end{equation}
@@ -482,7 +482,7 @@ A compact description of one GEPA iteration in the single-prompt setting is ther
 \end{align}
 
 \paragraph{Regression and recovery relative to the deployed prompt.}
-For the purposes of this thesis, a central question is not only whether a candidate improves the average score, but also how that improvement is distributed over previously correct and previously incorrect items. Let $\pi_0$ denote the currently deployed prompt and let $\pi$ be a candidate update evaluated on
+For the purposes of the deployment scenario under study, a central question is not only whether a candidate improves the average score, but also how that improvement is distributed over previously correct and previously incorrect items. Let $\pi_0$ denote the currently deployed prompt and let $\pi$ be a candidate update evaluated on
 \begin{equation}
     \mathcal{D}_{\mathrm{opt}}=\{(x_1,y_1),\dots,(x_n,y_n)\}.
 \end{equation}
@@ -531,15 +531,15 @@ This decomposition is important in the present setting. A purely scalar objectiv
 
 \subsection{Compatibility with API constraints}
 
-The thesis assumes pure LLM-as-a-Service access: no fine-tuning, no gradient access, and no internal activations. GEPA requires only rollouts, scores, traces, and evaluator feedback. This makes it directly compatible with the deployment regime considered here, whereas gradient-based hard- and soft-prompt methods are excluded by design.
+The framework assumes pure LLM-as-a-Service access: no fine-tuning, no gradient access, and no internal activations. GEPA requires only rollouts, scores, traces, and evaluator feedback. This makes it directly compatible with the deployment regime considered here, whereas gradient-based hard- and soft-prompt methods are excluded by design.
 
 \subsection{Sample efficiency under limited budget}
 
-Prompt adaptation is not a one-time offline exercise in this thesis, but a corrective mechanism that may need to be triggered repeatedly after drift events. This makes rollout budget a first-class consideration. Reinforcement-learning approaches are compatible with black-box evaluation, but they are often rollout-intensive. GEPA was explicitly designed for sample-efficient adaptation under expensive rollouts, and the original paper reports stronger benchmark results than GRPO while using fewer rollouts on the reported tasks~\cite{agrawal2025gepa}. For the purposes of this thesis, this makes GEPA a plausible recovery method when optimisation budget is limited.
+Prompt adaptation is not treated as a one-time offline exercise, but as a corrective mechanism that may need to be triggered repeatedly after drift events. This makes rollout budget a first-class consideration. Reinforcement-learning approaches are compatible with black-box evaluation, but they are often rollout-intensive. GEPA was explicitly designed for sample-efficient adaptation under expensive rollouts, and the original paper reports stronger benchmark results than GRPO while using fewer rollouts on the reported tasks~\cite{agrawal2025gepa}. Under the deployment scenario under study, this makes GEPA a plausible recovery method when optimisation budget is limited.
 
 \subsection{Suitability for hard boundary instances}
 
-The monitoring and optimisation material in this thesis is intentionally enriched with disagreement-heavy cases near the effective decision boundary (Chapter~\ref{ch:data}). These are precisely the examples on which small prompt changes are likely to matter, but also where regressions are easiest to introduce. A method that preserves multiple competing prompt strategies is therefore preferable to one that follows only a single greedy update path. GEPA is especially well suited to this structure because it treats candidate prompts as a multi-objective population over instances rather than as a one-dimensional ranking by average score alone.
+The monitoring and optimisation setup is intentionally enriched with disagreement-heavy cases near the effective decision boundary (Chapter~\ref{ch:data}). These are precisely the examples on which small prompt changes are likely to matter, but also where regressions are easiest to introduce. A method that preserves multiple competing prompt strategies is therefore preferable to one that follows only a single greedy update path. GEPA is especially well suited to this structure because it treats candidate prompts as a multi-objective population over instances rather than as a one-dimensional ranking by average score alone.
 
 \section{Integration into the monitoring loop}
 \label{sec:apo-monitoring-integration}

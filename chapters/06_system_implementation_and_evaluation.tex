@@ -1,20 +1,20 @@
 \chapter{System Implementation and Experimental Evaluation}
 \label{chap:system-architecture}
 
-This chapter describes the implemented monitoring system, the experimental setup, and the empirical results obtained on the fixed monitoring subset within the recorded time window. It focuses on operationalization rather than re-deriving the methodology: McNemar's test, evaluation metrics, and the manual selection procedure are defined in Chapter~\ref{ch:drift}, the expected-cost utility in Chapter~\ref{ch:cost-deployment-utility}, and prompt optimisation is discussed in Chapter~\ref{chap:prompt-optimisation}. Transient degradation behaviour is analysed separately in Chapter~\ref{chap:degradation-case-study}.
+The chapter describes the implemented monitoring system, the experimental setup, and the empirical results obtained on the fixed monitoring subset within the recorded time window. It focuses on operationalization rather than re-deriving the methodology: McNemar's test, evaluation metrics, and the manual selection procedure are defined in Chapter~\ref{ch:drift}, the expected-cost utility in Chapter~\ref{ch:cost-deployment-utility}, and prompt optimisation is discussed in Chapter~\ref{chap:prompt-optimisation}. Transient degradation behaviour is analysed separately in Chapter~\ref{chap:degradation-case-study}.
 
 \section{Overview}
 \label{sec:evaluation-pipeline-overview}
 
 The monitoring system is implemented as a set of Python scripts orchestrated by three scheduled GitHub Actions workflows (Figure~\ref{fig:ga-weekly-pipelines}). Each workflow handles one stage of the evaluation cycle: submitting batch jobs to provider APIs (Friday), retrieving and ingesting results into Langfuse (Monday morning), and exporting CSV snapshots for the hosted Streamlit dashboard (Monday afternoon). Table~\ref{tab:artifact-inventory} in Section~\ref{sec:artifacts-data-flow} summarizes artifacts and handoffs across these stages.
 
-The architecture supports two run types. A benchmark run evaluates all models on the full \(N=1199\) reference dataset (approximately USD~90 per pass) and is used once to construct the monitoring subset. A monitoring run evaluates models on the frozen \(n=300\) disagreement-based subset (approximately USD~20 per pass) and runs weekly to produce the longitudinal evidence analysed later in this chapter.
+The architecture supports two run types. A benchmark run evaluates all models on the full \(N=1199\) reference dataset (approximately USD~90 per pass) and is used once to construct the monitoring subset. A monitoring run evaluates models on the frozen \(n=300\) disagreement-based subset (approximately USD~20 per pass) and runs weekly to produce the longitudinal evidence analysed in the evaluation section.
 
 The concrete set of monitored models and token prices used for cost accounting is defined in \texttt{config/models.yaml} and summarized in Table~\ref{tab:monitored-models}.
 
 \begin{table}[htbp]
 \centering
-\caption{LLM models monitored in this study, grouped by provider.}
+\caption{LLM models monitored on the evaluation pipelines, grouped by provider.}
 \label{tab:monitored-models}
 \begin{tabular}{ll}
 \toprule
@@ -33,8 +33,8 @@ Claude   & \texttt{claude-sonnet-4-6}, \texttt{claude-sonnet-4-5}, \texttt{claud
 The pipeline runs in three stages, each triggered by a separate GitHub Actions workflow. Submission, retrieval, and dashboard synchronization are decoupled because provider batch APIs are asynchronous: results are not available immediately after submission.
 
 \begin{figure}[H]
-    \centering
-    \includegraphics[width=\textwidth]{assets/fig-5-3-ga-pipeline.png}
+    \hspace*{-0.25\textwidth}
+    \includegraphics[width=1.4\textwidth]{assets/fig-5-3-ga-pipeline.png}
     \caption{Scheduled GitHub Actions pipelines for monitoring: \texttt{weekly\_drift\_monitoring.yml} submits batches via \texttt{run\_eval.py} (Friday 05:00 UTC); \texttt{weekly\_retrieve.yml} restores \texttt{data/batch\_ids.json}, runs \texttt{poll\_and\_ingest.py} and \texttt{ingest.py} for Langfuse traces and scores (Monday 05:00 UTC); \texttt{sync-streamlit-dashboard.yml} runs \texttt{export\_langfuse\_csv.py}, commits CSVs to \texttt{llm-batch-eval}, and mirrors \texttt{streamlit\_app/} to the private dashboard repository (Monday 07:00 UTC).}
     \label{fig:ga-weekly-pipelines}
 \end{figure}
@@ -48,8 +48,8 @@ The pipeline runs in three stages, each triggered by a separate GitHub Actions w
 \label{sec:dataset-storage}
 The implementation uses two Langfuse datasets:
 \begin{itemize}
-    \item Reference benchmark (\(N=1199\)): \href{https://cloud.langfuse.com/project/cmkqnvv3z016aad08kqtjim2n/datasets/cmlfi3uo0003yad07e75cd7e3}{Langfuse link};
-    \item Monitoring subset (\(n=300\)): \href{https://cloud.langfuse.com/project/cmkqnvv3z016aad08kqtjim2n/datasets/cmmjjduz501c6ad07vbuln8m8/items}{Langfuse link}.
+    \item Reference benchmark (\(N=1199\))
+    \item Monitoring subset (\(n=300\))
 \end{itemize}
 
 Langfuse acts as the single source of truth. Each row carries a stable \texttt{custom\_id} reused end-to-end across batch submission, result files, ingested traces, CSV exports, and statistical analyses. Each row includes the campaign description, post text, transcription, hashtags, media references, frame references where applicable, and the binary ground-truth label \texttt{campaign\_relevant}. The 300-example monitoring dataset is selected once from the full benchmark and then held fixed, so paired McNemar comparisons are not confounded by changes in sample composition.
@@ -181,48 +181,65 @@ The dashboard exposes three main tabs. The overview tab shows per-model accuracy
 Table~\ref{tab:artifact-inventory} summarizes the main artifacts, their provenance, and downstream consumers across all three workflows.
 
 \begin{table}[htbp]
-\centering
-\footnotesize
-\caption{Main artifacts and handoffs in the evaluation pipeline.}
-\label{tab:artifact-inventory}
-\setlength{\tabcolsep}{6pt}
-\renewcommand{\arraystretch}{1.18}
-\begin{tabularx}{\linewidth}{@{}L{3.6cm}Y Y@{}}
-\toprule
-Artifact & Provenance & Downstream \\
-\midrule
-
-\texttt{data/batch\_ids.json} &
-Produced by \texttt{run\_eval.py}; stored in the GitHub Actions cache and workspace. &
-Used by \texttt{poll\_and\_ingest.py} to poll provider batches until completion. The manifest records batch identifiers per model for the run. \\
-
-\texttt{batches/openai\_\{model\}.jsonl}\newline
-\texttt{batches/claude\_\{model\}\_input.jsonl}\newline
-\texttt{batches/gemini\_\{model\}.jsonl} &
-Produced by \texttt{batch\_openai.py}, \texttt{batch\_claude.py}, and \texttt{batch\_gemini.py}; stored under \texttt{batches/}. &
-Submitted to the OpenAI, Anthropic, and Gemini batch APIs. Each JSONL line corresponds to one evaluation request. \\
-
-\texttt{data/gemini\_image\_cache.json} &
-Produced by \texttt{upload\_gemini\_images.py}; stored in the repository. &
-Read by \texttt{batch\_gemini.py} when assembling Gemini batch inputs, mapping remote image URLs to uploaded Files API URIs. \\
-
-\texttt{data/results/}\newline
-\texttt{\{provider\}\_\{model\}.jsonl} &
-Downloaded from provider batch APIs; stored under \texttt{data/results/}. &
-Consumed by the ingestion step, which normalizes outputs and writes Langfuse traces and scores. \\
-
-Langfuse traces and scores &
-Produced by ingestion; stored in Langfuse cloud. &
-Read by \texttt{export\_langfuse\_csv.py} and by the Streamlit application for joins, tags, and derived metrics. \\
-
-\texttt{langfuse\_traces.csv}\newline
-\texttt{langfuse\_scores.csv} &
-Produced by \texttt{export\_langfuse\_csv.py}; stored under \texttt{streamlit\_app/} in \texttt{llm-batch-eval} and mirrored to the private \texttt{llm-eval-dashboard} repository. &
-Loaded by the hosted Streamlit dashboard so routine views use committed snapshots rather than live Langfuse API calls. \\
-
-\bottomrule
-\end{tabularx}
-\end{table}
+    \centering
+    \footnotesize
+    \caption{Main artifacts and handoffs in the evaluation pipeline.}
+    \label{tab:artifact-inventory}
+    
+    \setlength{\tabcolsep}{6pt}
+    \renewcommand{\arraystretch}{1.18}
+    
+    {\hyphenpenalty=10000
+    \exhyphenpenalty=10000
+    
+    \begin{tabularx}{\linewidth}{|
+        >{\raggedright\arraybackslash\ttfamily}p{5.0cm}|
+        >{\raggedright\arraybackslash}X|
+        >{\raggedright\arraybackslash}X|}
+    \hline
+    \textbf{Artifact} & \textbf{Provenance} & \textbf{Downstream} \\
+    \hline
+    
+    data/batch\_ids.json &
+    Produced by \texttt{run\_eval.py}; stored in the GitHub Actions cache and workspace. &
+    Used by \texttt{poll\_and\_ingest.py} to poll provider batches until completion. The manifest records batch identifiers per model for the run. \\
+    \hline
+    
+    \parbox[t]{\linewidth}{\ttfamily
+    batches/openai\_\{model\}.jsonl\\
+    /claude\_\{model\}\_input.jsonl\\
+    /gemini\_\{model\}.jsonl} &
+    Produced by \texttt{batch\_openai.py}, \texttt{batch\_claude.py}, and \texttt{batch\_gemini.py}; stored under \texttt{batches/}. &
+    Submitted to the OpenAI, Anthropic, and Gemini batch APIs. Each JSONL line corresponds to one evaluation request. \\
+    \hline
+    
+    data/gemini\_image\_cache.json &
+    Produced by \texttt{upload\_gemini\_images.py}; stored in the repository. &
+    Read by \texttt{batch\_gemini.py} when assembling Gemini batch inputs, mapping remote image URLs to uploaded Files API URIs. \\
+    \hline
+    
+    \parbox[t]{\linewidth}{\ttfamily
+    data/results/\\
+    \{provider\}\_\{model\}.jsonl} &
+    Downloaded from provider batch APIs; stored under \texttt{data/results/}. &
+    Consumed by the ingestion step, which normalizes outputs and writes Langfuse traces and scores. \\
+    \hline
+    
+    Langfuse traces and scores &
+    Produced by ingestion; stored in Langfuse cloud. &
+    Read by \texttt{export\_langfuse\_csv.py} and by the Streamlit application for joins, tags, and derived metrics. \\
+    \hline
+    
+    \parbox[t]{\linewidth}{\ttfamily
+    langfuse\_traces.csv\\
+    langfuse\_scores.csv} &
+    Produced by \texttt{export\_langfuse\_csv.py}; stored under \texttt{streamlit\_app/} in \texttt{llm-batch-eval} and mirrored to the private \texttt{llm-eval-dashboard} repository. &
+    Loaded by the hosted Streamlit dashboard so routine views use committed snapshots rather than live Langfuse API calls. \\
+    \hline
+    
+    \end{tabularx}
+    }
+    \end{table}
 
 \FloatBarrier
 
@@ -241,38 +258,48 @@ The empirical results are reported in four parts: the instantiated monitoring su
     node distance=9mm and 14mm
     ]
     
+    % Top nodes
     \node[figbox] (baseline) {Baseline\\Run\\Metrics};
     \node[figbox, right=of baseline] (newrun) {New\\Run\\Metrics};
+    
+    % Drift test
     \node[figbox, below=11mm of $(baseline)!0.5!(newrun)$] (drift) {DriftTest\\McNemar on fixed\\300-example subset};
     
+    % Left + right flow
     \node[figbox, left=24mm of drift] (deploy) {Deploy\\Current\\Setup};
-    \node[figbox, right=24mm of drift] (metriccost) {Compare\\metrics + cost};
+    \node[figbox, right=20mm of drift] (reeval) {Re-evaluate\\(Full Benchmark)};
+    \node[figbox, right=16mm of reeval] (metriccost) {Compare\\metrics + cost};
     
+    % Decision
     \node[figdiamond, below=9mm of metriccost] (decision) {Choose\\corrective\\action};
+    
+    % Actions
     \node[figbox, below left=7mm and 12mm of decision] (switch) {Switch\\Model};
     \node[figbox, below right=7mm and 12mm of decision] (gepa) {Run\\GEPA};
-    \node[figbox, below=8mm of gepa] (reeval) {Re\\Evaluate};
     
+    % Arrows
     \draw[figarrow] (baseline) -- (drift);
     \draw[figarrow] (newrun) -- (drift);
     
-    \draw[figarrow] (drift) -- node[midway, above, font=\scriptsize, inner sep=1pt]{no drift} (deploy);
-    \draw[figarrow] (drift) -- node[midway, above, font=\scriptsize, inner sep=1pt]{drift} (metriccost);
+    \draw[figarrow] (drift) -- node[midway, above, font=\scriptsize]{no drift} (deploy);
+    \draw[figarrow] (drift) -- node[midway, above, font=\scriptsize]{drift} (reeval);
     
+    \draw[figarrow] (reeval) -- (metriccost);
     \draw[figarrow] (metriccost) -- (decision);
+    
     \draw[figarrow] (decision) -- (switch);
     \draw[figarrow] (decision) -- (gepa);
-    \draw[figarrow] (gepa) -- (reeval);
     
-    \coordinate (loopabove) at ($(metriccost.north)+(0,1.0)$);
+    % Loop back after GEPA
+    \coordinate (loopabove) at ($(reeval.north)+(0,1.0)$);
     \draw[figarrow, rounded corners=2.5pt]
-      (reeval.east) -- ++(0.9,0) |- (loopabove) -- (metriccost.north);
+      (gepa.east) -- ++(0.9,0) |- (loopabove) -- (reeval.north);
     
     \end{tikzpicture}
     \end{adjustbox}
-    \caption{Decision logic after a monitoring run. Drift is tested on the fixed 300-example subset. If no statistically significant degradation is detected, the current setup is retained. If degradation is detected, corrective actions are compared using accuracy, precision, recall, F1, and cost. This may lead either to model switching or to prompt optimisation with subsequent re-evaluation.}
+    \caption{Decision logic after a monitoring run. Drift is tested on the fixed 300-example subset. If no statistically significant degradation is detected, the current setup is retained. If degradation is detected, a full benchmark (re-evaluation) is performed before comparing metrics and cost. Corrective actions are then chosen using accuracy, precision, recall, F1, and cost. This may lead either to model switching or to prompt optimisation (GEPA) with subsequent re-evaluation.}
     \label{fig:run-decision-logic}
-    \end{figure}
+\end{figure}
     \FloatBarrier
 
 \section{Results}
@@ -363,7 +390,7 @@ This result block asks how a monitoring system should support choice among candi
 \end{figure}
 
 \paragraph{Authoritative export.}
-The single authoritative numeric panel for corrective-action comparison in this thesis is Table~\ref{tab:model-metrics-snapshot}. It is generated from \texttt{assets/metrics\_export/} (see \texttt{metrics\_wide.csv} and \texttt{export\_meta.json}) and input via \texttt{metrics\_tabular.tex}. The table lists confusion counts $(\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})$, accuracy, precision, recall, F$_1$, specificity, and balanced accuracy for each candidate in one snapshot (hard labels only; Section~\ref{sec:classification-metrics}).
+The single authoritative numeric panel for corrective-action comparison is Table~\ref{tab:model-metrics-snapshot}. It is generated from \texttt{assets/metrics\_export/} (see \texttt{metrics\_wide.csv} and \texttt{export\_meta.json}) and input via \texttt{metrics\_tabular.tex}. The table lists confusion counts $(\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})$, accuracy, precision, recall, F$_1$, specificity, and balanced accuracy for each candidate in one snapshot (hard labels only; Section~\ref{sec:classification-metrics}).
 
 Mean USD cost per request is not in that static file; it is read from Langfuse traces as in Section~\ref{sec:metrics-dashboard}. For example, \texttt{gpt-4.1-mini} shows exported subset accuracy {\csname benchgpt41miniaccuracy\endcsname} versus \texttt{gpt-4.1-nano} {\csname benchgpt41nanoaccuracy\endcsname} on that snapshot. For scalar deployment ranking, Chapter~\ref{ch:cost-deployment-utility} then applies $E_t[\mathcal{C}](m)$ on $\mathcal{D}_N$ with the explicit ratio input $R=C_{\mathrm{FP}}/C_{\mathrm{FN}}$ (equivalently $C_{\mathrm{FN}}/C_{\mathrm{FP}}=1/R$). The result is a multi-criteria comparison rather than a single universally best model, reflecting the need to weigh continued deployment, model switching, and prompt recovery under campaign-specific priorities.
 
@@ -394,4 +421,4 @@ False positives often track superficial lexical cues (brands, slogans, hashtags)
     \item GEPA is constrained to verified drift and re-evaluation on $\mathcal{D}_n$ to limit overfitting to hard cases.
 \end{itemize}
 
-This chapter shows the implemented monitoring pipeline, the frozen-subset baseline, longitudinal paired evidence, and a corrective-action comparison panel. It does not include an observed alert-to-deployment recovery episode; such evidence is discussed separately in Chapter~\ref{chap:degradation-case-study} when available.
+The chapter shows the implemented monitoring pipeline, the frozen-subset baseline, longitudinal paired evidence, and a corrective-action comparison panel. It does not include an observed alert-to-deployment recovery episode; such evidence is discussed separately in Chapter~\ref{chap:degradation-case-study} when available.

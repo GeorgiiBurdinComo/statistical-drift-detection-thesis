@@ -1,14 +1,14 @@
 \chapter{Introduction}
 
-\section{Context and Motivation}
+\section{Context and motivation}
 Industrial classification pipelines increasingly rely on Large Language Model (LLM) providers that expose their systems through application programming interfaces. In such settings, the deployed model can be viewed as a non-stationary black-box function $f_t(x)$ whose internal parameters and update schedule are controlled by the provider rather than by the user. As a result, the behaviour of the same API-accessible model may change over time even when the downstream task, the prompt, and the evaluation procedure remain fixed.
 
-The practical motivation for this thesis arises from the author's two-year work experience at GOCOMO GmbH. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, event, or other marketing entity. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, manual verification is not scalable, and automated classification becomes a necessary operational component.
+The practical motivation for the study arises from the author's two-year work experience at GOCOMO GmbH. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, event, or other marketing entity. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, manual verification is not scalable, and automated classification becomes a necessary operational component.
 
-However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade due to silent provider-side updates. In a business-critical pipeline, such degradation must be detected early. At the same time, repeated full-scale benchmarking on a large labelled dataset is costly. This creates a need for a monitoring methodology that is statistically informative, operationally feasible, and economically justified.
+However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade due to silent provider-side updates~\cite{chen2023chatgpt,tu2023chatlog}. In a business-critical pipeline, such degradation must be detected early. At the same time, repeated full-scale benchmarking on a large labelled dataset is costly. This creates a need for a monitoring methodology that is statistically informative, operationally feasible, and economically justified.
 
-\section{Problem Statement}
-This thesis addresses the problem of how to evaluate and monitor API-based LLM classifiers in a production environment where model behaviour may change over time. The central challenge is that the user does not control the underlying model updates, yet must still make reliable deployment decisions based on observed task performance.
+\section{Problem statement}
+The problem is to evaluate and monitor API-based LLM classifiers in a production environment where model behaviour may change over time. The central challenge is that the user does not control the underlying model updates, yet must still make reliable deployment decisions based on observed task performance.
 
 More specifically, the problem consists of four interconnected parts:
 \begin{enumerate}
@@ -20,13 +20,13 @@ More specifically, the problem consists of four interconnected parts:
 
 In addition, if a deployed model exhibits degraded performance, it is natural to ask whether this degradation can be mitigated without immediately replacing the model. This motivates the investigation of prompt optimisation as an adaptive mechanism within the monitoring framework.
 
-Accordingly, the thesis does not study model drift merely as an observational phenomenon. Its objective is to develop a practically usable framework for benchmark design, drift-sensitive monitoring, metric-informed manual model selection, and post-drift adaptation for binary classification with black-box LLM APIs.
+Accordingly, the analysis does not treat model drift merely as an observational phenomenon. The objective is to develop a practically usable framework for benchmark design, drift-sensitive monitoring, metric-informed manual model selection, and post-drift adaptation for binary classification with black-box LLM APIs.
 
-\section{Research Questions}
-The problem stated above is investigated through the following research questions:
+\section{Research questions}
+The stated problem is investigated through the following research questions:
 
 \begin{enumerate}
-    \item[RQ1:] How can the campaign-relevance detection task be formally represented as a binary classification problem for non-stationary black-box LLM APIs?
+    \item[RQ1:] How can the campaign-relevance detection task be formally represented as a binary classification problem in a non-stationary, black-box LLM setting??
     \item[RQ2:] How can a reduced monitoring subset be derived from a larger reference benchmark so that routine evaluation remains substantially cheaper while preserving sensitivity to model drift?
     \item[RQ3:] Which statistical criteria and alerting rules are appropriate for detecting practically significant performance degradation over time?
     \item[RQ4:] How should candidate models be compared and selected when deployment decisions depend on predictive quality, inference cost, and campaign-specific error tolerance?

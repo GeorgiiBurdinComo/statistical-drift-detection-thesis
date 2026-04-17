@@ -1,7 +1,7 @@
 \chapter{Drift Monitoring and Model Selection Methodology}
 \label{ch:drift}
 
-Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. This chapter specifies repeated evaluation on $\mathcal{D}_n$, paired drift detection via McNemar's test, classification metrics for reporting and candidate comparison, and manual operator overrides. A cost-based expected-cost utility for deployment ranking is developed in Chapter~\ref{ch:cost-deployment-utility}. The estimand is change in deployment behaviour on $\mathcal{D}_n$; it does not identify the population risk $R_t(f)$ from Chapter~\ref{ch:data} without additional assumptions.
+Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. The present chapter specifies repeated evaluation on $\mathcal{D}_n$, paired drift detection via McNemar's test, classification metrics for reporting and candidate comparison, and manual operator overrides. A cost-based expected-cost utility for deployment ranking is developed in Chapter~\ref{ch:cost-deployment-utility}. The estimand is change in deployment behaviour on $\mathcal{D}_n$; it does not identify the population risk $R_t(f)$ from Chapter~\ref{ch:data} without additional assumptions.
 
 \section{Temporal evaluation on a fixed panel}
 \label{sec:formalisation-temporal}
@@ -153,7 +153,7 @@ Specificity measures true-negative performance.
 Balanced accuracy mitigates inflation of raw accuracy under prevalence skew on the panel.
 
 \paragraph{Hard labels only.}
-The monitoring pipeline maps provider outputs to a single hard label $\hat{y}_{i,t}\in\{0,1\}$ via a fixed parsing rule; no per-example graded score is logged for the experiments in this thesis. The metrics above are therefore computed from one confusion table per model and batch. Threshold-sweep summaries of precision versus recall are not defined on hard labels alone and are omitted. Drift alerts remain based on McNemar on hard correctness (Section~\ref{sec:mcnemar-section}).
+The monitoring pipeline maps provider outputs to a single hard label $\hat{y}_{i,t}\in\{0,1\}$ via a fixed parsing rule; no per-example graded score is logged for the experiments reported here. The metrics above are therefore computed from one confusion table per model and batch. Threshold-sweep summaries of precision versus recall are not defined on hard labels alone and are omitted. Drift alerts remain based on McNemar on hard correctness (Section~\ref{sec:mcnemar-section}).
 
 \paragraph{When to trust which metric.}
 On the disagreement-enriched panel, prevalence is high (Chapter~\ref{ch:data}), so raw accuracy can hide asymmetric errors. Recall should dominate when missed relevant posts are expensive (high FN burden), while specificity should dominate when over-flagging irrelevant posts is operationally costly (high FP burden). Precision is useful when analyst workload is constrained by false alarms. McNemar remains the inferential test for drift alerts.

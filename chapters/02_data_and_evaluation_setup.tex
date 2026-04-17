@@ -1,7 +1,7 @@
 \chapter{Data and Evaluation Setup}
 \label{ch:data}
 
-This chapter specifies the classification task, the reference benchmark, construction of the fixed monitoring subset $\mathcal{D}_n$ (with $n=300$), a size rationale aligned with the McNemar procedure in Section~\ref{sec:mcnemar-section}, and the interpretation of subset-based accuracy relative to the full benchmark. Repeated evaluation over time and the operational drift test are deferred to Section~\ref{sec:formalisation-temporal}.
+The chapter specifies the classification task, the reference benchmark, construction of the fixed monitoring subset $\mathcal{D}_n$ (with $n=300$), a size rationale aligned with the McNemar procedure in Section~\ref{sec:mcnemar-section}, and the interpretation of subset-based accuracy relative to the full benchmark. Repeated evaluation over time and the operational drift test are deferred to Section~\ref{sec:formalisation-temporal}.
 
 \section{Formal problem definition}
 
@@ -13,7 +13,7 @@ Under zero--one loss $\mathcal{L}(\hat{y},y)=\mathbb{I}(\hat{y}\neq y)$, the pop
 \end{equation}
 for a distribution $P_t$. The distribution $P_t$ is not observed.
 
-The thesis uses a fixed labelled benchmark $\mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^{N}$ with $N=1199$, treated as the reference population for offline evaluation. For any fixed $t$, the benchmark accuracy
+The study uses a fixed labelled benchmark $\mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^{N}$ with $N=1199$, treated as the reference population for offline evaluation. For any fixed $t$, the benchmark accuracy
 \begin{equation}
     A_N(t) = \frac{1}{N}\sum_{i=1}^{N} \mathbb{I}\bigl(f(x_i;\pi,\theta_t)=y_i\bigr)
 \end{equation}
@@ -513,4 +513,4 @@ The Horvitz--Thompson construction recovers $A_N(t)$ by reweighting included ins
 
 For drift detection, the goal is different: maximise sensitivity to temporal changes in $\theta_t$ where the classifier is unstable. Large importance weights $1/q_i$ would suppress the contribution of boundary-heavy errors to the aggregate score, ``flattening'' the signal toward the global mean and reducing contrast for anomaly monitoring. Reporting the raw biased empirical accuracy $\hat{A}_n(t)$ (and confusion structure on $\mathcal{D}_n$) therefore acts as a high-gain monitoring signal on the fixed panel; the HT framework above still formalises how a positively designed subset would link to $A_N(t)$ if unbiased recovery were required.
 
-The thesis uses unweighted $\hat{A}_n(t)$ and related confusion-based metrics on $\mathcal{D}_n$ (Section~\ref{sec:classification-metrics}) as leading indicators of drift, not as HT estimates of $A_N(t)$. If unbiased estimation of $A_N(t)$ alongside drift monitoring were required, one would add a separate random component (e.g.\ SRS from $\mathcal{D}_N$) with positive $q_i$ on all items of interest.
+The study uses unweighted $\hat{A}_n(t)$ and related confusion-based metrics on $\mathcal{D}_n$ (Section~\ref{sec:classification-metrics}) as leading indicators of drift, not as HT estimates of $A_N(t)$. If unbiased estimation of $A_N(t)$ alongside drift monitoring were required, one would add a separate random component (e.g.\ SRS from $\mathcal{D}_N$) with positive $q_i$ on all items of interest.

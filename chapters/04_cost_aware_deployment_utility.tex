@@ -1,7 +1,7 @@
 \chapter{Cost-aware Deployment Utility}
 \label{ch:cost-deployment-utility}
 
-This chapter formalises deployment selection by combining inference expenditure with asymmetric misclassification penalties. When business-error costs can be specified, the result is a per-request expected cost that yields a single scalar ranking over candidate models. When such costs cannot be named reliably, the same utility is treated as a parametric decision rule and analysed through break-even boundaries and constraint-based selection. The chapter builds on the metrics and candidate comparison setup in Chapter~\ref{ch:drift} (Sections~\ref{sec:classification-metrics} and~\ref{sec:model-comparison-manual}).
+The chapter formalises deployment selection by combining inference expenditure with asymmetric misclassification penalties. When business-error costs can be specified, the result is a per-request expected cost that yields a single scalar ranking over candidate models. When such costs cannot be named reliably, the same utility is treated as a parametric decision rule and analysed through break-even boundaries and constraint-based selection. The chapter builds on the metrics and candidate comparison setup in Chapter~\ref{ch:drift} (Sections~\ref{sec:classification-metrics} and~\ref{sec:model-comparison-manual}).
 
 \section{Cost components}
 
@@ -111,7 +111,7 @@ This parameterization separates two distinct questions: how much more costly a f
 \[
 r=\frac{C_{\mathrm{FN}}}{C_{\mathrm{FP}}}=\frac{1}{R}
 \]
-can also be used, but this thesis reports deployment comparisons in the $R$-parameterization for consistency.
+can also be used, but deployment comparisons are reported in the $R$-parameterization for consistency.
 
 \section{Pairwise break-even analysis}
 \label{sec:break-even-analysis}
@@ -270,7 +270,7 @@ These constrained rules change only when a threshold crosses one of the observed
 
 \section{Remark on prevalence and evaluation scope}
 
-On the full benchmark ($n=1199$; $682$ positive, $517$ negative) the prevalence is $\hat{\pi}\approx0.569$. On the monitoring panel ($n=300$; $250$ positive, $50$ negative) it is $\hat{\pi}\approx0.833$. Because that panel is strongly disagreement-enriched and class-skewed, it is suitable for drift detection but not representative for deployment-cost estimation or constrained deployment selection. Therefore, the expected-cost comparisons, break-even analysis, and constrained-selection results in this thesis are reported on the full dataset $\mathcal{D}_N$ so that FP/FN trade-offs are weighted under a distribution closer to operational usage.
+On the full benchmark ($n=1199$; $682$ positive, $517$ negative) the prevalence is $\hat{\pi}\approx0.569$. On the monitoring panel ($n=300$; $250$ positive, $50$ negative) it is $\hat{\pi}\approx0.833$. Because that panel is strongly disagreement-enriched and class-skewed, it is suitable for drift detection but not representative for deployment-cost estimation or constrained deployment selection. Therefore, the expected-cost comparisons, break-even analysis, and constrained-selection results are reported on the full dataset $\mathcal{D}_N$ so that FP/FN trade-offs are weighted under a distribution closer to operational usage.
 
 \section{Monitor--detect--act pipeline}
 
@@ -291,7 +291,7 @@ When fixed costs are available, the selected deployment model is $m_t^\star$ fro
 \section{Expected-cost snapshot on the full benchmark}
 \label{sec:expected-cost-snapshot}
 
-For empirical illustration, this thesis includes a single exported expected-cost panel generated from \texttt{assets/metrics\_export/expected\_cost.csv}. The panel is included in Table~\ref{tab:expected-cost-snapshot} and is computed on the full benchmark $\mathcal{D}_N$ (not the monitoring subset), so the displayed ranking follows~\eqref{eq:expected-cost} under the full-data class distribution for one fixed penalty configuration.
+For empirical illustration, a single exported expected-cost panel is included, generated from \texttt{assets/metrics\_export/expected\_cost.csv}. The panel is included in Table~\ref{tab:expected-cost-snapshot} and is computed on the full benchmark $\mathcal{D}_N$ (not the monitoring subset), so the displayed ranking follows~\eqref{eq:expected-cost} under the full-data class distribution for one fixed penalty configuration.
 
 \begin{table}[htbp]
     \centering
@@ -303,4 +303,4 @@ For empirical illustration, this thesis includes a single exported expected-cost
     \end{adjustbox}
 \end{table}
 
-This table should be interpreted as one slice through the broader parametric decision model developed in this chapter. If campaign priorities change, operators may recompute the export for different $(C_{\mathrm{FP}},C_{\mathrm{FN}})$ values, inspect the corresponding break-even boundaries, or fall back to the constrained selection rules when direct monetary calibration is not reliable.
+This table should be interpreted as one slice through the broader parametric decision model developed in the chapter. If campaign priorities change, operators may recompute the export for different $(C_{\mathrm{FP}},C_{\mathrm{FN}})$ values, inspect the corresponding break-even boundaries, or fall back to the constrained selection rules when direct monetary calibration is not reliable.
