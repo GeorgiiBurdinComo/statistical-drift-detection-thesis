@@ -1,30 +1,48 @@
 \chapter{Data and Evaluation Setup}
 \label{ch:data}
 
-The chapter specifies the classification task, the reference benchmark, construction of the fixed monitoring subset $\mathcal{D}_n$ (with $n=300$), a size rationale aligned with the McNemar procedure in Section~\ref{sec:mcnemar-section}, and the interpretation of subset-based accuracy relative to the full benchmark. Repeated evaluation over time and the operational drift test are deferred to Section~\ref{sec:formalisation-temporal}.
+This chapter specifies the operational evaluation setting used throughout the thesis. It defines the classification problem, introduces the fixed labelled benchmark $\mathcal{D}_N$, explains how the frozen monitoring subset $\mathcal{D}_n$ with $n=300$ is constructed, gives a practical size rationale aligned with the McNemar procedure in Section~\ref{sec:mcnemar-section}, and clarifies what subset-based performance can and cannot be interpreted as. Repeated evaluation over time and the formal drift test are deferred to Section~\ref{sec:formalisation-temporal}.
 
 \section{Formal problem definition}
 
-Let $\mathcal{X}$ denote the space of social-media posts, including textual content, metadata, and attached visual content, and let $\mathcal{Y}=\{0,1\}$ denote the binary label space ($1$: campaign-relevant).. Under LLM-as-a-Service, the deployed classifier is a non-stationary mapping $f(x;\pi,\theta_t)\mapsto \hat{y}\in\{0,1\}$ with fixed prompt $\pi$ and provider-controlled weights $\theta_t$.
+At evaluation time $t$, the deployed API model is treated as a binary classifier
+\[
+f_t(x)=f(x;\pi,\theta_t)\in\{0,1\},
+\]
+where $\pi$ is the fixed prompt and $\theta_t$ denotes the provider-controlled model state at time $t$. For any benchmark item $x_i$, let
+\[
+\hat y_{i,t}=f_t(x_i)
+\]
+denote the predicted class label.
 
-Under zero--one loss $\mathcal{L}(\hat{y},y)=\mathbb{I}(\hat{y}\neq y)$, the population risk at time $t$ is
+Ideally, one would like to evaluate the classifier on the real distribution of posts encountered at time $t$. Let $P_t$ denote that unobserved distribution. Under zero--one loss, the corresponding population risk is
 \begin{equation}
-    R_t(f) = \mathbb{E}_{(x,y)\sim P_t}\bigl[\mathbb{I}\bigl(f(x;\pi,\theta_t)\neq y\bigr)\bigr],
+    R_t(f)=\mathbb{E}_{(x,y)\sim P_t}\bigl[\mathbb{I}(f_t(x)\neq y)\bigr].
 \end{equation}
-for a distribution $P_t$. The distribution $P_t$ is not observed.
 
-The study uses a fixed labelled benchmark $\mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^{N}$ with $N=1199$, treated as the reference population for offline evaluation. For any fixed $t$, the benchmark accuracy
+In practice, $P_t$ is not observed. Evaluation therefore relies on a fixed labelled benchmark
+\[
+\mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^N,\qquad N=1199.
+\]
+Because $\mathcal{D}_N$ is treated as a fixed reference population, the operational full-benchmark performance target at time $t$ is
 \begin{equation}
-    A_N(t) = \frac{1}{N}\sum_{i=1}^{N} \mathbb{I}\bigl(f(x_i;\pi,\theta_t)=y_i\bigr)
+    A_N(t)=\frac{1}{N}\sum_{i=1}^N \mathbb{I}\bigl(\hat y_{i,t}=y_i\bigr).
 \end{equation}
-is the sample accuracy on the benchmark $\mathcal{D}_N$. It is the estimand for full-benchmark runs. Unless $\mathcal{D}_N$ is a probability sample from $P_t$, $A_N(t)$ need not equal $1-R_t(f)$; the two objects are not identified from each other without additional assumptions. Subsequent sections use $A_N$ and subset accuracy as operational targets; $R_t$ motivates non-stationarity of $f(\cdot;\pi,\theta_t)$.
+
+In general, $A_N(t)$ need not equal $1-R_t(f)$, because $\mathcal{D}_N$ is not assumed to be a probability sample from $P_t$. Accordingly, the thesis uses $A_N(t)$ and later subset-based analogues as operational evaluation quantities, while $R_t(f)$ serves only as the ideal population quantity motivating non-stationarity.
 
 \section{Reference benchmark, operational constraint, and monitoring subset}
 \label{sec:input-datasets}
 
-Full-benchmark evaluation of every candidate at high frequency is prohibitively expensive (about \$90 per full run), which is too much for routine monitoring. Monitoring uses a fixed subset $\mathcal{D}_n\subset\mathcal{D}_N$ with $n\ll N$ on which the pipeline repeats inference; here $n=300$. The design goal is sensitivity to changes in $\theta_t$, not unbiased estimation of $A_N(t)$ from $\mathcal{D}_n$ alone.
+Routine evaluation of every candidate model on the full benchmark is too expensive for high-frequency monitoring. In the implemented pipeline, one full pass over $\mathcal{D}_N$ costs about \$90, which is acceptable for initialization or explicit escalation, but not for weekly monitoring. The monitoring stage therefore uses a fixed subset
+\[
+\mathcal{D}_n\subset\mathcal{D}_N,\qquad n\ll N,
+\]
+with $n=300$.
 
-The sets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored as fixed Langfuse datasets with common schema and label column (\texttt{campaign\_relevant}). Table~\ref{tab:dataset-summary} summarises composition.
+The purpose of $\mathcal{D}_n$ is not to replace $\mathcal{D}_N$ as a representative benchmark. Its purpose is to provide a smaller, frozen panel on which repeated inference can be run cheaply enough to detect changes in behaviour over time.
+
+The sets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored as fixed Langfuse datasets with a common schema and the binary label column \texttt{campaign\_relevant}. Table~\ref{tab:dataset-summary} summarises their composition.
 
 \begin{table}[htbp]
     \centering
@@ -45,472 +63,246 @@ The sets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored as fixed Langfuse datase
     \end{tabular}
 \end{table}
 
-The corresponding Langfuse dataset identifiers are \texttt{campaign\_relevance\_02e1a68ccb0f} (full benchmark) and \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46} (monitoring subset).
+The corresponding Langfuse dataset identifiers are \texttt{campaign\_relevance\_02e1a68ccb0f} for the full benchmark and \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46} for the monitoring subset.
 
-Each post is classified as an image post or a video post (multiple frames). Both sets are class-imbalanced; $\mathcal{D}_n$ is more positive-heavy than $\mathcal{D}_N$ (Table~\ref{tab:dataset-summary}), as a consequence of disagreement-based construction (Section~\ref{sec:informative-sampling-disagreement}). Accuracy on $\mathcal{D}_N$ and on $\mathcal{D}_n$ are not comparable by magnitude alone: prevalence and difficulty mix differ.
+Each post is classified as either an image post or a video post with multiple extracted frames. Both datasets are class-imbalanced, and the monitoring subset is substantially more positive-heavy than the full benchmark. This reflects the way $\mathcal{D}_n$ was constructed and immediately implies that accuracy values on $\mathcal{D}_N$ and on $\mathcal{D}_n$ are not comparable by magnitude alone.
 
-Roughly three quarters of items are video posts in both splits; multi-frame requests incur higher multimodal token cost than single-image posts. The subset is not a stratified copy of $\mathcal{D}_N$: it has a slightly larger image-post fraction yet a higher mean images per post ($5.87$ vs.\ $4.93$), so monitored runs are on average visually heavier. Empirical metrics in later chapters are reported on the fixed $\mathcal{D}_n$ unless stated otherwise.
+Roughly three quarters of items are video posts in both sets. Since video posts contribute multiple frames, they typically incur higher multimodal token cost than single-image posts. The subset is therefore not a stratified copy of $\mathcal{D}_N$: it has a somewhat different class balance and a different difficulty mix. Later empirical monitoring results are reported on the fixed $\mathcal{D}_n$ unless explicitly stated otherwise.
 
 \section{Disagreement-based subset construction}
 \label{sec:informative-sampling-disagreement}
 
-A simple random sample (SRS) of size $n$ from $\mathcal{D}_N$ yields an unbiased estimator of the benchmark accuracy $A_N(t)$ on $\mathcal{D}_N$ viewed as a finite population (simple random sampling without replacement). It does not, without further structure, target $R_t(f)$ under unknown $P_t$. Most benchmark items are easy for a given model ensemble; they show little cross-model variance and are therefore unlikely to change classification under small provider-side shifts in $\theta_t$.
+If the sole goal were unbiased estimation of the finite-population benchmark accuracy $A_N(t)$, one natural option would be to draw a simple random sample from $\mathcal{D}_N$. However, that is not the goal here. The monitoring panel is intended for repeated paired comparisons over time, where the main question is whether the deployed model has changed its behaviour on informative cases.
 
-To increase sensitivity to such changes, the monitoring subset is constructed by ensemble disagreement sampling: priority is given to benchmark items on which several distinct models do not agree.
+In the full benchmark, many items are comparatively easy: multiple models classify them the same way, and these cases are less likely to reveal subtle provider-side changes. For monitoring, such unanimously easy cases are less informative than cases on which candidate models disagree. The implemented design therefore enriches the monitoring subset with disagreement cases.
 
 Let
 \begin{equation}
     \mathcal{M}_{\mathrm{ens}}=\{f^{(1)},\dots,f^{(K)}\}
 \end{equation}
-denote an ensemble of $K$ classifiers evaluated on the full benchmark
+denote the ensemble of $K$ models evaluated once on the full benchmark
 \begin{equation}
     \mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^N.
 \end{equation}
-Here:
+For item $i$, let
+\[
+\hat y_i^{(k)}\in\{0,1\}
+\]
+be the prediction of model $f^{(k)}$.
 
-\begin{itemize}
-    \item $N$ is the size of the full benchmark;
-    \item $i\in\{1,\dots,N\}$ indexes benchmark items;
-    \item $x_i$ is the input associated with item $i$;
-    \item $y_i\in\{0,1\}$ is the reference label of item $i$;
-    \item $K$ is the number of models in the ensemble;
-    \item $f^{(k)}$ is the $k$-th ensemble model, for $k\in\{1,\dots,K\}$;
-    \item $\hat y_i^{(k)}\in\{0,1\}$ is the prediction of model $f^{(k)}$ on item $i$.
-\end{itemize}
-
-Define the disagreement pool
+The disagreement pool is defined by
 \begin{equation}
-    \mathcal{P}_{\mathrm{dis}}
+    \mathcal{I}_{\mathrm{dis}}
     =
     \left\{
-        x_i \in \mathcal{D}_N
+        i\in\{1,\dots,N\}
         \;\middle|\;
-        \exists\, k,\ell \in \{1,\dots,K\}
+        \exists\,k\neq \ell
         \text{ such that }
-        \hat y_i^{(k)} \neq \hat y_i^{(\ell)}
+        \hat y_i^{(k)}\neq \hat y_i^{(\ell)}
     \right\}.
 \end{equation}
-The monitoring subset $\mathcal{D}_n$ is then obtained by applying a fixed selection rule to $\mathcal{P}_{\mathrm{dis}}$ so that $|\mathcal{D}_n|=n$.
+Thus, an item belongs to $\mathcal{I}_{\mathrm{dis}}$ if the ensemble does not unanimously agree on its label.
 
-The objective of this construction is not minimum-variance estimation of $A_N(t)$ on the full benchmark. Its objective is drift sensitivity: the subset should contain items whose predicted label is comparatively unstable and therefore more likely to react to provider-side model updates.
-
-\subsection{Latent-margin model for disagreement sampling}
-
-The deployed LLM classifier is treated as a black box: only binary outputs are observed, not internal representations, logits, or calibrated probabilities. To formalise disagreement-based sampling introduce a latent-margin model at the level of benchmark items.
-
-\paragraph{Notation and interpretation.}
-For each benchmark item $i\in\{1,\dots,N\}$, let
+The monitoring subset is then obtained by selecting a fixed index set
+\[
+\mathcal{I}_n\subseteq \mathcal{I}_{\mathrm{dis}},\qquad |\mathcal{I}_n|=n,
+\]
+and defining
 \begin{equation}
-    m_i \in \mathbb{R}
-\end{equation}
-denote an unobserved signed relevance margin. The sign of $m_i$ determines the reference class, and the magnitude $|m_i|$ measures how far the item is from the relevance threshold:
-
-\begin{itemize}
-    \item if $m_i>0$, the item is relevant;
-    \item if $m_i<0$, the item is not relevant;
-    \item if $|m_i|$ is large, the item is unambiguous;
-    \item if $m_i$ is close to $0$, the item is borderline.
-\end{itemize}
-
-The reference label is therefore written as
-\begin{equation}
-    y_i=\mathbb{I}(m_i\ge 0),
-\end{equation}
-where $\mathbb{I}(\cdot)$ is the indicator function, equal to $1$ when its argument is true and $0$ otherwise.
-
-Next, let $u$ denote an evaluator. An evaluator can be either:
-\begin{itemize}
-    \item one of the ensemble models used during subset construction, or
-    \item the deployed provider model at a particular monitoring time.
-\end{itemize}
-
-For evaluator $u$, the observed prediction on item $i$ is modelled as
-\begin{equation}
-    \hat y_i^{(u)}
-    =
-    \mathbb{I}\!\left(m_i+\varepsilon_i^{(u)}\ge 0\right),
-\end{equation}
-where $\varepsilon_i^{(u)}$ is a random noise term. Intuitively, $\varepsilon_i^{(u)}$ represents evaluator-specific perturbation around the latent item margin $m_i$.
-
-Assume that, conditional on $m_i$:
-\begin{enumerate}
-    \item the noise variables $\varepsilon_i^{(u)}$ are independent and identically distributed across evaluators;
-    \item they have a continuous cumulative distribution function (CDF)
-    \begin{equation}
-        G(z)=P(\varepsilon_i^{(u)}\le z);
-    \end{equation}
-    \item the distribution is symmetric around $0$, so that
-    \begin{equation}
-        G(-z)=1-G(z)
-        \qquad \text{for all } z\in\mathbb{R}.
-    \end{equation}
-\end{enumerate}
-
-The symmetry assumption means that positive and negative perturbations of the same magnitude are equally likely.
-
-\paragraph{Probability of a positive prediction.}
-Define
-\begin{equation}
-    q_i
-    :=
-    P\!\left(\hat y_i^{(u)}=1 \mid m_i\right).
-\end{equation}
-This is the conditional probability that evaluator $u$ predicts class $1$ on item $i$, given the latent margin $m_i$.
-
-We now compute $q_i$ explicitly:
-\begin{align}
-    q_i
-    &= P\!\left(\hat y_i^{(u)}=1 \mid m_i\right) \\
-    &= P\!\left(m_i+\varepsilon_i^{(u)}\ge 0 \mid m_i\right) \\
-    &= P\!\left(\varepsilon_i^{(u)}\ge -m_i \mid m_i\right) \\
-    &= 1 - P\!\left(\varepsilon_i^{(u)} < -m_i \mid m_i\right).
-\end{align}
-Because the noise distribution is continuous, strict and non-strict inequalities have the same probability, so
-\begin{equation}
-    P\!\left(\varepsilon_i^{(u)} < -m_i \mid m_i\right)
-    =
-    P\!\left(\varepsilon_i^{(u)} \le -m_i \mid m_i\right)
-    =
-    G(-m_i).
-\end{equation}
-Hence
-\begin{equation}
-    q_i = 1-G(-m_i).
-\end{equation}
-Using symmetry, $G(-m_i)=1-G(m_i)$, so
-\begin{equation}
-    q_i = G(m_i).
+    \mathcal{D}_n=\{(x_i,y_i):i\in\mathcal{I}_n\}\subset\mathcal{D}_N.
 \end{equation}
 
-\begin{proposition}[Pairwise disagreement is largest for borderline items]
-\label{prop:pairwise-disagreement-margin}
-Let $u$ and $v$ be two evaluators. Assume that, conditional on $m_i$, their noise terms are independent. Define
-\begin{equation}
-    D_i
-    :=
-    P\!\left(\hat y_i^{(u)}\neq \hat y_i^{(v)} \mid m_i\right).
-\end{equation}
-Then
-\begin{equation}
-    D_i = 2G(m_i)\bigl(1-G(m_i)\bigr).
-\end{equation}
-Moreover, $D_i$ is maximal at $m_i=0$ and non-increasing in $|m_i|$.
-\end{proposition}
+The exact implementation-specific tie-breaking or ordering inside the disagreement pool is not essential for the methodological argument. What matters is the design principle: the monitoring panel is built from items on which the initial model ensemble does not fully agree, and once selected, that panel is frozen.
 
-\begin{proof}
-Fix an item $i$ and condition on its latent margin $m_i$.
+The rationale is operational. Disagreement cases are usually harder than unanimous cases, and harder cases are more informative for change detection. If a provider-side model update alters decision behaviour, it is more likely to become visible first on items that are already difficult or ambiguous for the ensemble. Monitoring such items therefore increases sensitivity to drift on a fixed budget.
 
-The event
-\begin{equation}
-    \{\hat y_i^{(u)}\neq \hat y_i^{(v)}\}
-\end{equation}
-can happen in exactly two mutually exclusive ways:
-\begin{enumerate}
-    \item evaluator $u$ predicts $1$ and evaluator $v$ predicts $0$;
-    \item evaluator $u$ predicts $0$ and evaluator $v$ predicts $1$.
-\end{enumerate}
-Therefore,
-\begin{align}
-    D_i
-    &=
-    P\!\left(\hat y_i^{(u)}=1,\hat y_i^{(v)}=0 \mid m_i\right)
-    +
-    P\!\left(\hat y_i^{(u)}=0,\hat y_i^{(v)}=1 \mid m_i\right).
-\end{align}
+This is a deliberate change of objective. The disagreement-based subset is not designed to be a minimum-variance estimator of full-benchmark accuracy. It is designed to be a drift-sensitive monitoring panel.
 
-By conditional independence,
-\begin{align}
-    P\!\left(\hat y_i^{(u)}=1,\hat y_i^{(v)}=0 \mid m_i\right)
-    &=
-    P\!\left(\hat y_i^{(u)}=1 \mid m_i\right)
-    P\!\left(\hat y_i^{(v)}=0 \mid m_i\right) \\
-    &= q_i(1-q_i),
-\end{align}
-and similarly,
-\begin{align}
-    P\!\left(\hat y_i^{(u)}=0,\hat y_i^{(v)}=1 \mid m_i\right)
-    &=
-    P\!\left(\hat y_i^{(u)}=0 \mid m_i\right)
-    P\!\left(\hat y_i^{(v)}=1 \mid m_i\right) \\
-    &= (1-q_i)q_i.
-\end{align}
-Adding the two terms gives
-\begin{equation}
-    D_i = q_i(1-q_i) + (1-q_i)q_i = 2q_i(1-q_i).
-\end{equation}
-Since $q_i=G(m_i)$, we obtain
-\begin{equation}
-    D_i = 2G(m_i)\bigl(1-G(m_i)\bigr).
-\end{equation}
-
-It remains to show where this expression is largest. Consider the function
-\begin{equation}
-    h(p)=2p(1-p), \qquad p\in[0,1].
-\end{equation}
-This is a quadratic function with derivative
-\begin{equation}
-    h'(p)=2-4p.
-\end{equation}
-Hence:
-\begin{itemize}
-    \item $h'(p)>0$ for $p<1/2$;
-    \item $h'(p)=0$ at $p=1/2$;
-    \item $h'(p)<0$ for $p>1/2$.
-\end{itemize}
-So $h(p)$ is maximised at $p=1/2$.
-
-Now, by symmetry of $G$, we have
-\begin{equation}
-    G(0)=\frac{1}{2}.
-\end{equation}
-Therefore $D_i=h(G(m_i))$ is maximised when $G(m_i)=1/2$, that is, when $m_i=0$.
-
-Finally, to show monotonicity in $|m_i|$, note first that
-\begin{equation}
-    D_i(-m_i)
-    =
-    2G(-m_i)\bigl(1-G(-m_i)\bigr)
-    =
-    2(1-G(m_i))G(m_i)
-    =
-    D_i(m_i).
-\end{equation}
-So $D_i$ is symmetric around $0$.
-
-For $m_i>0$, the CDF $G$ is non-decreasing, so $G(m_i)\ge 1/2$ and increases with $m_i$. On the interval $[1/2,1]$, the function $h(p)=2p(1-p)$ is non-increasing. Therefore $D_i=h(G(m_i))$ is non-increasing for $m_i>0$. By symmetry, the same is true as $|m_i|$ increases on the negative side. Hence $D_i$ is non-increasing in $|m_i|$.
-\end{proof}
-
-\paragraph{Correctness probability.}
-Define the correctness indicator
-\begin{equation}
-    E_i^{(u)}=\mathbb{I}\!\left(\hat y_i^{(u)}=y_i\right).
-\end{equation}
-This variable equals $1$ if evaluator $u$ classifies item $i$ correctly, and $0$ otherwise.
-
-Next define
-\begin{equation}
-    c_i
-    :=
-    P\!\left(E_i^{(u)}=1\mid m_i\right),
-\end{equation}
-the conditional probability that evaluator $u$ is correct on item $i$.
-
-We now compute $c_i$ by considering the two cases $m_i\ge 0$ and $m_i<0$.
-
-If $m_i\ge 0$, then $y_i=1$, so correctness means predicting class $1$. Hence
-\begin{equation}
-    c_i
-    =
-    P\!\left(\hat y_i^{(u)}=1\mid m_i\right)
-    =
-    G(m_i).
-\end{equation}
-
-If $m_i<0$, then $y_i=0$, so correctness means predicting class $0$. Hence
-\begin{align}
-    c_i
-    &=
-    P\!\left(\hat y_i^{(u)}=0\mid m_i\right) \\
-    &=
-    1-P\!\left(\hat y_i^{(u)}=1\mid m_i\right) \\
-    &=
-    1-G(m_i).
-\end{align}
-Using symmetry, $1-G(m_i)=G(-m_i)=G(|m_i|)$ because now $|m_i|=-m_i$. Thus in both cases,
-\begin{equation}
-    c_i = G(|m_i|).
-\end{equation}
-
-\begin{proposition}[Temporal correctness flips are largest for borderline items]
-\label{prop:correctness-flips-margin}
-Let $t_1<t_2$ be two monitoring times. Assume that, conditional on $m_i$, the evaluator noises at times $t_1$ and $t_2$ are independent. Then
-\begin{equation}
-    P\!\left(E_i^{(t_1)}\neq E_i^{(t_2)} \mid m_i\right)
-    =
-    2G(|m_i|)\bigl(1-G(|m_i|)\bigr).
-\end{equation}
-Moreover, this probability is maximal at $m_i=0$ and non-increasing in $|m_i|$.
-\end{proposition}
-
-\begin{proof}
-Fix an item $i$ and condition on $m_i$.
-
-The event
-\begin{equation}
-    \{E_i^{(t_1)}\neq E_i^{(t_2)}\}
-\end{equation}
-means that the classifier is correct at one monitoring time and incorrect at the other. This can happen in exactly two mutually exclusive ways:
-\begin{enumerate}
-    \item the classifier is correct at time $t_1$ and incorrect at time $t_2$;
-    \item the classifier is incorrect at time $t_1$ and correct at time $t_2$.
-\end{enumerate}
-Therefore,
-\begin{align}
-    P\!\left(E_i^{(t_1)}\neq E_i^{(t_2)} \mid m_i\right)
-    &=
-    P\!\left(E_i^{(t_1)}=1,E_i^{(t_2)}=0 \mid m_i\right) \\
-    &\quad +
-    P\!\left(E_i^{(t_1)}=0,E_i^{(t_2)}=1 \mid m_i\right).
-\end{align}
-
-By conditional independence and by the definition of $c_i$,
-\begin{align}
-    P\!\left(E_i^{(t_1)}=1,E_i^{(t_2)}=0 \mid m_i\right)
-    &=
-    P\!\left(E_i^{(t_1)}=1 \mid m_i\right)
-    P\!\left(E_i^{(t_2)}=0 \mid m_i\right) \\
-    &=
-    c_i(1-c_i),
-\end{align}
-and similarly,
-\begin{align}
-    P\!\left(E_i^{(t_1)}=0,E_i^{(t_2)}=1 \mid m_i\right)
-    &=
-    (1-c_i)c_i.
-\end{align}
-Adding the two terms yields
-\begin{equation}
-    P\!\left(E_i^{(t_1)}\neq E_i^{(t_2)} \mid m_i\right)
-    =
-    2c_i(1-c_i).
-\end{equation}
-Since $c_i=G(|m_i|)$, we obtain
-\begin{equation}
-    P\!\left(E_i^{(t_1)}\neq E_i^{(t_2)} \mid m_i\right)
-    =
-    2G(|m_i|)\bigl(1-G(|m_i|)\bigr).
-\end{equation}
-
-The remaining statement follows from the same argument as in Proposition~\ref{prop:pairwise-disagreement-margin}: the function $h(p)=2p(1-p)$ is maximised at $p=1/2$ and decreases as $p$ moves away from $1/2$. Since $G(|m_i|)\ge 1/2$ and increases with $|m_i|$, the flip probability is maximal at $|m_i|=0$, i.e.\ at $m_i=0$, and is non-increasing in $|m_i|$.
-\end{proof}
-
-\paragraph{Empirical disagreement score.}
-For an ensemble of size $K$, define
-\begin{equation}
-    r_i
-    =
-    \frac{1}{K}\sum_{k=1}^K \mathbb{I}\!\left(\hat y_i^{(k)}=1\right).
-\end{equation}
-The quantity $r_i$ is the fraction of ensemble models predicting class $1$ on item $i$.
-
-Now define the empirical disagreement score
-\begin{equation}
-    d_i = 4r_i(1-r_i).
-\end{equation}
-This score satisfies:
-\begin{itemize}
-    \item $d_i=0$ when all models agree, because then $r_i\in\{0,1\}$;
-    \item $d_i$ is largest when the ensemble is evenly split, that is, when $r_i\approx 1/2$.
-\end{itemize}
-
-Under the latent-margin model, conditional on $m_i$, the random variables
-\begin{equation}
-    Z_{ik}:=\mathbb{I}\!\left(\hat y_i^{(k)}=1\right),
-    \qquad k=1,\dots,K,
-\end{equation}
-are i.i.d.\ Bernoulli with success probability $q_i=G(m_i)$. Since
-\begin{equation}
-    r_i=\frac{1}{K}\sum_{k=1}^K Z_{ik},
-\end{equation}
-we have
-\begin{equation}
-    \mathbb{E}[r_i\mid m_i]=q_i
-\end{equation}
-and
-\begin{equation}
-    \mathrm{Var}(r_i\mid m_i)=\frac{q_i(1-q_i)}{K}.
-\end{equation}
-
-Using the identity
-\begin{equation}
-    \mathbb{E}[r_i(1-r_i)\mid m_i]
-    =
-    \mathbb{E}[r_i\mid m_i]
-    -
-    \mathbb{E}[r_i^2\mid m_i],
-\end{equation}
-together with
-\begin{equation}
-    \mathbb{E}[r_i^2\mid m_i]
-    =
-    \mathrm{Var}(r_i\mid m_i)
-    +
-    \bigl(\mathbb{E}[r_i\mid m_i]\bigr)^2,
-\end{equation}
-we obtain
-\begin{align}
-    \mathbb{E}[r_i(1-r_i)\mid m_i]
-    &=
-    q_i-\left(\frac{q_i(1-q_i)}{K}+q_i^2\right) \\
-    &=
-    q_i(1-q_i)\left(1-\frac{1}{K}\right) \\
-    &=
-    \frac{K-1}{K}q_i(1-q_i).
-\end{align}
-Multiplying by $4$ yields
-\begin{equation}
-    \mathbb{E}[d_i\mid m_i]
-    =
-    4\frac{K-1}{K}q_i(1-q_i)
-    =
-    4\frac{K-1}{K}G(m_i)\bigl(1-G(m_i)\bigr).
-\end{equation}
-
-Thus the observable score $d_i$ is a finite-$K$ proxy for latent instability: in expectation, it is largest for borderline items with $m_i$ close to $0$.
-
-This reduced-form model does not claim to describe the internal mechanism of the LLM. Its role is operational: it explains, why disagreement-enriched subsets concentrate items with higher expected temporal flip probability, which in turn increases the expected number of discordant correctness pairs for paired drift tests such as McNemar's test.
 \section{Monitoring subset size}
 \label{sec:monitoring-sample-size}
 
-Section~\ref{sec:mcnemar-section} defines discordant counts $b$ (regressions) and $c$ (improvements) between $t_1$ and $t_2$ and the McNemar statistic. For design, let $p_b=P(E_{i,t_1}=1,E_{i,t_2}=0)$ and $p_c=P(E_{i,t_1}=0,E_{i,t_2}=1)$ under the monitoring distribution on $\mathcal{D}_n$. Write $\rho=p_b+p_c$ for the discordance probability per item and $\delta=p_b-p_c$ for directional imbalance. On $\mathcal{D}_n$,
+Section~\ref{sec:mcnemar-section} defines the discordant counts
+\[
+b=\sum_{i=1}^n \mathbb{I}(E_{i,t_1}=1,E_{i,t_2}=0),
+\qquad
+c=\sum_{i=1}^n \mathbb{I}(E_{i,t_1}=0,E_{i,t_2}=1),
+\]
+where $b$ counts regressions (correct $\to$ wrong) and $c$ counts improvements (wrong $\to$ correct). As shown in Section~\ref{sec:mcnemar-section},
 \begin{equation}
-    \hat{A}_{t_2}-\hat{A}_{t_1}=\frac{c-b}{n}
+    \hat A_{t_2}-\hat A_{t_1}=\frac{c-b}{n}.
 \end{equation}
-(see Section~\ref{sec:mcnemar-section}). Detecting a benchmark-relevant drop in accuracy of at least $\Delta_{\mathrm{acc}}=0.05$ on the panel is related to $\delta$ and $\rho$; McNemar's power rises when $\rho$ is larger (more discordant pairs for fixed $n$).
 
-The choice $\Delta_{\mathrm{acc}}=0.05$ is tied to the minimum detectable effect relative to label noise. In production annotation, human inter-annotator disagreement on borderline posts induces an irreducible error rate on the order of $\epsilon_{\mathrm{noise}}\approx 0.05$; drifts smaller than that are not reliably distinguishable from background labelling variability. The planning calculation below therefore treats $\Delta_{\mathrm{acc}}=0.05$ as an operational margin aligned with that floor, not as a universal statistical identity.
-
-A normal-approximation sample-size requirement for a one-sided level-$\alpha$ test with power $1-\beta$ takes the form
+Hence a decrease in panel accuracy is driven by an excess of regressions over improvements. For planning, write
 \begin{equation}
-    n \ge \frac{1}{\rho} \left(
+    p_b=P(E_{i,t_1}=1,E_{i,t_2}=0),
+    \qquad
+    p_c=P(E_{i,t_1}=0,E_{i,t_2}=1),
+\end{equation}
+under the monitoring distribution induced by $\mathcal{D}_n$, and define
+\begin{equation}
+    \rho=p_b+p_c
+\end{equation}
+as the discordance probability per item and
+\begin{equation}
+    \delta=p_b-p_c
+\end{equation}
+as the directional imbalance.
+
+If the practically relevant event is a drop in panel accuracy of size $\Delta_{\mathrm{acc}}>0$, then
+\[
+\mathbb{E}\!\left[\hat A_{t_2}-\hat A_{t_1}\right]=p_c-p_b=-\delta,
+\]
+so the target directional effect is approximately
+\[
+\delta\approx \Delta_{\mathrm{acc}}.
+\]
+
+\paragraph{Conditional-binomial view of McNemar's test.}
+McNemar's test depends only on the discordant pairs. Let
+\[
+m=b+c
+\]
+denote the number of discordant pairs. Conditional on $m$, the count $b$ of regressions is binomial:
+\begin{equation}
+    b\mid m \sim \mathrm{Binomial}(m,\eta),
+\end{equation}
+where
+\begin{equation}
+    \eta
+    :=
+    P(\text{regression}\mid \text{discordance})
+    =
+    \frac{p_b}{p_b+p_c}
+    =
+    \frac{p_b}{\rho}.
+\end{equation}
+Using
+\[
+p_b=\frac{\rho+\delta}{2},
+\qquad
+p_c=\frac{\rho-\delta}{2},
+\]
+gives
+\begin{equation}
+    \eta=\frac{1}{2}+\frac{\delta}{2\rho}.
+\end{equation}
+
+Under the no-drift null hypothesis, regressions and improvements are equally likely, so
+\begin{equation}
+    H_0:\eta=\frac{1}{2}.
+\end{equation}
+For one-sided degradation detection, the alternative is
+\begin{equation}
+    H_a:\eta>\frac{1}{2}.
+\end{equation}
+
+\paragraph{Normal-approximation planning rule.}
+Conditional on $m$, the null distribution is
+\[
+b\mid m\sim \mathrm{Binomial}(m,1/2).
+\]
+For moderate or large $m$, this can be approximated by
+\[
+b\mid m \approx \mathcal N\!\left(\frac{m}{2},\frac{m}{4}\right).
+\]
+A one-sided level-$\alpha$ test rejects for sufficiently large $b$, namely when
+\begin{equation}
+    b \ge \frac{m}{2}+z_{1-\alpha}\sqrt{\frac{m}{4}},
+\end{equation}
+where $z_{1-\alpha}$ denotes the $(1-\alpha)$-quantile of the standard normal distribution.
+
+Under the alternative
+\[
+b\mid m\sim \mathrm{Binomial}(m,\eta),
+\]
+and the corresponding normal approximation is
+\[
+b\mid m \approx \mathcal N\!\bigl(m\eta,m\eta(1-\eta)\bigr).
+\]
+Requiring power $1-\beta$ leads to the sufficient condition
+\begin{equation}
+    m
+    \ge
+    \left(
         \frac{
-            z_{1-\alpha}\sqrt{0.25} + z_{1-\beta}\sqrt{\pi(1-\pi)}
+            z_{1-\alpha}\sqrt{0.25}+z_{1-\beta}\sqrt{\eta(1-\eta)}
         }{
-            \pi-0.5
+            \eta-0.5
+        }
+    \right)^2.
+\end{equation}
+
+Finally, since the expected number of discordant pairs is approximately
+\[
+m\approx n\rho,
+\]
+the corresponding panel-size requirement is
+\begin{equation}
+    n
+    \ge
+    \frac{1}{\rho}
+    \left(
+        \frac{
+            z_{1-\alpha}\sqrt{0.25}+z_{1-\beta}\sqrt{\eta(1-\eta)}
+        }{
+            \eta-0.5
         }
     \right)^2,
     \qquad
-    \pi = \frac{1}{2}+\frac{\delta}{2\rho},
+    \eta=\frac{1}{2}+\frac{\delta}{2\rho}.
 \end{equation}
-with $\pi$ the conditional probability of a regression given discordance. Plausible planning ranges $\rho\in[0.10,0.15]$ on $\mathcal{D}_n$ and $\Delta_{\mathrm{acc}}=0.05$ imply $\pi\in[0.667,0.75]$. For $(\alpha,\beta)=(0.05,0.2)$, the implied discordant count $m=n\rho$ is about $23$--$29$, hence $n\approx m/\rho\in[190,290]$. Setting $n=300$ is a conservative operational choice yielding roughly $30$--$45$ discordant pairs when $\rho$ lies in that range, sufficient for one-sided McNemar-style alerts at $\Delta_{\mathrm{acc}}\approx 0.05$ under the stated regime. This is a planning value, not a universal lower bound.
 
-\section{Selection bias and importance weighting}
+\paragraph{Operational calibration.}
+In this thesis, the minimum practically relevant degradation is set to
+\begin{equation}
+    \Delta_{\mathrm{acc}}=0.05.
+\end{equation}
+Treating this as the target directional effect gives
+\[
+\delta\approx 0.05,
+\qquad
+\eta=\frac{1}{2}+\frac{0.05}{2\rho}.
+\]
+
+For the planning range $\rho\in[0.10,0.15]$, this yields
+\[
+\eta\in[0.667,0.75].
+\]
+For $(\alpha,\beta)=(0.05,0.2)$, the required discordant count is then approximately
+\[
+m\in[23,54],
+\]
+which corresponds to a total panel size of roughly
+\[
+n\in[225,357].
+\]
+
+Accordingly, the implemented choice
+\[
+n=300
+\]
+should be interpreted as a pragmatic mid-range design value. It is large enough to make paired monitoring informative at reasonable discordance rates, while keeping routine monitoring substantially cheaper than repeated full-benchmark evaluation. The calculation is therefore used as a planning heuristic, not as a sharp universal power guarantee.
+
+\section{Selection bias and monitoring objective}
 \label{sec:selection-bias}
 
-Because $\mathcal{D}_n$ oversamples high-$d_i$ instances, the raw subset accuracy
+Because the monitoring subset is drawn from disagreement cases, it is not a representative sample of the full benchmark. In particular, it over-represents hard cases relative to $\mathcal{D}_N$.
+
+Define subset accuracy by
 \begin{equation}
-    \hat{A}_n(t)=\frac{1}{n}\sum_{i\in\mathcal{D}_n}\mathbb{I}\bigl(\hat{y}_{i,t}=y_i\bigr)
+    \hat A_n(t)=\frac{1}{n}\sum_{i\in\mathcal{I}_n}\mathbb{I}\bigl(\hat y_{i,t}=y_i\bigr).
 \end{equation}
-is generally biased for $A_N(t)$: the estimands differ. The design accepts that bias to amplify instability where ensemble disagreement is large. Temporal shifts in provider weights $\theta_t$ are expected to surface first on such items, improving power of the paired monitor relative to a uniform $\mathcal{D}_n$.
+In general, $\hat A_n(t)$ is not an unbiased estimator of the full-benchmark accuracy $A_N(t)$.
 
-Relating $\hat{A}_n$ to $A_N$ by inverse probability weighting requires a sampling design with known inclusion probabilities $q_i=P(i\in\mathcal{D}_n)>0$ for all $i\in\mathcal{D}_N$. The implemented rule is deterministic disagreement-based selection with $q_i=0$ for many $i$; Horvitz--Thompson (HT) recovery of $A_N$ from $\mathcal{D}_n$ alone is therefore not defined.
+This is intentional. The purpose of $\mathcal{D}_n$ is not to estimate $A_N(t)$ as accurately as possible from a smaller sample. Its purpose is to provide a stable, more sensitive panel for detecting behavioural change. The same property that makes the subset biased for full-benchmark estimation makes it useful for monitoring: difficult items are more likely than trivial items to expose changes in the model's decision behaviour.
 
-\subsection{Horvitz--Thompson estimator under a positive design}
+Consequently, $\hat A_n(t)$ is interpreted as a monitoring statistic on a fixed hard-case panel, not as a direct surrogate for full-benchmark performance. This distinction is important for the later decision logic:
 
-If, hypothetically, $S_i\in\{0,1\}$ indicated inclusion with known $q_i>0$ for all $i=1,\ldots,N$, then
-\begin{equation}
-    \hat{A}_{\mathrm{HT}}(t) = \frac{1}{N}\sum_{i=1}^{N} \frac{S_i\,\mathbb{I}(\hat{y}_{i,t}=y_i)}{q_i}
-\end{equation}
-is unbiased for $A_N(t)$ over the sampling design, with $\hat{y}_{i,t}$ fixed at $t$.
+\begin{itemize}
+    \item repeated paired drift detection is performed on the frozen subset $\mathcal{D}_n$;
+    \item descriptive subset metrics are useful for identifying the current error profile on hard cases;
+    \item final model comparison for deployment, especially when cost and class prevalence matter, must return to the full benchmark $\mathcal{D}_N$ or another representative evaluation set.
+\end{itemize}
 
-\begin{proof}
-$\mathbb{E}[\hat{A}_{\mathrm{HT}}(t)] = \frac{1}{N}\sum_i \mathbb{I}(\hat{y}_{i,t}=y_i)\,\mathbb{E}[S_i]/q_i = A_N(t)$.
-\end{proof}
-
-\subsection{Monitoring objective and signal amplification}
-
-The Horvitz--Thompson construction recovers $A_N(t)$ by reweighting included instances inversely with $q_i$, thereby mapping the monitoring measure back toward the uniform benchmark measure. That reweighting down-weights frequent error types on the disagreement-enriched panel when their inclusion probabilities are low: it is appropriate for unbiased population estimation.
-
-For drift detection, the goal is different: maximise sensitivity to temporal changes in $\theta_t$ where the classifier is unstable. Large importance weights $1/q_i$ would suppress the contribution of boundary-heavy errors to the aggregate score, ``flattening'' the signal toward the global mean and reducing contrast for anomaly monitoring. Reporting the raw biased empirical accuracy $\hat{A}_n(t)$ (and confusion structure on $\mathcal{D}_n$) therefore acts as a high-gain monitoring signal on the fixed panel; the HT framework above still formalises how a positively designed subset would link to $A_N(t)$ if unbiased recovery were required.
-
-The study uses unweighted $\hat{A}_n(t)$ and related confusion-based metrics on $\mathcal{D}_n$ (Section~\ref{sec:classification-metrics}) as leading indicators of drift, not as HT estimates of $A_N(t)$. If unbiased estimation of $A_N(t)$ alongside drift monitoring were required, one would add a separate random component (e.g.\ SRS from $\mathcal{D}_N$) with positive $q_i$ on all items of interest.
+In short, the methodology separates two tasks that should not be conflated: \emph{monitoring for change} on a drift-sensitive panel and \emph{estimating deployment quality} on the full benchmark.
