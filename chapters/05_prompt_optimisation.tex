@@ -4,37 +4,40 @@
 \section{Motivation and problem statement}
 \label{sec:motivation-prompt-adaptation}
 
-Under the alert rule in Chapter~\ref{ch:drift} (Section~\ref{sec:mcnemar-section}), statistically supported degradation is evidence that the deployed system has changed its observable behaviour on the fixed monitoring panel $\mathcal{D}_n$, while labels and task specification remain unchanged. In the present setting, this degradation cannot be addressed by fine-tuning the provider model, because the classifier is accessed only through an external API and repeated weight adaptation is economically unreasonable. The only controllable component of the inference pipeline is therefore the prompt $\pi$.
+Under the alert rule in Chapter~\ref{ch:drift} (Section~\ref{sec:mcnemar-section}), statistically supported degradation means that the deployed system has changed its observable behaviour on the fixed monitoring panel \(\mathcal{D}_n\), while the labels and task definition remain unchanged. In the present setting, this degradation cannot be addressed by fine-tuning the provider model: the classifier is accessed only through an external API, and repeated weight adaptation is neither available nor economically realistic. The only controllable part of the inference pipeline is therefore the prompt \(\pi\).
 
-Let the deployed classifier at time $t$ be
+Let the deployed classifier at time \(t\) be
 \begin{equation}
     f_t(x;\pi)=f(x;\pi,\theta_t),
 \end{equation}
-where $\pi$ is the prompt and $\theta_t$ denotes the provider-controlled model state at time $t$. Drift may occur through changes in $\theta_t$ while $\pi$ remains fixed. Prompt optimisation therefore seeks an updated prompt $\pi^\star$ such that predictive quality is restored or improved on a labelled optimisation set without changing the API model identifier, whenever such recovery is preferable to immediate fallback to another candidate model $m\in\mathcal{M}_{\mathrm{cand}}$.
+where \(\pi\) is the prompt and \(\theta_t\) is the provider-controlled model state at time \(t\). Drift may occur because \(\theta_t\) changes while \(\pi\) stays fixed. Prompt optimisation therefore seeks an updated prompt \(\pi^\star\) that restores or improves predictive quality for the same API model on a labelled optimisation set, whenever this is preferable to an immediate switch to another model \(m\in\mathcal{M}_{\mathrm{cand}}\).
 
-From the perspective of the monitoring framework, prompt optimisation is thus not a replacement for drift detection. It is the adaptive mechanism that becomes relevant after degradation has been established statistically.
+Prompt optimisation is therefore not a substitute for drift detection. It is the adaptive step that becomes relevant after degradation has been established statistically.
 
 \section{Automatic prompt optimisation}
 \label{sec:general-formulation-apo}
 
-Let $\Sigma$ denote the token alphabet and let $\mathcal{P}\subseteq \Sigma^\star$ denote the set of admissible hard prompts. Let
+Let \(\Sigma\) denote the token alphabet and let \(\mathcal{P}\subseteq\Sigma^\star\) be the set of admissible hard prompts. Let
 \begin{equation}
-    \mathcal{D}_{\mathrm{opt}}=\{(x_i,y_i)\}_{i=1}^n
+    \mathcal{D}_{\mathrm{opt}}=\{(x_i,y_i)\}_{i=1}^{n_{\mathrm{opt}}}
 \end{equation}
-be the optimisation dataset, and fix a candidate model identifier $m\in\mathcal{M}_{\mathrm{cand}}$ (typically the currently deployed model $m_{\mathrm{curr}}$). For a prompt $\pi\in\mathcal{P}$, define the empirical task score
+be a labelled optimisation dataset. Fix a model identifier \(m\in\mathcal{M}_{\mathrm{cand}}\). Since the model is held fixed throughout the optimisation, the dependence on \(m\) is suppressed in the notation below.
+
+For a prompt \(\pi\in\mathcal{P}\), define the empirical task score
 \begin{equation}
     J_t(\pi)
     =
-    \frac{1}{n}\sum_{i=1}^n
+    \frac{1}{n_{\mathrm{opt}}}
+    \sum_{i=1}^{n_{\mathrm{opt}}}
     \ell\!\left(f_t(x_i;\pi),y_i\right),
 \end{equation}
-where $\ell$ is a task-specific utility function. In binary classification, the natural choice is
+where \(\ell\) is a task-specific utility function. In the binary classification setting considered here, the natural choice is
 \begin{equation}
     \ell\!\left(f_t(x_i;\pi),y_i\right)
     =
     \mathbb{I}\!\left(f_t(x_i;\pi)=y_i\right),
 \end{equation}
-so that $J_t(\pi)$ is the empirical accuracy of prompt $\pi$ on $\mathcal{D}_{\mathrm{opt}}$.
+so that \(J_t(\pi)\) is simply the empirical accuracy of prompt \(\pi\) on \(\mathcal{D}_{\mathrm{opt}}\).
 
 The ideal APO problem is therefore
 \begin{equation}
@@ -42,7 +45,7 @@ The ideal APO problem is therefore
     \in
     \arg\max_{\pi\in\mathcal{P}} J_t(\pi).
 \end{equation}
-However, practical prompt search is not only discrete and black-box, but also budget-constrained. Every candidate evaluation consumes API rollouts on labelled examples. A more realistic formulation is
+In practice, however, prompt search is discrete, black-box, and budget-constrained. Each candidate evaluation requires API rollouts on labelled examples. A more realistic formulation is
 \begin{equation}
     \pi_t^\star
     \in
@@ -52,22 +55,22 @@ However, practical prompt search is not only discrete and black-box, but also bu
     \qquad
     N_{\mathrm{roll}}\le B,
 \end{equation}
-where $B$ is the available rollout budget and $N_{\mathrm{roll}}$ is the total number of prompt-conditioned evaluations performed during the search.
+where \(B\) is the rollout budget and \(N_{\mathrm{roll}}\) is the total number of prompt-conditioned evaluations performed during the search.
 
-This problem is difficult for three reasons:
+This optimisation problem is difficult for three reasons:
 \begin{enumerate}
-    \item $\mathcal{P}$ is a discrete combinatorial space of natural-language strings rather than a continuous Euclidean parameter space.
+    \item \(\mathcal{P}\) is a discrete combinatorial space of natural-language strings rather than a continuous Euclidean parameter space.
     \item The objective is black-box: outputs are observable, but gradients, logits, and hidden states are not.
-    \item Function evaluation is expensive, because each candidate prompt must be tested through repeated API calls.
+    \item Function evaluation is expensive because each candidate prompt must be tested through repeated API calls.
 \end{enumerate}
 
-A convenient abstract view of APO is as an iterative generate--evaluate--update process. Let $\mathcal{C}_k$ be the set of prompt candidates available at iteration $k$, let $\mathcal{E}_k$ denote the feedback collected at iteration $k$, and let $\mathcal{U}$ denote the update operator. Then many APO methods can be written as
+A convenient abstract view is to treat APO as an iterative generate--evaluate--update procedure. Let \(\mathcal{C}_k\) be the set of candidate prompts available at iteration \(k\), let \(\mathcal{E}_k\) be the feedback collected at that iteration, and let \(\mathcal{U}\) denote the update rule. Then many APO methods can be written as
 \begin{align}
     \mathcal{C}_0 &= \mathrm{Init}(\mathcal{D}_{\mathrm{opt}}), \\
     \mathcal{E}_k &= \mathrm{Eval}(\mathcal{C}_k,\mathcal{D}_{\mathrm{opt}}), \\
     \mathcal{C}_{k+1} &= \mathcal{U}(\mathcal{C}_k,\mathcal{E}_k).
 \end{align}
-The final prompt is selected as
+The final prompt is then chosen from the final candidate pool:
 \begin{equation}
     \pi^\star \in \arg\max_{\pi\in\mathcal{C}_K} J_t(\pi).
 \end{equation}
@@ -76,9 +79,9 @@ In the simplest case, the feedback consists only of scores,
 \begin{equation}
     \mathcal{E}_k = \{J_t(\pi): \pi\in\mathcal{C}_k\},
 \end{equation}
-but in more expressive systems it may additionally contain error cases, execution traces, natural-language critiques, or evaluator messages.
+but richer systems may also use error cases, execution traces, natural-language critiques, or evaluator messages.
 
-When evaluation is performed on a minibatch $M_k\subseteq\mathcal{D}_{\mathrm{opt}}$, the full score $J_t(\pi)$ is replaced by the stochastic estimate
+When evaluation is performed on a minibatch \(M_k\subseteq\mathcal{D}_{\mathrm{opt}}\), the full score \(J_t(\pi)\) is replaced by the stochastic estimate
 \begin{equation}
     \widehat{J}_{t,k}(\pi)
     =
@@ -86,136 +89,36 @@ When evaluation is performed on a minibatch $M_k\subseteq\mathcal{D}_{\mathrm{op
     \sum_{(x_i,y_i)\in M_k}
     \ell\!\left(f_t(x_i;\pi),y_i\right).
 \end{equation}
-Thus many practical APO procedures operate under noisy objective evaluations: the search is driven not by the exact score on all of $\mathcal{D}_{\mathrm{opt}}$, but by repeated local estimates computed under the rollout budget.
+Thus practical APO procedures usually operate under noisy objective evaluations: search is driven by repeated local estimates rather than by exact evaluation on all of \(\mathcal{D}_{\mathrm{opt}}\).
 
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[
-  arr/.style={->, thick, >=Latex},
-  apobox/.style={draw, rounded corners=3pt, align=center, font=\footnotesize,
-               minimum height=10mm, text width=22mm, inner sep=4pt, fill=gray!10},
-]
-  \node[apobox] (seed) {Seed\\prompt(s)};
-  \node[apobox, right=7mm of seed]  (gen)  {Candidate\\generation};
-  \node[apobox, right=7mm of gen]   (eval) {Eval on $\mathcal{D}_{\mathrm{opt}}$};
-  \node[apobox, right=7mm of eval]  (sel)  {Selection /\\filtering};
-  \node[apobox, right=7mm of sel]   (upd)  {Updated\\prompt(s)};
-
-  \draw[arr] (seed) -- (gen);
-  \draw[arr] (gen)  -- (eval);
-  \draw[arr] (eval) -- (sel);
-  \draw[arr] (sel)  -- (upd);
-
-  \coordinate (fbr) at ($(upd.south)+(0,-9mm)$);
-  \coordinate (fbl) at ($(gen.south)+(0,-9mm)$);
-  \draw[arr] (upd.south) -- (fbr) -- node[midway, below, font=\scriptsize]{iterate} (fbl) -- (gen.south);
-\end{tikzpicture}
-\caption{Generic APO loop; implementations differ in initialization, evaluation, and update operators.}
-\label{fig:apo-generic-loop}
-\end{figure}
+% Keep existing Figure 5.1 here.
 
 \section{Method families and API feasibility}
 \label{sec:taxonomy-apo}
 
-\begin{figure}[p]
-\centering
-\resizebox{0.95\textwidth}{!}{%
-\begin{forest}
-  forked edges,
-  for tree={
-    grow'=east,
-    draw,
-    rounded corners=2pt,
-    align=center,
-    font=\scriptsize,
-    anchor=west,
-    parent anchor=east,
-    child anchor=west,
-    inner sep=3pt,
-    l sep=6mm,
-    s sep=1.2mm,
-    fill=gray!8,
-  },
-  where level=1{tier=level1}{},
-  where level=2{tier=level2}{},
-  where level=3{tier=level3}{},
-  [{\rotatebox{90}{\parbox{68mm}{\centering\scriptsize Prompt optimisation anatomy}}},
-    fill=violet!20, inner sep=1pt
-    [Seed Prompts §3, fill=orange!25
-      [Manual Instructions §3.1, fill=orange!15]
-      [Instruction-induction via LLMs §3.2, fill=orange!15]
-    ]
-    [Inference evaluation\\and feedback §4, fill=yellow!40
-      [Numeric score §4.1, fill=yellow!25
-        [Task accuracy §4.1.1, fill=yellow!15]
-        [Reward model score §4.1.2, fill=yellow!15]
-        [Entropy-based §4.1.3, fill=yellow!15]
-        [Negative log-likelihood §4.1.4, fill=yellow!15]
-      ]
-      [LLM Feedback §4.2, fill=yellow!25
-        [Improving single candidate §4.2.1, fill=yellow!15]
-        [Improving multiple candidates §4.2.2, fill=yellow!15]
-      ]
-      [Human Feedback §4.3, fill=yellow!15]
-    ]
-    [Candidate prompt\\generation §5, fill=blue!15
-      [Heuristic-based\\edits §5.1, fill=blue!10
-        [Monte Carlo Sampling §5.1.1, fill=gray!8]
-        [Genetic Algorithm §5.1.2, fill=gray!8]
-        [Word / phrase edits §5.1.3, fill=gray!8]
-        [Vocabulary pruning §5.1.4, fill=gray!8]
-      ]
-      [Editing with auxiliary\\trained NN §5.2, fill=blue!10
-        [Reinforcement Learning §5.2.1, fill=gray!8]
-        [LLM Finetuning §5.2.2, fill=gray!8]
-        [Generative Adversarial\\Networks §5.2.3, fill=gray!8]
-      ]
-      [Metaprompt design §5.3, fill=gray!8]
-      [Coverage-based §5.4, fill=blue!10
-        [Single prompt expansion §5.4.1, fill=gray!8]
-        [Mixture of experts §5.4.2, fill=gray!8]
-        [Ensemble methods §5.4.3, fill=gray!8]
-      ]
-      [Program Synthesis §5.5, fill=gray!8]
-    ]
-    [Filter and retain\\promising candidates §6, fill=red!15
-      [TopK Greedy Search §6.1, fill=red!10]
-      [Upper confidence bound\\and variants §6.2, fill=red!10]
-      [Region-based joint search §6.3, fill=red!10]
-      [Meta-heuristic ensemble §6.4, fill=red!10]
-    ]
-    [Iteration depth §7, fill=teal!25
-      [Fixed steps §7.1, fill=teal!10]
-      [Variable steps §7.2, fill=teal!10]
-    ]
-  ]
-\end{forest}
-}
-\caption{Taxonomy of automatic prompt optimisation methods~\cite{ramnath2025survey}.}
-\label{fig:apo-taxonomy}
-\end{figure}
+Recent survey work organises APO methods into a common pipeline with five components: seed prompt construction, candidate generation, evaluation, candidate filtering, and repeated iteration~\cite{ramnath2025survey}. Within this shared structure, methods differ mainly in how prompts are represented, what feedback they use, and how new candidates are proposed.
 
-Recent survey work organises APO methods into a common pipeline consisting of seed prompt construction, candidate generation, evaluation, candidate filtering, and repeated iteration~\cite{ramnath2025survey}. Within this shared structure, the main method families differ in how candidates are represented, which feedback signals are used, and how the update rule exploits these signals.
+% Keep existing Figure 5.2 here.
 
 \subsection{Gradient-based and soft-prompt methods}
 
-The oldest family optimises prompts by direct gradient information. In soft prompting, the prompt is represented not as a natural-language string but as a trainable continuous vector $\mathbf{p}$ prepended to the input embeddings~\cite{lester2021prompt,li2021prefix}. For task loss $\mathcal{L}$, the update is
+The oldest family optimises prompts by gradient information. In soft prompting, the prompt is represented not as a natural-language string but as a trainable continuous vector \(\mathbf{p}\) prepended to the input embeddings~\cite{lester2021prompt,li2021prefix}. For task loss \(\mathcal{L}\), the update is
 \begin{equation}
     \mathbf{p}_{k+1}
     =
     \mathbf{p}_k-\eta\nabla_{\mathbf{p}}\mathcal{L}(\mathbf{p}_k),
     \qquad \eta>0.
 \end{equation}
-A related direction is gradient-guided hard prompt search, where token substitutions are ranked by gradient information even though the final prompt remains discrete~\cite{shin2020autoprompt}. These methods are mathematically natural, but they require access to model internals and are therefore generally infeasible in opaque LLM-as-a-Service settings.
+A related line of work is gradient-guided hard-prompt search, where token substitutions are ranked by gradient information even though the final prompt remains discrete~\cite{shin2020autoprompt}. These methods are mathematically natural, but they require access to model internals and are therefore generally infeasible in opaque LLM-as-a-Service settings.
 
 \subsection{Reinforcement-learning approaches}
 
-A second family formulates prompt search as a sequential decision problem. Let $q_\phi(\pi)$ be a distribution over prompts parameterised by $\phi$. The optimisation target is
+A second family formulates prompt search as a sequential decision problem. Let \(q_\phi(\pi)\) be a distribution over prompts parameterised by \(\phi\). The objective is
 \begin{equation}
     \max_{\phi}\;
     \mathbb{E}_{\pi\sim q_\phi}\bigl[R(\pi)\bigr],
 \end{equation}
-where $R(\pi)$ is the reward assigned to prompt $\pi$. In the present classification setting, one may take
+where \(R(\pi)\) is the reward assigned to prompt \(\pi\). In the present classification setting, one may take
 \begin{equation}
     R(\pi)=J_t(\pi).
 \end{equation}
@@ -228,17 +131,17 @@ The corresponding policy-gradient identity is
         R(\pi)\nabla_\phi\log q_\phi(\pi)
     \right].
 \end{equation}
-Methods such as RLPrompt optimise discrete prompts without requiring target-model gradients~\cite{deng2022rlprompt}. The drawback is sample inefficiency: under high-variance rewards, many rollouts may be needed before the policy stabilises, which is problematic when every rollout is an API call.
+Methods such as RLPrompt optimise discrete prompts without requiring gradients of the target model itself~\cite{deng2022rlprompt}. However, they can be rollout-intensive, which is a serious drawback when each rollout is an external API call.
 
 \subsection{LLM-as-optimizer and textual-reflection methods}
 
-A third family replaces explicit policy learning with the reasoning ability of an LLM itself. A meta-model observes prompts, examples, scores, and error descriptions and proposes an improved prompt in natural language:
+A third family uses an LLM itself as the optimiser. A meta-model observes prompts, examples, scores, and error descriptions, and then proposes a revised prompt in natural language:
 \begin{equation}
     \pi_{k+1}
     =
     \mathcal{M}_{\mathrm{meta}}(\pi_k,\mathcal{E}_k,\mathcal{H}_k),
 \end{equation}
-where $\mathcal{H}_k$ denotes optional search history. Representative examples are APE~\cite{zhou2022ape}, ProTeGi~\cite{pryzant2023protegi}, and OPRO~\cite{yang2024opro}. These methods are naturally compatible with black-box APIs, but many of them behave like greedy or near-greedy local search: improvements on some cases may introduce regressions on others.
+where \(\mathcal{H}_k\) denotes optional search history. Representative examples are APE~\cite{zhou2022ape}, ProTeGi~\cite{pryzant2023protegi}, and OPRO~\cite{yang2024opro}. These methods are naturally compatible with black-box APIs, but they often perform sequential local improvement and may trade gains on some instances for regressions on others.
 
 \subsection{Evolutionary and genetic search}
 
@@ -246,29 +149,31 @@ A fourth family treats prompts as a population of candidate solutions and borrow
 \begin{equation}
     \mathcal{C}_k=\{\pi_k^{(1)},\dots,\pi_k^{(M)}\}
 \end{equation}
-be the candidate population at iteration $k$. A generic update is
+be the candidate population at iteration \(k\). A generic update is
 \begin{align}
     \widetilde{\mathcal{C}}_{k+1} &= \mathrm{MutateCross}(\mathcal{C}_k), \\
     \mathcal{C}_{k+1} &= \mathrm{Select}(\mathcal{C}_k\cup \widetilde{\mathcal{C}}_{k+1}).
 \end{align}
-Examples include EvoPrompt and PromptBreeder~\cite{guo2024evoprompt,fernando2024promptbreeder}. Evolutionary search is particularly suitable for discrete non-convex spaces because it does not assume differentiability and maintains multiple candidate strategies simultaneously.
+Examples include EvoPrompt and PromptBreeder~\cite{guo2024evoprompt,fernando2024promptbreeder}. These methods are well suited to discrete, non-convex search spaces because they do not assume differentiability and they preserve multiple candidate strategies at once.
 
 \subsection{Bayesian and program-level optimisation}
 
-A fifth direction optimises prompts at the level of complete LLM programs rather than isolated instructions. Let $c\in\mathcal{C}$ denote one structured program configuration and let $\widehat{J}_k$ denote a surrogate model fitted after $k$ evaluations. A generic Bayesian optimisation loop is
+A fifth direction optimises complete LLM programs rather than isolated instructions. Let \(c\in\mathcal{C}\) denote one structured program configuration and let \(\widehat{J}_k\) be a surrogate model fitted after \(k\) evaluations. A generic Bayesian optimisation loop is
 \begin{align}
     \mathcal{S}_k &= \{(c^{(j)},J_t(c^{(j)}))\}_{j=1}^k, \\
     \widehat{J}_k &= \mathrm{FitSurrogate}(\mathcal{S}_k), \\
     c^{(k+1)} &= \arg\max_{c\in\mathcal{C}} a(c;\widehat{J}_k),
 \end{align}
-where $a(\cdot;\widehat{J}_k)$ is an acquisition function balancing exploration and exploitation. MIPROv2~\cite{opsahlong2024mipro} is an important representative baseline for modular LLM programs. Its focus is primarily on aggregate performance, whereas instance-level regression control is less explicit than in Pareto-frontier search.
+where \(a(\cdot;\widehat{J}_k)\) is an acquisition function balancing exploration and exploitation. MIPROv2~\cite{opsahlong2024mipro} is an important baseline in this class. Its optimisation focus is aggregate performance over program configurations; it does not explicitly preserve instance-wise trade-offs in the way Pareto-based evolutionary search does.
+
+For the present API-only setting, the practically feasible families are therefore the black-box ones: textual-reflection methods, evolutionary search, and program-level Bayesian optimisation.
 
 \section{GEPA}
 \label{sec:gepa}
 
-The optimisation component uses GEPA (Genetic--Pareto Evolutionary Prompt Optimisation)~\cite{agrawal2025gepa}. Within the taxonomy above, GEPA is a population-based black-box optimiser that combines evolutionary search, LLM-guided reflective mutation, and Pareto-based candidate selection.
+The optimisation component used here is GEPA (Genetic--Pareto Evolutionary Prompt Optimisation)~\cite{agrawal2025gepa}. Within the taxonomy above, GEPA is a population-based black-box optimiser that combines evolutionary search, reflective prompt mutation, and Pareto-based candidate selection.
 
-In the original paper, GEPA is formulated for compound AI systems $\Phi$ that may contain several prompt-bearing modules. In the deployment setting considered here, the classifier has only one prompt-bearing module, so a candidate system can be identified with its prompt $\pi$. This reduces the notation without changing the core optimisation logic: the search remains budget-constrained, black-box, and instance-sensitive.
+In the original paper, GEPA is formulated for compound AI systems \(\Phi\) that may contain several prompt-bearing modules. In the deployment setting considered here, the classifier has only one prompt-bearing module. A candidate system can therefore be identified with its prompt \(\pi\). This simplification reduces notation but does not change the core optimisation logic: the search remains black-box, budget-constrained, and instance-sensitive.
 
 \subsection{Algorithmic workflow}
 
@@ -280,19 +185,19 @@ GEPA splits the optimisation data into two disjoint parts,
     \qquad
     D_{\mathrm{feedback}}\cap D_{\mathrm{pareto}}=\varnothing.
 \end{equation}
-The feedback set is used to generate local improvement signals, while the Pareto set is used for candidate comparison and selection.
+The feedback set is used to generate local improvement signals. The Pareto set is used for candidate comparison and parent selection.
 
-At iteration $k$, the algorithm proceeds as follows:
+At iteration \(k\), the algorithm proceeds as follows:
 \begin{enumerate}
-    \item \textbf{Candidate selection.} Select a parent prompt from a Pareto-filtered subset of the current candidate pool rather than always choosing the globally best average prompt.
+    \item \textbf{Candidate selection.} Select a parent prompt from a Pareto-filtered subset of the current candidate pool rather than always choosing the single best average candidate.
     \item \textbf{Module selection.} In the general GEPA framework, one prompt-bearing module is selected for update. In the present single-prompt classifier, this step is trivial.
     \item \textbf{Minibatch rollout.} Execute the selected prompt on a minibatch
     \begin{equation}
         M_k \subseteq D_{\mathrm{feedback}}
     \end{equation}
-    and record outputs, traces, and evaluator feedback.
-    \item \textbf{Reflective mutation.} A reflection language model receives the current prompt together with trace information and textual feedback and proposes an offspring prompt $\widetilde{\pi}_k$.
-    \item \textbf{Acceptance test.} Compare parent and offspring on the minibatch by
+    and record outputs, traces, scores, and evaluator feedback.
+    \item \textbf{Reflective mutation.} A reflection language model receives the current prompt together with execution information and feedback text, and proposes an offspring prompt \(\widetilde{\pi}_k\).
+    \item \textbf{Acceptance test.} Compare parent and offspring on the minibatch using
     \begin{equation}
         \widehat{J}_{t,k}(\pi)
         =
@@ -306,53 +211,26 @@ At iteration $k$, the algorithm proceeds as follows:
         >
         \widehat{J}_{t,k}(\pi_k).
     \end{equation}
-    If accepted, it is added to the candidate pool and evaluated on $D_{\mathrm{pareto}}$.
+    If accepted, it is added to the candidate pool and then evaluated on \(D_{\mathrm{pareto}}\).
 \end{enumerate}
 
-The search stops when the rollout budget $B$ is exhausted. The final returned candidate is the prompt with the strongest aggregate performance on $D_{\mathrm{pareto}}$. In the extended GEPA+Merge variant, crossover between lineages is additionally used~\cite{agrawal2025gepa}.
+The search stops when the rollout budget \(B\) is exhausted. The final returned candidate is the prompt with the strongest aggregate performance on \(D_{\mathrm{pareto}}\). In the extended GEPA+Merge variant, crossover between compatible lineages is additionally used~\cite{agrawal2025gepa}.
 
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[
-  arr/.style={->, thick, >=Latex},
-  box/.style={
-    draw, rounded corners=3pt, align=center, font=\footnotesize,
-    minimum height=10mm, text width=27mm, inner sep=4pt, fill=gray!10
-  }
-]
-\node[box] (pool) {Candidate pool\\$\mathcal{C}_k$};
-\node[box, right=6mm of pool] (sel) {Pareto-based\\parent selection};
-\node[box, right=6mm of sel] (roll) {Minibatch rollout\\on $D_{\mathrm{feedback}}$};
-\node[box, right=6mm of roll] (refl) {Reflective\\prompt mutation};
-\node[box, right=6mm of refl] (acc) {Acceptance test\\$\widehat{J}_{t,k}(\widetilde{\pi}_k)>\widehat{J}_{t,k}(\pi_k)$};
-
-\draw[arr] (pool) -- (sel);
-\draw[arr] (sel) -- (roll);
-\draw[arr] (roll) -- (refl);
-\draw[arr] (refl) -- (acc);
-
-\node[box, below=10mm of refl] (pareto) {Evaluate accepted offspring\\on $D_{\mathrm{pareto}}$};
-\draw[arr] (acc.south) |- node[pos=0.25, right, font=\scriptsize]{accept} (pareto.east);
-\draw[arr] (pareto.west) -| node[pos=0.75, below, font=\scriptsize]{update pool} (pool.south);
-\draw[arr] (acc.north) .. controls ($(acc.north)+(1,8mm)$) and ($(pool.north)+(1,8mm)$) .. node[pos=0.5, above, font=\scriptsize, inner sep=1pt]{reject} (pool.north);
-\end{tikzpicture}
-\caption{Operational view of GEPA in the single-prompt setting under consideration.}
-\label{fig:gepa-loop}
-\end{figure}
+% Keep existing Figure 5.3 here.
 
 \subsection{Core design principles}
 
 \paragraph{Black-box optimisation.}
 GEPA does not require gradients, hidden states, or weight access. Candidate quality is assessed only through observable outputs and external evaluation. This matches the deployment constraints of API-based LLM classification.
 
-\paragraph{Evolutionary population search.}
+\paragraph{Population-based search.}
 GEPA maintains a pool of accepted candidates rather than a single incumbent prompt. This preserves diversity and allows the search to explore several partially successful prompt strategies at once.
 
 \paragraph{Reflective mutation.}
-Unlike classical random mutation, GEPA performs semantic mutation. Execution traces and evaluator messages are used by a reflection model to diagnose failures and rewrite instructions in natural language.
+Unlike classical random mutation, GEPA performs semantic mutation. Execution traces and evaluator feedback are used by a reflection model to diagnose failures and rewrite instructions in natural language.
 
 \paragraph{Pareto-based selection.}
-GEPA does not always evolve the current best average candidate. Instead, it gives priority to prompts that are best on different instances, which reduces the risk of premature convergence to a locally dominant but brittle strategy.
+GEPA does not always evolve the best average candidate. Instead, it retains candidates that are strongest on different instances, which reduces the risk of premature convergence to a locally strong but brittle strategy.
 
 \subsection{Formalisation on \texorpdfstring{$\mathcal{D}_{\mathrm{opt}}$}{D\_opt}}
 \label{sec:formal-gepa}
@@ -361,14 +239,14 @@ Let
 \begin{equation}
     D_{\mathrm{pareto}}=\{(x_1,y_1),\dots,(x_{n_p},y_{n_p})\}
 \end{equation}
-be the validation part of the optimisation data used for Pareto-based selection. For a prompt $\pi$, define the per-instance validation score
+be the validation part of the optimisation data used for Pareto-based selection. For a prompt \(\pi\), define the per-instance validation score
 \begin{equation}
     v_i(\pi)
     =
     \ell\!\left(f_t(x_i;\pi),y_i\right),
     \qquad i=1,\dots,n_p.
 \end{equation}
-In the binary classification setting considered here, $v_i(\pi)\in\{0,1\}$ and coincides with correctness:
+In the binary classification setting considered here, \(v_i(\pi)\in\{0,1\}\) and coincides with correctness:
 \begin{equation}
     v_i(\pi)=\mathbb{I}\!\left(f_t(x_i;\pi)=y_i\right).
 \end{equation}
@@ -379,16 +257,16 @@ Collect these values into the score vector
     \bigl(v_1(\pi),\dots,v_{n_p}(\pi)\bigr)\in [0,1]^{n_p}.
 \end{equation}
 
-This yields a natural multi-objective interpretation of GEPA:
+This gives a natural multi-objective view of GEPA:
 \begin{equation}
     \max_{\pi\in\mathcal{P}} \mathbf{v}(\pi)
     \qquad
     \text{in the Pareto sense.}
 \end{equation}
-Rather than collapsing all information into one scalar average immediately, GEPA first tracks which candidates are strongest on which individual instances.
+Rather than collapsing all information into one average score immediately, GEPA first tracks which candidates are strongest on which individual instances.
 
 \begin{definition}[Pareto dominance]
-For two prompts $\pi^{(A)}$ and $\pi^{(B)}$, write
+For two prompts \(\pi^{(A)}\) and \(\pi^{(B)}\), write
 \begin{equation}
     \pi^{(A)} \succ \pi^{(B)}
 \end{equation}
@@ -402,7 +280,7 @@ and
 \end{align}
 \end{definition}
 
-Let $\mathcal{C}_k$ denote the full pool of accepted candidates after iteration $k$. GEPA first constructs, for each validation instance $i$, the set of candidates that attain the best score on that instance:
+Let \(\mathcal{C}_k\) denote the full pool of accepted candidates after iteration \(k\). For each validation instance \(i\), define the set of candidates that achieve the best score on that instance:
 \begin{equation}
     \mathcal{P}_{k,i}^\star
     =
@@ -414,7 +292,7 @@ The union
     =
     \bigcup_{i=1}^{n_p} \mathcal{P}_{k,i}^\star
 \end{equation}
-contains all prompts that are best on at least one instance. Among these, GEPA removes dominated candidates and retains the non-dominated subset
+contains all candidates that are best on at least one instance. Among these, GEPA removes dominated candidates and retains the non-dominated subset
 \begin{equation}
     \widehat{\mathcal{F}}_k
     =
@@ -430,14 +308,14 @@ Define the pruned instance-wise best sets by
     =
     \mathcal{P}_{k,i}^\star \cap \widehat{\mathcal{F}}_k.
 \end{equation}
-GEPA then samples a parent from $\widehat{\mathcal{F}}_k$ with weight proportional to how often the candidate appears among these pruned best sets:
+GEPA then samples a parent from \(\widehat{\mathcal{F}}_k\) with weight proportional to the number of pruned best sets in which the candidate appears:
 \begin{equation}
     w_k(\pi)
     =
     \sum_{i=1}^{n_p}
     \mathbb{I}\!\left(\pi\in\widehat{\mathcal{P}}_{k,i}^\star\right),
 \end{equation}
-and therefore
+and hence
 \begin{equation}
     \mathbb{P}(\pi_k=\pi)
     =
@@ -446,7 +324,7 @@ and therefore
     \qquad
     \pi\in \widehat{\mathcal{F}}_k.
 \end{equation}
-This makes the selection rule neither purely greedy nor uniform: prompts that lead on more instances are sampled more often, but candidates specialised to smaller subsets can also remain active.
+This selection rule is neither purely greedy nor uniform: candidates that lead on more instances are sampled more often, but candidates specialised to smaller subsets can remain active.
 
 Reflective mutation then generates an offspring from the selected parent:
 \begin{equation}
@@ -454,7 +332,7 @@ Reflective mutation then generates an offspring from the selected parent:
     =
     \mathcal{M}_{\mathrm{refl}}(\pi_k,\mathcal{T}_k,\mathcal{G}_k),
 \end{equation}
-where $\mathcal{T}_k$ denotes execution traces and $\mathcal{G}_k$ textual evaluator feedback. If the minibatch acceptance rule is satisfied, the candidate pool is updated by
+where \(\mathcal{T}_k\) denotes execution traces and \(\mathcal{G}_k\) textual evaluator feedback. If the minibatch acceptance rule is satisfied, the candidate pool is updated by
 \begin{equation}
     \mathcal{C}_{k+1}
     =
@@ -464,7 +342,7 @@ otherwise,
 \begin{equation}
     \mathcal{C}_{k+1}=\mathcal{C}_k.
 \end{equation}
-For accepted offspring, the score vector $\mathbf{v}(\widetilde{\pi}_k)$ is then evaluated on $D_{\mathrm{pareto}}$ and becomes available for later Pareto-based selection.
+For accepted offspring, the score vector \(\mathbf{v}(\widetilde{\pi}_k)\) is then evaluated on \(D_{\mathrm{pareto}}\) and becomes available for later Pareto-based selection.
 
 A compact description of one GEPA iteration in the single-prompt setting is therefore
 \begin{align}
@@ -482,37 +360,38 @@ A compact description of one GEPA iteration in the single-prompt setting is ther
 \end{align}
 
 \paragraph{Regression and recovery relative to the deployed prompt.}
-For the purposes of the deployment scenario under study, a central question is not only whether a candidate improves the average score, but also how that improvement is distributed over previously correct and previously incorrect items. Let $\pi_0$ denote the currently deployed prompt and let $\pi$ be a candidate update evaluated on
+For the deployment setting studied here, the central question is not only whether a candidate improves the average score, but also how that improvement is distributed across previously correct and previously incorrect items. Let \(\pi_0\) denote the currently deployed prompt and let \(\pi\) be a candidate update evaluated on
 \begin{equation}
-    \mathcal{D}_{\mathrm{opt}}=\{(x_1,y_1),\dots,(x_n,y_n)\}.
+    \mathcal{D}_{\mathrm{opt}}=\{(x_1,y_1),\dots,(x_{n_{\mathrm{opt}}},y_{n_{\mathrm{opt}}})\}.
 \end{equation}
-Define the full correctness indicator
+Define the correctness indicator
 \begin{equation}
     s_i(\pi)=\mathbb{I}\!\left(f_t(x_i;\pi)=y_i\right),
-    \qquad i=1,\dots,n.
+    \qquad i=1,\dots,n_{\mathrm{opt}}.
 \end{equation}
 Then the number of newly introduced regressions is
 \begin{equation}
     R_{\mathrm{new}}(\pi\mid \pi_0)
     =
-    \sum_{i=1}^n
+    \sum_{i=1}^{n_{\mathrm{opt}}}
     \mathbb{I}\bigl(s_i(\pi_0)=1,\; s_i(\pi)=0\bigr),
 \end{equation}
 and the number of recovered cases is
 \begin{equation}
     G_{\mathrm{fix}}(\pi\mid \pi_0)
     =
-    \sum_{i=1}^n
+    \sum_{i=1}^{n_{\mathrm{opt}}}
     \mathbb{I}\bigl(s_i(\pi_0)=0,\; s_i(\pi)=1\bigr).
 \end{equation}
 
-The scalar score difference admits the exact decomposition
+The score difference admits the exact decomposition
 \begin{equation}
     J_t(\pi)-J_t(\pi_0)
     =
-    \frac{G_{\mathrm{fix}}(\pi\mid \pi_0)-R_{\mathrm{new}}(\pi\mid \pi_0)}{n}.
+    \frac{G_{\mathrm{fix}}(\pi\mid \pi_0)-R_{\mathrm{new}}(\pi\mid \pi_0)}
+    {n_{\mathrm{opt}}}.
 \end{equation}
-Indeed, for each instance $i$,
+Indeed, for each instance \(i\),
 \begin{equation}
     s_i(\pi)-s_i(\pi_0)
     =
@@ -522,34 +401,38 @@ Indeed, for each instance $i$,
         0, & \text{otherwise,}
     \end{cases}
 \end{equation}
-and summing over all $i$ gives the stated identity.
+and summing over all \(i\) gives the identity above.
 
-This decomposition is important in the present setting. A purely scalar objective sees only the net balance between fixes and regressions. By contrast, GEPA's instance-sensitive selection preserves candidates with different error profiles, which is desirable when reducing newly introduced regressions is operationally almost as important as repairing previously incorrect cases.
+This decomposition matters in the present setting. A purely scalar objective sees only the net balance between fixes and regressions. By contrast, GEPA's instance-sensitive selection can preserve candidates with different error profiles, which is useful when avoiding newly introduced regressions is nearly as important as repairing existing errors.
 
 \section{Why GEPA fits this setting}
 \label{sec:why-gepa}
 
 \subsection{Compatibility with API constraints}
 
-The framework assumes pure LLM-as-a-Service access: no fine-tuning, no gradient access, and no internal activations. GEPA requires only rollouts, scores, traces, and evaluator feedback. This makes it directly compatible with the deployment regime considered here, whereas gradient-based hard- and soft-prompt methods are excluded by design.
+The framework assumes pure LLM-as-a-Service access: no fine-tuning, no gradient access, and no internal activations. GEPA requires only rollouts, scores, traces, and evaluator feedback. It is therefore directly compatible with the deployment regime considered here, whereas gradient-based hard- and soft-prompt methods are excluded by design.
 
 \subsection{Sample efficiency under limited budget}
 
-Prompt adaptation is not treated as a one-time offline exercise, but as a corrective mechanism that may need to be triggered repeatedly after drift events. This makes rollout budget a first-class consideration. Reinforcement-learning approaches are compatible with black-box evaluation, but they are often rollout-intensive. GEPA was explicitly designed for sample-efficient adaptation under expensive rollouts, and the original paper reports stronger benchmark results than GRPO while using fewer rollouts on the reported tasks~\cite{agrawal2025gepa}. Under the deployment scenario under study, this makes GEPA a plausible recovery method when optimisation budget is limited.
+Prompt adaptation is not treated here as a one-off offline exercise, but as a corrective mechanism that may need to be triggered repeatedly after drift events. Rollout budget is therefore a first-class constraint. Reinforcement-learning approaches are compatible with black-box evaluation, but they can be rollout-intensive. In the GEPA paper, the reported benchmark results show stronger performance than GRPO under substantially smaller rollout budgets, and also stronger results than MIPROv2 on the reported settings~\cite{agrawal2025gepa}. For the present deployment scenario, that makes GEPA a plausible recovery method when optimisation budget is limited.
 
 \subsection{Suitability for hard boundary instances}
 
-The monitoring and optimisation setup is intentionally enriched with disagreement-heavy cases near the effective decision boundary (Chapter~\ref{ch:data}). These are precisely the examples on which small prompt changes are likely to matter, but also where regressions are easiest to introduce. A method that preserves multiple competing prompt strategies is therefore preferable to one that follows only a single greedy update path. GEPA is especially well suited to this structure because it treats candidate prompts as a multi-objective population over instances rather than as a one-dimensional ranking by average score alone.
+The monitoring and optimisation setup is intentionally enriched with disagreement-heavy cases near the effective decision boundary (Chapter~\ref{ch:data}). These are precisely the cases on which small prompt changes are likely to matter, but also the cases on which regressions are easiest to introduce. A method that preserves multiple competing prompt strategies is therefore preferable to one that follows a single greedy update path. GEPA is well suited to this structure because it treats candidates as an instance-sensitive population rather than as a one-dimensional ranking by average score alone.
 
 \section{Integration into the monitoring loop}
 \label{sec:apo-monitoring-integration}
 
-Prompt optimisation is not a substitute for monitoring. It is the adaptive response once Chapter~\ref{ch:drift} has established statistically supported degradation, or when operators trigger recovery for operational reasons. The workflow is:
+Prompt optimisation is not a replacement for monitoring. It is the adaptive response after Chapter~\ref{ch:drift} has established statistically supported degradation, or when recovery is triggered for operational reasons. The workflow is:
 \begin{enumerate}
-    \item monitor the deployed model on the fixed subset $\mathcal{D}_n$;
+    \item monitor the deployed model on the fixed panel \(\mathcal{D}_n\);
     \item detect degradation using the paired rule in Section~\ref{sec:mcnemar-section};
-    \item if degradation is confirmed and prompt repair is preferred to immediate model switch, run APO on $\mathcal{D}_{\mathrm{opt}}$ derived from the same task distribution;
-    \item re-evaluate the recovered prompt on $\mathcal{D}_n$ and compare it with alternative models using the metrics and optional utility from Section~\ref{sec:model-comparison-manual}.
+    \item if degradation is confirmed and prompt repair is preferred to an immediate model switch, run APO on a \emph{separate} labelled optimisation set \(\mathcal{D}_{\mathrm{opt}}\) drawn from the same task domain;
+    \item evaluate the recovered prompt on \(\mathcal{D}_n\) for drift-sensitive comparison and, when deployment choice is required, compare it with alternative models on \(\mathcal{D}_N\) or another representative evaluation set using the metrics and utility from Chapters~\ref{ch:drift} and~\ref{ch:cost-deployment-utility}.
 \end{enumerate}
 
-Thus, the logical order of the framework is \emph{monitor $\rightarrow$ detect $\rightarrow$ adapt $\rightarrow$ re-evaluate}. Recovered prompts are treated as ordinary deployment candidates and use the same reporting logic as the batch evaluations documented in Chapter~\ref{chap:system-architecture}.
+Thus the logical order is
+\[
+\text{monitor} \;\rightarrow\; \text{detect} \;\rightarrow\; \text{adapt} \;\rightarrow\; \text{re-evaluate}.
+\]
+Recovered prompts are treated as ordinary deployment candidates and enter the same reporting and selection pipeline as alternative API models.

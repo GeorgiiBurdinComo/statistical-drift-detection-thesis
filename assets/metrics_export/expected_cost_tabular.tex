@@ -1,22 +1,22 @@
-% Auto-generated — last score day 2026-04-13
-% C_FP = 1.0, C_FN = 1.0
-% \input{expected_cost_tabular.tex} inside your table environment
-\begin{tabular}{lrrrrrr}
-\toprule
-model & n & FP & FN & accuracy & avg cost (USD) & E[C] (USD) \\
-\midrule
-gpt-5.2 & 300 & 8 & 1 & 0.970000 & 0.008907 & 0.038907 \\
-gpt-5 & 300 & 10 & 0 & 0.966667 & 0.007082 & 0.040415 \\
-gpt-5.1 & 300 & 7 & 4 & 0.963333 & 0.005919 & 0.042586 \\
-gpt-5.4 & 299 & 9 & 4 & 0.956522 & 0.013132 & 0.056610 \\
-claude-sonnet-4-6 & 300 & 8 & 5 & 0.956667 & 0.017126 & 0.060459 \\
-gpt-5-mini & 300 & 4 & 19 & 0.923333 & 0.001350 & 0.078016 \\
-claude-sonnet-4-5 & 300 & 4 & 26 & 0.900000 & 0.018281 & 0.118281 \\
-gpt-5-nano & 300 & 3 & 34 & 0.876667 & 0.000350 & 0.123683 \\
-claude-haiku-4-5 & 300 & 5 & 41 & 0.846667 & 0.006014 & 0.159348 \\
-gemini-2.5-flash & 300 & 9 & 48 & 0.810000 & 0.000709 & 0.190709 \\
-gpt-4.1-mini & 300 & 1 & 58 & 0.803333 & 0.002321 & 0.198987 \\
-gpt-4.1-nano & 300 & 10 & 80 & 0.700000 & 0.000812 & 0.300812 \\
-\bottomrule
-\end{tabular}
+% Illustrative extrapolation to N = 1199
+% Penalty setting chosen so that false positives are weighted 5x more than false negatives
+% C_FP = 0.155, C_FN = 0.031
 
+\begin{tabular}{lrrrrrr}
+    \toprule
+    model & n & FP & FN & accuracy & avg cost (USD) & E[C] (USD) \\
+    \midrule
+    gpt-5.2 & 1199 & 32 & 4 & 0.969975 & 0.008907 & 0.013147 \\
+    gpt-5 & 1199 & 40 & 0 & 0.966639 & 0.007082 & 0.012253 \\
+    gpt-5.1 & 1199 & 28 & 16 & 0.963303 & 0.005919 & 0.009952 \\
+    gpt-5.4 & 1199 & 36 & 16 & 0.956631 & 0.013132 & 0.018200 \\
+    claude-sonnet-4-6 & 1199 & 32 & 20 & 0.956631 & 0.017126 & 0.021780 \\
+    gpt-5-mini & 1199 & 16 & 76 & 0.923269 & 0.001350 & 0.005383 \\
+    claude-sonnet-4-5 & 1199 & 16 & 104 & 0.899917 & 0.018281 & 0.023038 \\
+    gpt-5-nano & 1199 & 12 & 136 & 0.876564 & 0.000350 & 0.005418 \\
+    claude-haiku-4-5 & 1199 & 20 & 164 & 0.846539 & 0.006014 & 0.012840 \\
+    gemini-2.5-flash & 1199 & 36 & 192 & 0.809842 & 0.000709 & 0.010327 \\
+    gpt-4.1-mini & 1199 & 4 & 232 & 0.803169 & 0.002321 & 0.008836 \\
+    gpt-4.1-nano & 1199 & 40 & 320 & 0.699750 & 0.000812 & 0.014257 \\
+    \bottomrule
+    \end{tabular}
