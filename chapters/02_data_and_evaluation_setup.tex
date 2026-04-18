@@ -1,48 +1,55 @@
 \chapter{Data and Evaluation Setup}
 \label{ch:data}
 
-This chapter specifies the operational evaluation setting used throughout the thesis. It defines the classification problem, introduces the fixed labelled benchmark $\mathcal{D}_N$, explains how the frozen monitoring subset $\mathcal{D}_n$ with $n=300$ is constructed, gives a practical size rationale aligned with the McNemar procedure in Section~\ref{sec:mcnemar-section}, and clarifies what subset-based performance can and cannot be interpreted as. Repeated evaluation over time and the formal drift test are deferred to Section~\ref{sec:formalisation-temporal}.
+This chapter defines the evaluation setting used in the thesis. It introduces the labelled benchmark $\mathcal{D}_N$, the fixed monitoring subset $\mathcal{D}_n$ with $n=300$, and a planning-based rationale for its size. It also clarifies how performance on $\mathcal{D}_n$ should be interpreted. Repeated evaluation over time and the formal drift test are presented later in Section~\ref{sec:formalisation-temporal}.
 
 \section{Formal problem definition}
 
-At evaluation time $t$, the deployed API model is treated as a binary classifier
+At time $t$, the deployed API model is treated as a binary classifier
 \[
 f_t(x)=f(x;\pi,\theta_t)\in\{0,1\},
 \]
-where $\pi$ is the fixed prompt and $\theta_t$ denotes the provider-controlled model state at time $t$. For any benchmark item $x_i$, let
+where $\pi$ is the fixed prompt and $\theta_t$ is the provider-controlled model state at time $t$. For benchmark item $x_i$, let
 \[
 \hat y_{i,t}=f_t(x_i)
 \]
-denote the predicted class label.
+denote the predicted label.
 
-Ideally, one would like to evaluate the classifier on the real distribution of posts encountered at time $t$. Let $P_t$ denote that unobserved distribution. Under zero--one loss, the corresponding population risk is
+Ideally, performance would be measured on the true data distribution at time $t$. Let $P_t$ denote this unobserved distribution. Under zero--one loss, the corresponding population risk is
 \begin{equation}
     R_t(f)=\mathbb{E}_{(x,y)\sim P_t}\bigl[\mathbb{I}(f_t(x)\neq y)\bigr].
 \end{equation}
 
-In practice, $P_t$ is not observed. Evaluation therefore relies on a fixed labelled benchmark
+In practice, $P_t$ is not observed. Evaluation therefore uses a fixed labelled benchmark
 \[
 \mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^N,\qquad N=1199.
 \]
-Because $\mathcal{D}_N$ is treated as a fixed reference population, the operational full-benchmark performance target at time $t$ is
+The set $\mathcal{D}_N$ was not created by the monitoring method itself. It already existed before this study as a manually labelled internal benchmark for the campaign-relevance task and is treated here as a fixed input dataset.
+
+% If true, uncomment:
+% The labels were reused in this thesis without modification.
+
+The full-benchmark accuracy at time $t$ is
 \begin{equation}
     A_N(t)=\frac{1}{N}\sum_{i=1}^N \mathbb{I}\bigl(\hat y_{i,t}=y_i\bigr).
 \end{equation}
 
-In general, $A_N(t)$ need not equal $1-R_t(f)$, because $\mathcal{D}_N$ is not assumed to be a probability sample from $P_t$. Accordingly, the thesis uses $A_N(t)$ and later subset-based analogues as operational evaluation quantities, while $R_t(f)$ serves only as the ideal population quantity motivating non-stationarity.
+In general, $A_N(t)$ does not have to equal $1-R_t(f)$, because $\mathcal{D}_N$ is not assumed to be a probability sample from $P_t$. Therefore, the thesis uses $A_N(t)$ and corresponding subset-based quantities as operational evaluation targets, while $R_t(f)$ only motivates the non-stationary setting.
 
 \section{Reference benchmark, operational constraint, and monitoring subset}
 \label{sec:input-datasets}
 
-Routine evaluation of every candidate model on the full benchmark is too expensive for high-frequency monitoring. In the implemented pipeline, one full pass over $\mathcal{D}_N$ costs about \$90, which is acceptable for initialization or explicit escalation, but not for weekly monitoring. The monitoring stage therefore uses a fixed subset
+Evaluating every candidate model on the full benchmark at high frequency is too expensive for routine monitoring. In the implemented pipeline, one full run over $\mathcal{D}_N$ costs about \$90. This is acceptable for setup or re-evaluation, but not for weekly monitoring.
+
+For this reason, monitoring is performed on a fixed subset
 \[
 \mathcal{D}_n\subset\mathcal{D}_N,\qquad n\ll N,
 \]
 with $n=300$.
 
-The purpose of $\mathcal{D}_n$ is not to replace $\mathcal{D}_N$ as a representative benchmark. Its purpose is to provide a smaller, frozen panel on which repeated inference can be run cheaply enough to detect changes in behaviour over time.
+The role of $\mathcal{D}_n$ is not to replace $\mathcal{D}_N$. It is a smaller frozen panel for repeated inference over time.
 
-The sets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored as fixed Langfuse datasets with a common schema and the binary label column \texttt{campaign\_relevant}. Table~\ref{tab:dataset-summary} summarises their composition.
+The datasets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored in Langfuse with the same schema and the binary label column \texttt{campaign\_relevant}. Table~\ref{tab:dataset-summary} summarises their composition.
 
 \begin{table}[htbp]
     \centering
@@ -63,24 +70,26 @@ The sets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored as fixed Langfuse datase
     \end{tabular}
 \end{table}
 
+The counts in Table~\ref{tab:dataset-summary} are direct dataset counts from the fixed Langfuse exports.
+
 The corresponding Langfuse dataset identifiers are \texttt{campaign\_relevance\_02e1a68ccb0f} for the full benchmark and \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46} for the monitoring subset.
 
-Each post is classified as either an image post or a video post with multiple extracted frames. Both datasets are class-imbalanced, and the monitoring subset is substantially more positive-heavy than the full benchmark. This reflects the way $\mathcal{D}_n$ was constructed and immediately implies that accuracy values on $\mathcal{D}_N$ and on $\mathcal{D}_n$ are not comparable by magnitude alone.
+Each post is either an image post or a video post with multiple extracted frames. Both datasets are class-imbalanced. The subset $\mathcal{D}_n$ is much more positive-heavy than $\mathcal{D}_N$, which follows from its construction. Therefore, accuracy values on $\mathcal{D}_N$ and on $\mathcal{D}_n$ are not directly comparable.
 
-Roughly three quarters of items are video posts in both sets. Since video posts contribute multiple frames, they typically incur higher multimodal token cost than single-image posts. The subset is therefore not a stratified copy of $\mathcal{D}_N$: it has a somewhat different class balance and a different difficulty mix. Later empirical monitoring results are reported on the fixed $\mathcal{D}_n$ unless explicitly stated otherwise.
+The modality mix also differs slightly. In both datasets, most posts are videos. Since video posts contain multiple frames, they are usually more expensive to evaluate than single-image posts. Thus, $\mathcal{D}_n$ is not a stratified copy of $\mathcal{D}_N$.
 
 \section{Disagreement-based subset construction}
 \label{sec:informative-sampling-disagreement}
 
-If the sole goal were unbiased estimation of the finite-population benchmark accuracy $A_N(t)$, one natural option would be to draw a simple random sample from $\mathcal{D}_N$. However, that is not the goal here. The monitoring panel is intended for repeated paired comparisons over time, where the main question is whether the deployed model has changed its behaviour on informative cases.
+A simple random sample from $\mathcal{D}_N$ would be suitable if the main goal were unbiased estimation of $A_N(t)$. This is not the goal here. The subset is used for repeated paired monitoring, where the main goal is to detect changes in model behaviour.
 
-In the full benchmark, many items are comparatively easy: multiple models classify them the same way, and these cases are less likely to reveal subtle provider-side changes. For monitoring, such unanimously easy cases are less informative than cases on which candidate models disagree. The implemented design therefore enriches the monitoring subset with disagreement cases.
+Many items in the full benchmark are easy: several models classify them in the same way. Such cases are less informative for monitoring than cases on which models disagree. Therefore, the monitoring subset is constructed from disagreement cases.
 
 Let
 \begin{equation}
     \mathcal{M}_{\mathrm{ens}}=\{f^{(1)},\dots,f^{(K)}\}
 \end{equation}
-denote the ensemble of $K$ models evaluated once on the full benchmark
+be the ensemble of $K$ models evaluated on the full benchmark
 \begin{equation}
     \mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^N.
 \end{equation}
@@ -88,9 +97,9 @@ For item $i$, let
 \[
 \hat y_i^{(k)}\in\{0,1\}
 \]
-be the prediction of model $f^{(k)}$.
+denote the prediction of model $f^{(k)}$.
 
-The disagreement pool is defined by
+Define the disagreement index set
 \begin{equation}
     \mathcal{I}_{\mathrm{dis}}
     =
@@ -102,25 +111,29 @@ The disagreement pool is defined by
         \hat y_i^{(k)}\neq \hat y_i^{(\ell)}
     \right\}.
 \end{equation}
-Thus, an item belongs to $\mathcal{I}_{\mathrm{dis}}$ if the ensemble does not unanimously agree on its label.
+Thus, an item belongs to $\mathcal{I}_{\mathrm{dis}}$ if the ensemble does not fully agree on its label.
 
-The monitoring subset is then obtained by selecting a fixed index set
+The monitoring subset is then defined by a fixed index set
 \[
 \mathcal{I}_n\subseteq \mathcal{I}_{\mathrm{dis}},\qquad |\mathcal{I}_n|=n,
 \]
-and defining
+and
 \begin{equation}
     \mathcal{D}_n=\{(x_i,y_i):i\in\mathcal{I}_n\}\subset\mathcal{D}_N.
 \end{equation}
 
-The exact implementation-specific tie-breaking or ordering inside the disagreement pool is not essential for the methodological argument. What matters is the design principle: the monitoring panel is built from items on which the initial model ensemble does not fully agree, and once selected, that panel is frozen.
+% Optional, if known:
+% In the initial ensemble evaluation, the disagreement pool contained $|\mathcal{I}_{\mathrm{dis}}|=\dots$ items, from which 300 were selected and then frozen.
 
-The rationale is operational. Disagreement cases are usually harder than unanimous cases, and harder cases are more informative for change detection. If a provider-side model update alters decision behaviour, it is more likely to become visible first on items that are already difficult or ambiguous for the ensemble. Monitoring such items therefore increases sensitivity to drift on a fixed budget.
-
-This is a deliberate change of objective. The disagreement-based subset is not designed to be a minimum-variance estimator of full-benchmark accuracy. It is designed to be a drift-sensitive monitoring panel.
+The reason is simple. Disagreement cases are usually harder than unanimous cases. Harder cases are more likely to reveal small changes in decision behaviour. Therefore, they are more useful for drift monitoring under a limited budget.
 
 \section{Monitoring subset size}
 \label{sec:monitoring-sample-size}
+
+For item $i$ at time $t$, define the correctness indicator
+\begin{equation}
+    E_{i,t}=\mathbb{I}(\hat y_{i,t}=y_i).
+\end{equation}
 
 Section~\ref{sec:mcnemar-section} defines the discordant counts
 \[
@@ -133,94 +146,195 @@ where $b$ counts regressions (correct $\to$ wrong) and $c$ counts improvements (
     \hat A_{t_2}-\hat A_{t_1}=\frac{c-b}{n}.
 \end{equation}
 
-Hence a decrease in panel accuracy is driven by an excess of regressions over improvements. For planning, write
+Thus, a decrease in panel accuracy implies $b>c$, i.e.\ regressions outnumber improvements.
+
+For planning, let $P(\cdot)$ denote probability for a generic item under the monitoring model, and let $\mathbb{E}[\cdot]$ denote expectation with respect to the same probability law. Define
 \begin{equation}
     p_b=P(E_{i,t_1}=1,E_{i,t_2}=0),
     \qquad
-    p_c=P(E_{i,t_1}=0,E_{i,t_2}=1),
+    p_c=P(E_{i,t_1}=0,E_{i,t_2}=1).
 \end{equation}
-under the monitoring distribution induced by $\mathcal{D}_n$, and define
+Here, $p_b$ is the probability that an item changes from correct to wrong between $t_1$ and $t_2$, and $p_c$ is the probability that it changes from wrong to correct.
+
+Let
 \begin{equation}
     \rho=p_b+p_c
 \end{equation}
-as the discordance probability per item and
+be the discordance probability per item and
 \begin{equation}
     \delta=p_b-p_c
 \end{equation}
-as the directional imbalance.
+the directional imbalance.
 
 If the practically relevant event is a drop in panel accuracy of size $\Delta_{\mathrm{acc}}>0$, then
 \[
 \mathbb{E}\!\left[\hat A_{t_2}-\hat A_{t_1}\right]=p_c-p_b=-\delta,
 \]
-so the target directional effect is approximately
+so the target effect is approximated by
 \[
 \delta\approx \Delta_{\mathrm{acc}}.
 \]
 
-\paragraph{Conditional-binomial view of McNemar's test.}
-McNemar's test depends only on the discordant pairs. Let
+\paragraph{Conditional view of McNemar's test.}
+For each item, the paired correctness outcome $(E_{i,t_1},E_{i,t_2})$ can fall into one of four categories:
 \[
-m=b+c
+(1,1),\quad (1,0),\quad (0,1),\quad (0,0),
 \]
-denote the number of discordant pairs. Conditional on $m$, the count $b$ of regressions is binomial:
+with probabilities
+\[
+p_a=P(1,1),\quad
+p_b=P(1,0),\quad
+p_c=P(0,1),\quad
+p_d=P(0,0),
+\]
+respectively. These probabilities satisfy
+\[
+p_a+p_b+p_c+p_d=1.
+\]
+
+Assume that the $n$ paired items are independent and identically distributed across these four categories. Then the count vector $(a,b,c,d)$ follows a multinomial distribution:
 \begin{equation}
-    b\mid m \sim \mathrm{Binomial}(m,\eta),
+    (a,b,c,d)\sim \mathrm{Multinomial}(n;p_a,p_b,p_c,p_d).
 \end{equation}
-where
+
+McNemar's test uses only the discordant counts $b$ and $c$. Let
+\[
+m=b+c.
+\]
+To derive the conditional law of $b$ given $m$, fix an integer $k\in\{0,\dots,m\}$. Then
 \begin{equation}
-    \eta
-    :=
-    P(\text{regression}\mid \text{discordance})
-    =
-    \frac{p_b}{p_b+p_c}
-    =
-    \frac{p_b}{\rho}.
+    P(b=k\mid b+c=m)=\frac{P(b=k,\;c=m-k)}{P(b+c=m)}.
 \end{equation}
-Using
+
+From the multinomial model,
+\begin{equation}
+    P(b=k,\;c=m-k)
+    =
+    \frac{n!}{k!\,(m-k)!\,(n-m)!}
+    (p_a+p_d)^{n-m}p_b^k p_c^{m-k}.
+\end{equation}
+Also,
+\begin{equation}
+    P(b+c=m)
+    =
+    \frac{n!}{m!\,(n-m)!}
+    (p_a+p_d)^{n-m}(p_b+p_c)^m.
+\end{equation}
+Therefore,
+\begin{align}
+P(b=k\mid b+c=m)
+&=
+\frac{
+\frac{n!}{k!\,(m-k)!\,(n-m)!}
+(p_a+p_d)^{n-m}p_b^k p_c^{m-k}
+}{
+\frac{n!}{m!\,(n-m)!}
+(p_a+p_d)^{n-m}(p_b+p_c)^m
+} \\
+&=
+\frac{m!}{k!\,(m-k)!}
+\left(\frac{p_b}{p_b+p_c}\right)^k
+\left(\frac{p_c}{p_b+p_c}\right)^{m-k}.
+\end{align}
+
+This is the probability mass function of a binomial distribution. Hence
+\begin{equation}
+    b\mid (b+c=m)\sim \mathrm{Binomial}\!\left(m,\frac{p_b}{p_b+p_c}\right).
+\end{equation}
+
+Define
+\begin{equation}
+    \eta=\frac{p_b}{p_b+p_c}=\frac{p_b}{\rho}.
+\end{equation}
+Since
 \[
 p_b=\frac{\rho+\delta}{2},
 \qquad
 p_c=\frac{\rho-\delta}{2},
 \]
-gives
+it follows that
 \begin{equation}
     \eta=\frac{1}{2}+\frac{\delta}{2\rho}.
 \end{equation}
 
-Under the no-drift null hypothesis, regressions and improvements are equally likely, so
+Under the null hypothesis of no directional change,
 \begin{equation}
-    H_0:\eta=\frac{1}{2}.
+    H_0:p_b=p_c,
 \end{equation}
+so
+\begin{equation}
+    \eta=\frac12
+\end{equation}
+and therefore
+\begin{equation}
+    b\mid (b+c=m)\sim \mathrm{Binomial}(m,1/2).
+\end{equation}
+
+This means that, under $H_0$, once the total number of discordant items $m$ is fixed, each discordant item is equally likely to be a regression or an improvement. This conditional binomial law is the basis of the exact McNemar test.
+
 For one-sided degradation detection, the alternative is
 \begin{equation}
     H_a:\eta>\frac{1}{2}.
 \end{equation}
 
-\paragraph{Normal-approximation planning rule.}
-Conditional on $m$, the null distribution is
+\paragraph{From required discordant pairs to subset size.}
+The sample-size argument first determines how many discordant pairs are needed for the McNemar test, and only then converts this number into a subset size. The normal approximation in this subsection is used only for planning; the actual drift test in Section~\ref{sec:mcnemar-section} uses the exact conditional McNemar test.
+
+Under $H_0$,
 \[
 b\mid m\sim \mathrm{Binomial}(m,1/2).
 \]
-For moderate or large $m$, this can be approximated by
+For moderate or large $m$, the binomial distribution can be approximated by a normal distribution via the Central Limit Theorem. Since
 \[
-b\mid m \approx \mathcal N\!\left(\frac{m}{2},\frac{m}{4}\right).
+b\mid m \sim \mathrm{Binomial}(m,1/2),
 \]
-A one-sided level-$\alpha$ test rejects for sufficiently large $b$, namely when
+it can be written as a sum of $m$ independent Bernoulli variables. Therefore,
+\[
+\mathbb{E}[b\mid m]=\frac{m}{2},
+\qquad
+\mathrm{Var}(b\mid m)=\frac{m}{4},
+\]
+and for sufficiently large $m$,
 \begin{equation}
-    b \ge \frac{m}{2}+z_{1-\alpha}\sqrt{\frac{m}{4}},
+    b\mid m \approx \mathcal N\!\left(\frac{m}{2},\frac{m}{4}\right),
 \end{equation}
-where $z_{1-\alpha}$ denotes the $(1-\alpha)$-quantile of the standard normal distribution.
+where $\mathcal N(\mu,\sigma^2)$ denotes a normal distribution with mean $\mu$ and variance $\sigma^2$.
 
-Under the alternative
+A common rule of thumb for the normal approximation to a $\mathrm{Binomial}(m,q)$ distribution is
+\[
+mq\ge 5
+\qquad\text{and}\qquad
+m(1-q)\ge 5.
+\]
+Here $q=1/2$, so this requires $m\ge 10$. The estimated values of $m$ in this work are well above this threshold.
+
+Let $z_{1-\alpha}$ and $z_{1-\beta}$ denote the $(1-\alpha)$- and $(1-\beta)$-quantiles of the standard normal distribution. A one-sided level-$\alpha$ test rejects for large $b$, that is,
+\begin{equation}
+    b \ge \frac{m}{2}+z_{1-\alpha}\sqrt{\frac{m}{4}}.
+\end{equation}
+
+Under the alternative,
 \[
 b\mid m\sim \mathrm{Binomial}(m,\eta),
-\]
-and the corresponding normal approximation is
-\[
+\qquad
 b\mid m \approx \mathcal N\!\bigl(m\eta,m\eta(1-\eta)\bigr).
 \]
-Requiring power $1-\beta$ leads to the sufficient condition
+To obtain power at least $1-\beta$, require
+\begin{equation}
+    P_\eta\!\left(
+        b \ge \frac{m}{2}+z_{1-\alpha}\sqrt{\frac{m}{4}}
+    \right)\ge 1-\beta.
+\end{equation}
+After standardization, a sufficient condition is
+\begin{equation}
+    \frac{
+        m(\eta-\tfrac12)-z_{1-\alpha}\sqrt{m/4}
+    }{
+        \sqrt{m\eta(1-\eta)}
+    }
+    \ge z_{1-\beta}.
+\end{equation}
+Rearranging gives
 \begin{equation}
     m
     \ge
@@ -231,13 +345,14 @@ Requiring power $1-\beta$ leads to the sufficient condition
             \eta-0.5
         }
     \right)^2.
+    \label{eq:planning-discordant-m}
 \end{equation}
 
-Finally, since the expected number of discordant pairs is approximately
+This gives the required number of discordant pairs. To convert it into a panel size, use
 \[
 m\approx n\rho,
 \]
-the corresponding panel-size requirement is
+because $\rho$ is the probability that a panel item is discordant. Hence the required subset size is approximately
 \begin{equation}
     n
     \ge
@@ -254,55 +369,65 @@ the corresponding panel-size requirement is
 \end{equation}
 
 \paragraph{Operational calibration.}
-In this thesis, the minimum practically relevant degradation is set to
+First, the discordance probability was estimated from a pilot repeated evaluation of the production model on the full benchmark $\mathcal{D}_N$. Running the same 1199-item dataset twice produced 137 discordant items. Hence the empirical discordance rate is
+\begin{equation}
+    \hat\rho=\frac{137}{1199}\approx 0.1143.
+\end{equation}
+
+Second, the minimum relevant degradation was set to
 \begin{equation}
     \Delta_{\mathrm{acc}}=0.05.
 \end{equation}
-Treating this as the target directional effect gives
+This value was chosen as an operational threshold motivated by internal annotation practice: especially difficult or disputed posts were on the order of a few percent and were typically reviewed jointly by several analysts. Since this threshold was part of internal workflow practice rather than a formal company-wide metric, it is used here as a pragmatic design assumption.
+
+With
 \[
-\delta\approx 0.05,
+\delta\approx \Delta_{\mathrm{acc}}=0.05,
 \qquad
-\eta=\frac{1}{2}+\frac{0.05}{2\rho}.
+\hat\rho\approx 0.1143,
+\]
+one obtains
+\begin{equation}
+    \eta=\frac{1}{2}+\frac{\delta}{2\rho}
+    \approx
+    \frac{1}{2}+\frac{0.05}{2\cdot 0.1143}
+    \approx 0.7187.
+\end{equation}
+
+For $(\alpha,\beta)=(0.05,0.2)$, this gives a required discordant count of approximately
+\begin{equation}
+    m\approx 31.1.
+\end{equation}
+Using $m\approx n\rho$, the corresponding estimated subset size is
+\begin{equation}
+    n\approx \frac{31.1}{0.1143}\approx 272.2.
+\end{equation}
+Rounding up gives an estimated planning size of about
+\[
+n\approx 273.
 \]
 
-For the planning range $\rho\in[0.10,0.15]$, this yields
-\[
-\eta\in[0.667,0.75].
-\]
-For $(\alpha,\beta)=(0.05,0.2)$, the required discordant count is then approximately
-\[
-m\in[23,54],
-\]
-which corresponds to a total panel size of roughly
-\[
-n\in[225,357].
-\]
-
-Accordingly, the implemented choice
+The implemented choice
 \[
 n=300
 \]
-should be interpreted as a pragmatic mid-range design value. It is large enough to make paired monitoring informative at reasonable discordance rates, while keeping routine monitoring substantially cheaper than repeated full-benchmark evaluation. The calculation is therefore used as a planning heuristic, not as a sharp universal power guarantee.
+is therefore slightly larger than the planning minimum under these assumptions. It should be interpreted as a conservative practical rounding up.
 
 \section{Selection bias and monitoring objective}
 \label{sec:selection-bias}
 
-Because the monitoring subset is drawn from disagreement cases, it is not a representative sample of the full benchmark. In particular, it over-represents hard cases relative to $\mathcal{D}_N$.
+Because the monitoring subset is built from disagreement cases, it is not representative of the full benchmark. In particular, it over-represents hard cases.
 
 Define subset accuracy by
 \begin{equation}
     \hat A_n(t)=\frac{1}{n}\sum_{i\in\mathcal{I}_n}\mathbb{I}\bigl(\hat y_{i,t}=y_i\bigr).
 \end{equation}
-In general, $\hat A_n(t)$ is not an unbiased estimator of the full-benchmark accuracy $A_N(t)$.
+In general, $\hat A_n(t)$ is not an unbiased estimator of $A_N(t)$.
 
-This is intentional. The purpose of $\mathcal{D}_n$ is not to estimate $A_N(t)$ as accurately as possible from a smaller sample. Its purpose is to provide a stable, more sensitive panel for detecting behavioural change. The same property that makes the subset biased for full-benchmark estimation makes it useful for monitoring: difficult items are more likely than trivial items to expose changes in the model's decision behaviour.
+This is intentional. The subset is not designed for accurate estimation of full-benchmark accuracy, but for sensitive monitoring. Hard cases are more likely to change under small model updates, so they are more useful for drift detection.
 
-Consequently, $\hat A_n(t)$ is interpreted as a monitoring statistic on a fixed hard-case panel, not as a direct surrogate for full-benchmark performance. This distinction is important for the later decision logic:
-
+Therefore, $\hat A_n(t)$ is interpreted as a monitoring statistic on a fixed hard-case panel, not as a replacement for full-benchmark performance. The methodology keeps these two tasks separate:
 \begin{itemize}
-    \item repeated paired drift detection is performed on the frozen subset $\mathcal{D}_n$;
-    \item descriptive subset metrics are useful for identifying the current error profile on hard cases;
-    \item final model comparison for deployment, especially when cost and class prevalence matter, must return to the full benchmark $\mathcal{D}_N$ or another representative evaluation set.
+    \item drift detection is performed on the fixed subset $\mathcal{D}_n$;
+    \item final model comparison for deployment returns to the full benchmark $\mathcal{D}_N$.
 \end{itemize}
-
-In short, the methodology separates two tasks that should not be conflated: \emph{monitoring for change} on a drift-sensitive panel and \emph{estimating deployment quality} on the full benchmark.

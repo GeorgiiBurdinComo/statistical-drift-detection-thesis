@@ -334,7 +334,7 @@ The search stops when the rollout budget $B$ is exhausted. The final returned ca
 \node[box, below=10mm of refl] (pareto) {Evaluate accepted offspring\\on $D_{\mathrm{pareto}}$};
 \draw[arr] (acc.south) |- node[pos=0.25, right, font=\scriptsize]{accept} (pareto.east);
 \draw[arr] (pareto.west) -| node[pos=0.75, below, font=\scriptsize]{update pool} (pool.south);
-\draw[arr] (acc.north) to[out=90,in=90,looseness=1.4] node[midway, above, font=\scriptsize]{reject} (pool.north);
+\draw[arr] (acc.north) .. controls ($(acc.north)+(1,8mm)$) and ($(pool.north)+(1,8mm)$) .. node[pos=0.5, above, font=\scriptsize, inner sep=1pt]{reject} (pool.north);
 \end{tikzpicture}
 \caption{Operational view of GEPA in the single-prompt setting under consideration.}
 \label{fig:gepa-loop}

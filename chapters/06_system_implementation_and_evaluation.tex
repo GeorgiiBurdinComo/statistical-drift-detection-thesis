@@ -427,7 +427,7 @@ The results in this chapter are organized in three parts: the instantiated monit
     
     \end{tikzpicture}
     \end{adjustbox}
-    \caption{Decision logic after a monitoring run. The routine weekly cycle runs on the fixed 300-example subset. Drift is tested on that panel; if no statistically significant degradation is detected, the current setup is retained. If degradation is detected, an optional full-benchmark re-evaluation on \(\mathcal{D}_N\) may follow before metrics and cost are compared. Corrective actions are then chosen using accuracy, precision, recall, F1, and cost. This may lead either to model switching or, in the broader framework, to prompt optimisation (GEPA) with subsequent re-evaluation.}
+    \caption{Decision logic after a monitoring run: McNemar drift on the fixed \(n=300\) panel, optional full-benchmark re-evaluation on \(\mathcal{D}_N\), then metric/cost comparison and corrective action (model switch or GEPA loop).}
     \label{fig:run-decision-logic}
 \end{figure}
 \FloatBarrier
