@@ -331,30 +331,29 @@ When fixed costs are available, the selected deployment model is $m_t^\star$ fro
 % NOTE: Before final submission, verify that expected_cost_tabular.tex is in fact
 % computed on the full benchmark \mathcal{D}_N. In the currently visible compiled
 % table, the displayed n values appear to be around 300 rather than 1199.
-\section{Expected-cost snapshot on the monitoring panel}
+\section{Illustrative expected-cost snapshot at benchmark size $N=1199$}
 \label{sec:expected-cost-snapshot}
 
-For empirical illustration, Table~\ref{tab:expected-cost-snapshot} reports one exported expected-cost panel generated from \texttt{assets/metrics\_export/expected\_cost.csv}. In the exported table shown here, the cost calculation is based on the monitored evaluation panel rather than the full benchmark, as indicated by the displayed sample sizes ($n\approx 300$ for most rows). The table therefore illustrates~\eqref{eq:expected-cost} on the exported panel and should not be interpreted as a full-benchmark deployment ranking.
-
-For this snapshot, the penalty configuration is
+For illustration, Table~\ref{tab:expected-cost-snapshot} reports an expected-cost panel at benchmark size $N=1199$. 
+For this illustrative scenario, the penalty configuration is
 \[
-C_{\mathrm{FP}}=1\text{ USD},
+C_{\mathrm{FP}}=0.155\text{ USD},
 \qquad
-C_{\mathrm{FN}}=1\text{ USD},
+C_{\mathrm{FN}}=0.031\text{ USD},
 \]
-so false positives and false negatives are weighted equally. Equivalently,
+so a false positive is weighted five times as strongly as a false negative. Equivalently,
 \[
-R=\frac{C_{\mathrm{FP}}}{C_{\mathrm{FN}}}=1.
+R=\frac{C_{\mathrm{FP}}}{C_{\mathrm{FN}}}=5.
 \]
 
 \begin{table}[htbp]
     \centering
     \footnotesize
-    \caption{Illustrative expected-cost snapshot per candidate on the exported monitoring panel for the equal-penalty setting $C_{\mathrm{FP}}=C_{\mathrm{FN}}=1$ USD.}
+    \caption{Illustrative expected-cost snapshot per candidate after proportional extrapolation to benchmark size $N=1199$, under the penalty setting $C_{\mathrm{FP}}=0.155$ USD and $C_{\mathrm{FN}}=0.031$ USD.}
     \label{tab:expected-cost-snapshot}
     \begin{adjustbox}{max width=\linewidth}
     \input{assets/metrics_export/expected_cost_tabular.tex}
     \end{adjustbox}
 \end{table}
 
-This table is one slice through the broader parametric decision model developed in this chapter. If campaign priorities change, the export can be recomputed for different $(C_{\mathrm{FP}},C_{\mathrm{FN}})$ values, the corresponding break-even boundaries can be inspected, or the constrained selection rules can be used when direct monetary calibration is not reliable. Because the displayed panel is not the full benchmark $\mathcal{D}_N$, it serves only as an empirical illustration and not as the final basis for deployment selection.
+If campaign priorities change, the expected-cost panel may be recomputed for different $(C_{\mathrm{FP}},C_{\mathrm{FN}})$ values, the corresponding break-even boundaries may be inspected, or the constrained selection rules may be used when direct monetary calibration is not reliable.
