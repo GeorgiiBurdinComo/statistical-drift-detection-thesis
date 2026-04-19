@@ -1,7 +1,7 @@
 \chapter{Drift Monitoring and Model Selection Methodology}
 \label{ch:drift}
 
-Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. This chapter specifies repeated evaluation on $\mathcal{D}_n$, paired degradation detection via McNemar's test, classification metrics for reporting and candidate comparison, and the decision logic linking degradation evidence to corrective action. 
+Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. This chapter specifies repeated evaluation on $\mathcal{D}_n$, paired degradation detection via McNemar's test \cite{mcnemar1947}, classification metrics for reporting and candidate comparison, and the decision logic linking degradation evidence to corrective action.
 
 \section{Temporal evaluation on a fixed panel}
 \label{sec:formalisation-temporal}
@@ -27,9 +27,17 @@ The sequence $(\hat{A}_t)_{t=1}^T$ is not a sequence of independent Bernoulli me
 \section{Statistical degradation detection via McNemar's test}
 \label{sec:mcnemar-section}
 
-The operational alert targets \emph{net degradation in correctness} on the fixed monitoring panel between times $t_1$ and $t_2$. It is therefore more specific than a generic notion of behavioural drift: balanced churn or net improvement need not trigger an alert even if many individual items change status.
+The goal is to detect whether the deployed model became worse between two evaluation times $t_1$ and $t_2$ on the fixed monitoring panel $\mathcal{D}_n$.
 
-Inferentially, the test treats the $n$ item-level paired correctness outcomes on the fixed panel as approximately independent operational units. The resulting $p$-values quantify evidence of directional change on this panel; they do not, by themselves, establish a population-level change under the full post distribution.
+Because the same items are evaluated at both times, the comparison is paired. For each item, we check whether the model was correct or wrong at $t_1$ and at $t_2$. McNemar's test \cite{mcnemar1947} then compares two kinds of changes:
+\begin{itemize}
+    \item regressions: correct at $t_1$, wrong at $t_2$;
+    \item improvements: wrong at $t_1$, correct at $t_2$.
+\end{itemize}
+
+If regressions clearly outnumber improvements, this is evidence of degradation. If the numbers are similar, the observed change is treated as noise rather than a clear deterioration.
+
+The test establishes degradation on the fixed monitoring panel $\mathcal{D}_n$. Because $\mathcal{D}_n$ is disagreement-enriched rather than distribution-representative, this should be interpreted as a high-sensitivity warning signal for broader model change, not as a formal proof of degradation on the full benchmark or production distribution.
 
 \subsection{Contingency table}
 
@@ -68,7 +76,7 @@ Thus the panel-level accuracy drop is determined by the net imbalance between re
 
 \subsection{Exact conditional test and alerting rule}
 
-Let $p_b$ and $p_c$ denote the operational probabilities of a regression and an improvement on the fixed monitoring panel:
+Under the panel-level stochastic model, let $p_b$ and $p_c$ denote the item-level probabilities of falling into the two discordant cells:
 \[
 p_b=P(E_{i,t_1}=1,E_{i,t_2}=0),
 \qquad
@@ -85,42 +93,32 @@ Let
 \[
 n_{\mathrm{dis}}=b+c
 \]
-denote the number of discordant pairs. Conditional on $n_{\mathrm{dis}}>0$, the exact McNemar test uses the fact that under $H_0$ each discordant pair is equally likely to be a regression or an improvement. Therefore
+denote the number of discordant pairs. Conditional on $n_{\mathrm{dis}}>0$, the exact McNemar test uses the fact that under $H_0$ each discordant pair is equally likely to be a regression or an improvement \cite{mcnemar1947}. Therefore
 \begin{equation}
     B:=b \mid (b+c=n_{\mathrm{dis}})\sim \mathrm{Bin}\!\left(n_{\mathrm{dis}},\tfrac{1}{2}\right).
 \end{equation}
-For the one-sided degradation test, define
+The exact one-sided p-value for degradation is
 \begin{equation}
     p_{\mathrm{exact}}
     =
     P\!\left(B\ge b_{\mathrm{obs}}\right)
     =
-    \sum_{k=b_{\mathrm{obs}}}^{n_{\mathrm{dis}}}\binom{n_{\mathrm{dis}}}{k}2^{-n_{\mathrm{dis}}},
-    \qquad \text{when } b_{\mathrm{obs}}>c_{\mathrm{obs}},
+    \sum_{k=b_{\mathrm{obs}}}^{n_{\mathrm{dis}}}\binom{n_{\mathrm{dis}}}{k}2^{-n_{\mathrm{dis}}}.
 \end{equation}
-and set $p_{\mathrm{exact}}=1$ when $b_{\mathrm{obs}}\le c_{\mathrm{obs}}$.
 
-For reference, the continuity-corrected asymptotic statistic is
+For reference, one may also report the continuity-corrected asymptotic McNemar statistic
 \begin{equation}
     \chi^2_{\mathrm{cc}}=\frac{(|b-c|-1)^2}{b+c},
 \end{equation}
-defined when $b+c>0$. This statistic is a large-sample approximation; alerting in this thesis uses the exact one-sided $p$-value because discordant counts can be small on the fixed 300-item panel.
+defined when $b+c>0$. This is a large-sample approximation based on the discordant counts only. Large values indicate a stronger imbalance between regressions and improvements. However, $\chi^2_{\mathrm{cc}}$ is non-directional because it depends on $|b-c|$, so it does not distinguish degradation from improvement by itself. It is therefore reported only as a descriptive reference statistic. Different variants of the McNemar test, including exact conditional and asymptotic forms, are discussed in \cite{fagerland2013mcnemar}. Alerting in this thesis uses the exact one-sided p-value because discordant counts can be small on the fixed 300-item panel.
 
-A degradation alert is registered when all of the following conditions hold:
+A degradation alert is registered when both of the following conditions hold:
 \begin{enumerate}
     \item $b>c$;
-    \item $p_{\mathrm{exact}}<\alpha=0.05$;
-    \item the observed accuracy drop satisfies
-    \[
-        \hat{A}_{t_1}-\hat{A}_{t_2}
-        =
-        \frac{b-c}{n}
-        \ge \Delta_{\min},
-    \]
-    with $\Delta_{\min}=0.05$.
+    \item $p_{\mathrm{exact}}<\alpha=0.05$.
 \end{enumerate}
 
-Conditions (i) and (ii) provide statistical evidence of net degradation on the fixed panel. Condition (iii) adds a practical-significance requirement aligned with the design target from Chapter~\ref{ch:data}. Without such a condition, very small absolute drops can become statistically significant when discordant pairs are sufficiently imbalanced.
+Condition (i) enforces the direction of interest. Condition (ii) provides statistical evidence against equal probabilities of regressions and improvements.
 
 If $b+c=0$, there are no discordant pairs and no directional conclusion is drawn.
 
@@ -163,7 +161,7 @@ Here $(b,c)=(13,7)$, so $n_{\mathrm{dis}}=20$ and
     \sum_{k=13}^{20}\binom{20}{k}2^{-20}
     \approx 0.132.
 \]
-As a large-sample summary,
+As a large-sample reference summary,
 \[
     \chi^2_{\mathrm{cc}}
     =
@@ -183,7 +181,7 @@ The observed accuracy change is
     =
     -0.02.
 \]
-Thus the panel accuracy dropped by $2$ percentage points. Although $b>c$, the one-sided exact evidence does not meet $\alpha=0.05$, and the observed drop is also below the practical threshold $\Delta_{\min}=0.05$. Therefore no degradation alert is triggered under the operational rule above.
+Thus the panel accuracy dropped by $2$ percentage points. Although $b>c$, the one-sided exact evidence does not meet $\alpha=0.05$. Therefore no degradation alert is triggered under the operational rule above.
 
 \section{Classification metrics on the monitoring subset}
 \label{sec:classification-metrics}
@@ -232,24 +230,31 @@ Precision is positive predictive value; recall is sensitivity on the positive cl
 Specificity measures true-negative performance. Balanced accuracy mitigates inflation of raw accuracy under prevalence skew on the panel.
 
 \paragraph{Hard labels only.}
-The monitoring pipeline maps provider outputs to a single hard label $\hat{y}_{i,t}\in\{0,1\}$ via a fixed parsing rule; no per-example graded score is logged for the experiments reported here. The metrics above are therefore computed from one confusion table per model and batch. Threshold-sweep summaries such as precision--recall curves or PR--AUC are not identifiable from hard-label outputs alone and are omitted. Degradation alerts remain based on McNemar's test on hard correctness (Section~\ref{sec:mcnemar-section}).
+The monitoring pipeline maps provider outputs to a single hard label $\hat{y}_{i,t}\in\{0,1\}$ via a fixed parsing rule; no per-example graded score is logged for the experiments reported here. The metrics above are therefore computed from one confusion table per model and batch. 
 
 \paragraph{Which metric is most diagnostic on the monitoring panel.}
 On the disagreement-enriched panel, prevalence is high (Chapter~\ref{ch:data}), so raw accuracy can hide asymmetric errors. Recall should dominate when missed relevant posts are expensive (high FN burden), while specificity should dominate when over-flagging irrelevant posts is operationally costly (high FP burden). Precision is useful when analyst workload is constrained by false alarms. Balanced accuracy can be more informative than raw accuracy when class imbalance is strong. McNemar remains the inferential test for panel-level degradation alerts.
 
 A limitation is that McNemar on total correctness may not fully reveal class-specific shifts when improvements in one error type are offset by regressions in another. For that reason, confusion-derived metrics are reported alongside the inferential alert rule.
-
 \section{Model comparison and deployment choice}
 \label{sec:model-comparison-manual}
 
-Candidate models $m\in\mathcal{M}_{\mathrm{cand}}$ may first be screened on $\mathcal{D}_n$ using $\hat{A}_t(m)$, $\widehat{\mathrm{Prec}}_t(m)$, $\widehat{\mathrm{Rec}}_t(m)$, $\widehat{\mathrm{F}}_{1,t}(m)$, $\widehat{\mathrm{Spec}}_t(m)$, $\widehat{\mathrm{BA}}_t(m)$, and observed mean inference cost $C_t(m)$ to obtain a quick descriptive profile on the drift-sensitive panel.
+Candidate models $m\in\mathcal{M}_{\mathrm{cand}}$ can be screened on $\mathcal{D}_n$ using
+$\hat{A}_t(m)$,
+$\widehat{\mathrm{Prec}}_t(m)$,
+$\widehat{\mathrm{Rec}}_t(m)$,
+$\widehat{\mathrm{F}}_{1,t}(m)$,
+$\widehat{\mathrm{Spec}}_t(m)$,
+$\widehat{\mathrm{BA}}_t(m)$,
+and mean inference cost $C_t(m)$.
+These quantities give a descriptive profile on the drift-sensitive panel.
 
-However, because $\mathcal{D}_n$ is disagreement-enriched, strongly class-skewed, and visually heavier than the full benchmark, these subset-level quantities are not by themselves an appropriate basis for final deployment-cost estimation or constrained deployment selection. In particular, subset-level mean inference cost is descriptive for the monitored panel only and need not equal deployment-representative average cost. Final deployment choice under Chapter~\ref{ch:cost-deployment-utility} should therefore be made on the full benchmark $\mathcal{D}_N$ or another representative evaluation set.
+They are not sufficient for final deployment choice. The panel $\mathcal{D}_n$ is disagreement-enriched, class-skewed, and visually heavier than the full benchmark, so subset-level metrics and costs are not deployment-representative. Final selection under Chapter~\ref{ch:cost-deployment-utility} should therefore be based on the full benchmark $\mathcal{D}_N$ or another representative evaluation set.
 
-Two decision layers are kept separate:
+The decision logic has two stages:
 \begin{enumerate}
-    \item inferential detection of degradation for $m_{\mathrm{curr}}$ on the fixed monitoring panel $\mathcal{D}_n$ via the exact one-sided McNemar rule in Section~\ref{sec:mcnemar-section};
-    \item if action is required, full-benchmark comparison of candidate models using the cost-aware or constrained rules from Chapter~\ref{ch:cost-deployment-utility}.
+    \item detect degradation for the current deployment $m_{\mathrm{curr}}$ on $\mathcal{D}_n$ using the exact one-sided McNemar rule from Section~\ref{sec:mcnemar-section};
+    \item if action is required, compare candidate models on $\mathcal{D}_N$ using the cost-aware or constrained rules from Chapter~\ref{ch:cost-deployment-utility}.
 \end{enumerate}
 
-Campaigns differ in the relative cost of false positives and false negatives. While Chapter~\ref{ch:cost-deployment-utility} presents a cost-based utility as one formalisation of the accuracy--cost trade-off, final deployment decisions incorporate manual judgment alongside these quantitative criteria, including tolerance to error types, budget, latency, and provider policy. If no acceptable fallback exists, prompt optimisation may be attempted before changing the API model (Chapter~\ref{chap:prompt-optimisation}). Exported numeric panels and dashboards used in experiments are described in Chapter~\ref{chap:system-architecture}.
+Final deployment choice is not purely mechanical. Quantitative comparison must be interpreted together with campaign-specific error tolerance, budget, latency, and provider policy. If no acceptable fallback exists, prompt optimisation may be attempted before changing the API model (Chapter~\ref{chap:prompt-optimisation}). Exported numeric panels and dashboards used in the experiments are described in Chapter~\ref{chap:system-architecture}.
