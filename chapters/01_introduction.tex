@@ -5,7 +5,7 @@ Industrial classification pipelines increasingly rely on Large Language Model (L
 
 The practical motivation for the study arises from the author's two-year work experience at GOCOMO GmbH. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, event, or other marketing entity. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, manual verification is not scalable, and automated classification becomes a necessary operational component.
 
-However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade due to silent provider-side updates~\cite{chen2023chatgpt,tu2023chatlog}. In a business-critical pipeline, such degradation must be detected early. At the same time, repeated full-scale benchmarking on a large labelled dataset is costly. This creates a need for a monitoring methodology that is statistically informative, operationally feasible, and economically justified.
+However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade due to silent provider-side updates~\cite{chen2023chatgpt}, and an update that improves a model on average can still break cases the previous version handled correctly~\cite{echterhoff2024muscle}. In a business-critical pipeline, such degradation must be detected early. At the same time, repeated full-scale benchmarking on a large labelled dataset is costly. This creates a need for a monitoring methodology that is statistically informative, operationally feasible, and economically justified.
 
 \section{Problem statement}
 The problem is to evaluate and monitor API-based LLM classifiers in a production environment where model behaviour may change over time. The central challenge is that the user does not control the underlying model updates, yet must still make reliable deployment decisions based on observed task performance.
@@ -26,7 +26,7 @@ Accordingly, the analysis does not treat model drift merely as an observational 
 The stated problem is investigated through the following research questions:
 
 \begin{enumerate}
-    \item[RQ1:] How can the campaign-relevance detection task be formally represented as a binary classification problem in a non-stationary, black-box LLM setting??
+    \item[RQ1:] How can the campaign-relevance detection task be formally represented as a binary classification problem in a non-stationary, black-box LLM setting?
     \item[RQ2:] How can a reduced monitoring subset be derived from a larger reference benchmark so that routine evaluation remains substantially cheaper while preserving sensitivity to model drift?
     \item[RQ3:] Which statistical criteria and alerting rules are appropriate for detecting practically significant performance degradation over time?
     \item[RQ4:] How should candidate models be compared and selected when deployment decisions depend on predictive quality, inference cost, and campaign-specific error tolerance?

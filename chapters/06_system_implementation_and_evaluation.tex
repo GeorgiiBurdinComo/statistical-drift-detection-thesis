@@ -6,29 +6,9 @@ This chapter describes the implemented monitoring system, the experimental setup
 \section{Overview}
 \label{sec:evaluation-pipeline-overview}
 
-The monitoring system has five main layers:
-\begin{enumerate}
-    \item a \textbf{dataset layer} in Langfuse, which stores the full benchmark and the frozen monitoring subset;
-    \item a \textbf{normalization and orchestration layer}, centered on \texttt{run\_eval.py}, which loads examples and builds one canonical request format;
-    \item a \textbf{provider adapter layer}, which converts that format into the native batch formats of OpenAI, Gemini, and Claude;
-    \item a \textbf{retrieval and ingestion layer}, which downloads completed batch outputs, joins them with the ground truth, and writes traces and scores to Langfuse; and
-    \item an \textbf{export and dashboard layer}, which creates committed CSV snapshots for routine inspection.
-\end{enumerate}
-Operationally, these layers are implemented by the three scheduled GitHub Actions workflows shown in Figure~\ref{fig:ga-weekly-pipelines}:
-\begin{itemize}
-    \item \texttt{weekly\_drift\_monitoring.yml} --- submits evaluation batches,
-    \item \texttt{weekly\_retrieve.yml} --- polls for completion and ingests results,
-    \item \texttt{sync-streamlit-dashboard.yml} --- exports and synchronizes dashboard metrics.
-\end{itemize}
+The system has five layers: Langfuse datasets (\(\mathcal{D}_N\), \(\mathcal{D}_n\)); orchestration via \texttt{run\_eval.py} into one canonical request; provider adapters (OpenAI, Gemini, Claude); retrieval/ingestion into Langfuse traces; export/dashboard CSVs. Three GitHub Actions workflows implement the weekly loop (Figure~\ref{fig:ga-weekly-pipelines}): submit batches, retrieve and ingest, sync the Streamlit dashboard.
 
-The system supports two run types:
-\begin{itemize}
-    \item \textbf{Benchmark run}: evaluates all monitored models on the full reference dataset (\(N=1199\)), costs about USD~90 per pass, and is used for baseline initialization and explicit escalation.
-    \item \textbf{Monitoring run}: evaluates the same model roster on the frozen disagreement-based subset (\(n=300\)), costs about USD~20 per pass, and is executed weekly.
-\end{itemize}
-Routine automation runs only on the fixed 300-example panel; full-benchmark evaluation is outside the weekly cycle.
-
-The monitored models and token prices used for cost accounting are defined in \texttt{config/models.yaml} and summarized in Table~\ref{tab:monitored-models}.
+Routine automation uses only the frozen \(n=300\) panel (\(\approx\) USD~20/pass). Full-benchmark passes (\(N=1199\), \(\approx\) USD~90) are for baseline initialization and explicit escalation. The roster and prices live in \texttt{config/models.yaml} (Table~\ref{tab:monitored-models}).
 
 \begin{table}[htbp]
 \centering
@@ -48,82 +28,25 @@ Claude   & \texttt{claude-sonnet-4-6}, \texttt{claude-sonnet-4-5}, \texttt{claud
 
 \section{Implemented Monitoring Pipeline}
 
-The pipeline runs in three separate stages because provider batch APIs are asynchronous: submission and result retrieval cannot be done in the same job. Figure~\ref{fig:ga-weekly-pipelines} shows the weekly schedule.
+Provider batch APIs are asynchronous, so submission and retrieval are separate jobs. Figure~\ref{fig:ga-weekly-pipelines} shows the weekly schedule: \texttt{weekly\_drift\_monitoring.yml} (Fri 05:00 UTC), \texttt{weekly\_retrieve.yml} (Mon 05:00 UTC), \texttt{sync-streamlit-dashboard.yml} (Mon 07:00 UTC).
 
-\begin{figure}[H]
-    \hspace*{-0.25\textwidth}
-    \includegraphics[width=1.4\textwidth]{assets/fig-5-3-ga-pipeline.png}
-    \caption{Scheduled GitHub Actions workflows for monitoring submission, retrieval, and dashboard synchronization.}
+\begin{figure}[htbp]
+    \centering
+    \begin{adjustbox}{max width=\linewidth}
+    \input{assets/fig_ga_pipeline.tex}
+    \end{adjustbox}
+    \caption{Scheduled GitHub Actions workflows. Each lane is one workflow; the two blue handoffs are the only state shared between them, which is what allows the asynchronous batch APIs to be polled in a later job.}
     \label{fig:ga-weekly-pipelines}
 \end{figure}
-
-The three workflows are:
-\begin{itemize}
-    \item \texttt{weekly\_drift\_monitoring.yml}, which submits batches via \texttt{run\_eval.py} (Friday 05:00 UTC);
-    \item \texttt{weekly\_retrieve.yml}, which restores \texttt{data/batch\_ids.json}, runs \texttt{poll\_and\_ingest.py}, and ingests results into Langfuse (Monday 05:00 UTC);
-    \item \texttt{sync-streamlit-dashboard.yml}, which exports CSV snapshots and mirrors the dashboard repository (Monday 07:00 UTC).
-\end{itemize}
 
 \subsection{Workflow~1: Submit Batches}
 \label{sec:batch-process}
 
-\textbf{Schedule.}
+Langfuse holds \(\mathcal{D}_N\) and the frozen \(\mathcal{D}_n\) with stable \texttt{custom\_id} join keys and the boolean label \texttt{campaign\_relevant} (Chapter~\ref{ch:data}). Weekly runs submit only \(\mathcal{D}_n\).
 
-\texttt{weekly\_drift\_monitoring.yml} runs every Friday at 05:00 UTC.
+Rows normalize to \(\{\texttt{custom\_id},\;\texttt{body},\;\texttt{campaign\_relevant}\}\), with \texttt{body} built from \texttt{config/request\_template.json} plus the multimodal \texttt{input}. The same template is reused every week so temporal differences are not request-construction artefacts. Orchestrator \texttt{run\_eval.py} loads the panel, ensures Gemini image uploads when needed, and dispatches each model to \texttt{batch\_*.py}. Adapters serialize to the provider batch format, upload JSONL, submit the job, and write the run manifest \texttt{data/batch\_ids.json} (\texttt{run\_id}, \texttt{subset\_size}, per-model batch IDs) into the Actions cache for retrieval.
 
-\textbf{Data sources.}\label{sec:dataset-storage}
-
-The implementation uses two Langfuse datasets:
-\begin{itemize}
-    \item the reference benchmark (\(N=1199\));
-    \item the monitoring subset (\(n=300\)).
-\end{itemize}
-In regular operation, the weekly workflow submits only the frozen monitoring subset. The full benchmark is not part of the weekly cron loop and is used only for initialization or explicit escalation.
-
-Langfuse is the single source of truth for benchmark rows and labels. Each row contains:
-\begin{itemize}
-    \item a stable \texttt{custom\_id}, reused throughout request construction, batch submission, result files, ingested traces, CSV exports, and statistical analysis;
-    \item the campaign description;
-    \item post text;
-    \item transcription;
-    \item hashtags;
-    \item media references;
-    \item frame references (where needed);
-    \item the ground-truth boolean \texttt{campaign\_relevant} (JSON \texttt{true}/\texttt{false}).
-\end{itemize}
-Since the 300-example monitoring subset is selected once and then kept fixed, paired McNemar comparisons are not affected by changes in sample composition.
-
-\textbf{Request normalization.}
-
-Rows are normalized to the shared structure
-\[
-\{\texttt{custom\_id},\;\texttt{body},\;\texttt{campaign\_relevant}\}.
-\]
-The \texttt{body} uses an OpenAI-style Responses request object: a fixed template from \texttt{config/request\_template.json} is merged with the per-item multimodal \texttt{input} loaded from Langfuse. A local CSV path is also supported so that the frozen subset can be replayed without live Langfuse access. Because the same canonical representation is used in every routine monitoring run, temporal comparisons keep the task and prompt template fixed. Differences over time are therefore attributed to provider-side model changes rather than to changes in request construction.
-
-\textbf{Orchestration.}
-
-The orchestrator \texttt{run\_eval.py} does the following:
-\begin{itemize}
-    \item loads the selected evaluation subset (weekly default: the frozen \(n=300\) panel);
-    \item ensures Gemini image uploads when any Gemini model is selected;
-    \item dispatches each model to the corresponding \texttt{batch\_*.py} adapter.
-\end{itemize}
-Each adapter then:
-\begin{itemize}
-    \item serializes the canonical request body into the provider's native batch format;
-    \item uploads the JSONL file;
-    \item submits an asynchronous batch job.
-\end{itemize}
-After that, the orchestrator:
-\begin{itemize}
-    \item collects the returned batch identifiers into the run manifest \texttt{data/batch\_ids.json}, which stores \texttt{run\_id}, \texttt{subset\_size}, and the per-model batch identifiers;
-    \item stores this manifest in the GitHub Actions cache so that the retrieval workflow can restore the submission state.
-\end{itemize}
-
-\textbf{Provider-specific batch adapters.}\label{sec:provider-adapters}
-
-The prediction task is the same for all providers: each example must return a JSON boolean field \texttt{campaign\_relevant} (\texttt{true} or \texttt{false}) from the same multimodal input and under the same schema-constrained output format. The only differences are in the adapter layer required by each provider API. Table~\ref{tab:provider-adapters} shows the two comparable adapter aspects: response-shape enforcement and provider-specific preprocessing before submission.
+The prediction task is identical across providers: JSON boolean \texttt{campaign\_relevant} under a schema-constrained output. Adapter differences are only transport-level (Table~\ref{tab:provider-adapters}). Claude sanitizes \texttt{custom\_id} on the wire and remaps on download. Gemini replaces image URLs with Files API URIs via \texttt{upload\_gemini\_images.py} and \texttt{data/gemini\_image\_cache.json} (TTL \(\approx\) 47~h). Across providers the output schema is \(\{\texttt{campaign\_relevant},\; \texttt{relevancy\_reasoning}\}\).
 
 \begin{table}[htbp]
 \centering
@@ -145,246 +68,58 @@ Claude & Anthropic \texttt{output\_config} schema & Sanitize \texttt{custom\_id}
 \end{tabular}
 \end{table}
 
-\textbf{Identifier integrity across providers.}
-
-The canonical \texttt{custom\_id} is the join key for the full pipeline. For Claude, submission requires a sanitized transport-level identifier, but the original benchmark identifier is kept in the canonical request representation and restored during result download. This ensures that every prediction can be matched back to the original benchmark row and ground-truth label.
-
-\textbf{Gemini image preprocessing.}
-
-Gemini batch lines require uploaded file URIs instead of remote HTTP image URLs. The helper \texttt{upload\_gemini\_images.py} downloads each distinct URL, uploads it via the Gemini Files API, and stores the URI, file name, and upload timestamp for each URL in \texttt{data/gemini\_image\_cache.json}. Entries older than the cache TTL are ignored when new batches are built, so stale file handles are not reused.
-
-The transport-level differences are easiest to see in abbreviated examples:
-
-\begin{lstlisting}[
-        caption={Batch entry formats across providers.},
-        label={lst:batch-provider-structures},
-        frame=single,
-        basicstyle=\ttfamily\small,
-        breaklines=true
-        ]
-        === OpenAI ===
-        {"custom_id":"...", "method":"POST", "url":"/v1/responses",
-         "body":{
-           "input":[...],
-           "text":{"format":{"type":"json_schema"}}
-         }}
-        
-        === Gemini ===
-        {"key":"...", "request":{
-         "systemInstruction":{"parts":[{"text":"..."}]},
-         "contents":[{"role":"user","parts":[
-           {"text":"..."},
-           {"fileData":{"fileUri":"..."}}
-         ]}],
-         "generationConfig":{
-           "responseMimeType":"application/json",
-           "responseSchema":{...}
-         }}}
-        
-        === Claude (staging JSONL) ===
-        {"custom_id":"...", "sanitized_id":"...",
-         "body":{
-           "input":[...],
-           "text":{"format":{"type":"json_schema"}}
-         }}
-\end{lstlisting}
-
-Across all three providers, the output is constrained to the same minimal monitoring schema:
-\[
-\{\texttt{campaign\_relevant},\; \texttt{relevancy\_reasoning}\},
-\]
-with \texttt{campaign\_relevant} typed as a JSON \texttt{boolean} in the schema.
-
-\textbf{Output.}
-
-The submission workflow produces \texttt{data/batch\_ids.json} for the retrieval workflow and the per-model JSONL files under \texttt{batches/} that have been submitted to the provider batch APIs.
+\textbf{Output.} The submission workflow produces \texttt{data/batch\_ids.json} and the submitted JSONL files under \texttt{batches/}.
 
 \subsection{Workflow~2: Retrieve and Ingest}
 \label{sec:metrics-dashboard}
 
-\textbf{Schedule.}
+\texttt{poll\_and\_ingest.py} restores the manifest, polls until completion, and downloads JSONL into \texttt{data/results/}. Then \texttt{ingest.py} normalizes each response, joins \texttt{campaign\_relevant} to ground truth via \texttt{custom\_id}, maps token usage to \texttt{cost\_usd} via \texttt{config/models.yaml}, and writes Langfuse traces with scores.
 
-\texttt{weekly\_retrieve.yml} runs every Monday at 05:00 UTC.
-
-\textbf{Polling and download.}
-
-The script \texttt{poll\_and\_ingest.py} restores \texttt{data/batch\_ids.json} from the Actions cache, polls each provider batch API until all jobs complete, and downloads the resulting JSONL outputs into \texttt{data/results/}.
-
-\textbf{Ingestion.}
-
-For each output line, the ingestion script \texttt{ingest.py} performs five steps:
-\begin{enumerate}
-    \item normalize the provider-specific response;
-    \item extract the boolean \texttt{campaign\_relevant} and join it to the ground truth via \texttt{custom\_id};
-    \item compute token usage from the provider-specific usage fields;
-    \item convert token usage into USD cost via \texttt{config/models.yaml};
-    \item write the resulting Langfuse trace together with derived scores and metadata.
-\end{enumerate}
-
-The full batch-API price table for all monitored models is given in Table~\ref{tab:batch-pricing-examples}.
+Table~\ref{tab:batch-pricing-examples} lists batch prices for the monitored roster; \texttt{models.yaml} also carries unused candidates for future adds.
 
 \begin{table}[htbp]
     \centering
-    \caption{Batch-API prices per one million tokens (USD) for all models in \texttt{config/models.yaml} as of 16~March~2026.}
+    \caption{Batch-API prices per one million tokens (USD) for the monitored models, as of 16~March~2026. Claude batch prices are half the corresponding standard prices.}
     \label{tab:batch-pricing-examples}
-    \begin{tabular}{lll}
+    \begin{tabular}{lrr}
         \toprule
-        Model & Input price & Output price \\
+        Model & Input & Output \\
         \midrule
         \texttt{gpt-5.4-2026-03-05}      & 1.25  & 7.50  \\
-        \texttt{gpt-5.4}                 & 1.25  & 7.50  \\
         \texttt{gpt-5.2}                 & 0.875 & 7.00  \\
-        \texttt{gpt-5.2-pro}             & 10.50 & 84.00 \\
         \texttt{gpt-5.1}                 & 0.625 & 5.00  \\
         \texttt{gpt-5}                   & 0.625 & 5.00  \\
-        \texttt{gpt-5-pro}               & 7.50  & 60.00 \\
         \texttt{gpt-5-mini}              & 0.125 & 1.00  \\
         \texttt{gpt-5-nano}              & 0.025 & 0.20  \\
-        \texttt{gpt-4.1}                 & 1.00  & 4.00  \\
         \texttt{gpt-4.1-mini}            & 0.20  & 0.80  \\
         \texttt{gpt-4.1-nano}            & 0.05  & 0.20  \\
-        \texttt{gpt-4o-2024-05-13}       & 2.50  & 7.50  \\
-        \texttt{gpt-4o}                  & 1.25  & 5.00  \\
-        \texttt{gpt-4o-mini}             & 0.075 & 0.30  \\
-        \texttt{o1}                      & 7.50  & 30.00 \\
-        \texttt{o1-pro}                  & 75.00 & 300.00 \\
-        \texttt{o1-mini}                 & 0.55  & 2.20  \\
-        \texttt{o3}                      & 1.00  & 4.00  \\
-        \texttt{o3-pro}                  & 10.00 & 40.00 \\
-        \texttt{o3-mini}                 & 0.55  & 2.20  \\
-        \texttt{o3-deep-research}        & 5.00  & 20.00 \\
-        \texttt{o4-mini}                 & 0.55  & 2.20  \\
-        \texttt{o4-mini-deep-research}   & 1.00  & 4.00  \\
-        \texttt{gemini-3-flash-preview}           & 0.25  & 1.50  \\
-        \texttt{gemini-2.5-flash}                 & 0.15  & 1.25  \\
-        \texttt{gemini-2.5-flash-preview-09-2025} & 0.15  & 1.25  \\
-        \texttt{gemini-2.0-flash}                 & 0.05  & 0.20  \\
-        \texttt{gemini-2.5-pro}                   & 0.625 & 5.00  \\
-        \texttt{claude-opus-4-6}   & 2.97 & 14.88 \\
-        \texttt{claude-opus-4-5}   & 2.97 & 14.88 \\
-        \texttt{claude-opus-4-1}   & 8.92 & 44.63 \\
-        \texttt{claude-opus-4}     & 8.92 & 44.63 \\
-        \texttt{claude-sonnet-4-6} & 1.78 & 8.92  \\
-        \texttt{claude-sonnet-4-5} & 1.78 & 8.92  \\
-        \texttt{claude-sonnet-4}   & 1.78 & 8.92  \\
-        \texttt{claude-haiku-4-5}  & 0.59 & 2.97  \\
-        \texttt{claude-3.5-haiku}  & 0.40 & 2.00  \\
+        \midrule
+        \texttt{gemini-2.5-flash}        & 0.15  & 1.25  \\
+        \midrule
+        \texttt{claude-sonnet-4-6}       & 1.78 & 8.92  \\
+        \texttt{claude-sonnet-4-5}       & 1.78 & 8.92  \\
+        \texttt{claude-haiku-4-5}        & 0.59 & 2.97  \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\textbf{Trace-level scores.}
-
-Three trace-level scores are used later:
-\begin{itemize}
-    \item \texttt{accuracy}: a Langfuse numeric score with value \(1.0\) or \(0.0\), depending on whether the predicted boolean \texttt{campaign\_relevant} matches the ground truth;
-    \item \texttt{error\_type}, which distinguishes true positives, false positives, true negatives, and false negatives;
-    \item \texttt{cost\_usd}, which gives the realized cost of the request in USD.
-\end{itemize}
-From \texttt{error\_type}, precision, recall, and F1 are computed per run on \(\mathcal{D}_n\) as in Section~\ref{sec:classification-metrics}. The same trace store is therefore used for both paired drift tests and later model comparison.
-
-\textbf{Output.}
-
-After ingestion, Langfuse contains one trace per post per model, with the normalized response, provider and model identifiers, token usage, monetary cost, and derived scores. In this system, Langfuse acts both as the persistent registry of evaluation instances and as the historical log of model behaviour over time.
+Trace scores used later: \texttt{accuracy} (\(1/0\) match), \texttt{error\_type} (TP/FP/TN/FN), and \texttt{cost\_usd}. Precision, recall, and F1 follow Section~\ref{sec:classification-metrics}.
 
 \subsection{Workflow~3: Dashboard Sync}
 
-\textbf{Schedule.}
-
-\texttt{sync-streamlit-dashboard.yml} runs every Monday at 07:00 UTC and on pushes to \texttt{main} that modify \texttt{streamlit\_app/}.
-
-\textbf{CSV export.}
-
-The script \texttt{export\_langfuse\_csv.py} paginates the Langfuse public API for traces and scores over a configured time window, flattens nested fields, keeps the columns used by the dashboard, and writes \texttt{streamlit\_app/langfuse\_traces.csv} and \texttt{langfuse\_scores.csv}. These files are committed to the main evaluation repository \texttt{gocomo/llm-batch-eval}.
-
-\textbf{Repository mirror.}
-
-The same workflow mirrors the full \texttt{streamlit\_app/} tree to the private dashboard repository \texttt{GeorgiiBurdinComo/llm-eval-dashboard}, from which the hosted Streamlit application is served. This keeps the dashboard reproducible and avoids storing long-lived Langfuse credentials in the hosted application.
-
-\textbf{Dashboard.}
-
-The dashboard has three main tabs:
-\begin{itemize}
-    \item \textbf{Overview}, which shows per-model accuracy over time together with aggregated cost summaries from \texttt{cost\_usd};
-    \item \textbf{McNemar}, which reports paired contingency tables and exact \(p\)-values for selected run pairs;
-    \item \textbf{Utility function}, which combines accuracy and cost through the expected-cost formulation \(E_t[\mathcal{C}](m)\) from Chapter~\ref{ch:cost-deployment-utility}.
-\end{itemize}
-In the utility tab, the trade-off control is parameterized as \(R=C_{\mathrm{FP}}/C_{\mathrm{FN}}\), so one false positive is treated as costly as \(R\) false negatives. The exported CSVs are also used in notebooks for additional inspection.
+\texttt{sync-streamlit-dashboard.yml} exports traces/scores via \texttt{export\_langfuse\_csv.py} into committed CSVs in \texttt{gocomo/llm-batch-eval}, then mirrors \texttt{streamlit\_app/} to \texttt{GeorgiiBurdinComo/llm-eval-dashboard}. Tabs: Overview (accuracy/cost over time), McNemar (contingency tables and exact \(p\)), Utility (\(E_t[\mathcal{C}](m)\) with \(R=C_{\mathrm{FP}}/C_{\mathrm{FN}}\)).
 
 \subsection{Artifacts and Cross-Step Data Flow}
 \label{sec:artifacts-data-flow}
 
-Table~\ref{tab:artifact-inventory} summarizes the main artifacts, their provenance, and their downstream consumers across all three workflows.
-
-\begin{table}[htbp]
-    \centering
-    \footnotesize
-    \caption{Main artifacts and handoffs in the evaluation pipeline.}
-    \label{tab:artifact-inventory}
-    
-    \setlength{\tabcolsep}{6pt}
-    \renewcommand{\arraystretch}{1.18}
-    
-    {\hyphenpenalty=10000
-    \exhyphenpenalty=10000
-    
-    \begin{tabularx}{\linewidth}{|
-        >{\raggedright\arraybackslash\ttfamily}p{5.0cm}|
-        >{\raggedright\arraybackslash}X|
-        >{\raggedright\arraybackslash}X|}
-    \hline
-    \textbf{Artifact} & \textbf{Provenance} & \textbf{Downstream} \\
-    \hline
-    
-    data/batch\_ids.json &
-    Produced by \texttt{run\_eval.py}; stored in the GitHub Actions cache and workspace. &
-    Used by \texttt{poll\_and\_ingest.py} to poll provider batches until completion. The manifest records batch identifiers per model for the run. \\
-    \hline
-    
-    \parbox[t]{\linewidth}{\ttfamily
-    batches/openai\_\{model\}.jsonl\\
-    /claude\_\{model\}\_input.jsonl\\
-    /gemini\_\{model\}.jsonl} &
-    Produced by \texttt{batch\_openai.py}, \texttt{batch\_claude.py}, and \texttt{batch\_gemini.py}; stored under \texttt{batches/}. &
-    Submitted to the OpenAI, Anthropic, and Gemini batch APIs. Each JSONL line corresponds to one evaluation request. \\
-    \hline
-    
-    data/gemini\_image\_cache.json &
-    Produced by \texttt{upload\_gemini\_images.py}; stored in the repository. &
-    Read by \texttt{batch\_gemini.py} when assembling Gemini batch inputs, mapping remote image URLs to uploaded Files API URIs. \\
-    \hline
-    
-    \parbox[t]{\linewidth}{\ttfamily
-    data/results/\\
-    \{provider\}\_\{model\}.jsonl} &
-    Downloaded from provider batch APIs; stored under \texttt{data/results/}. &
-    Consumed by the ingestion step, which normalizes outputs and writes Langfuse traces and scores. \\
-    \hline
-    
-    Langfuse traces and scores &
-    Produced by ingestion; stored in Langfuse cloud. &
-    Read by \texttt{export\_langfuse\_csv.py} and by the Streamlit application for joins, tags, and derived metrics. \\
-    \hline
-    
-    \parbox[t]{\linewidth}{\ttfamily
-    langfuse\_traces.csv\\
-    langfuse\_scores.csv} &
-    Produced by \texttt{export\_langfuse\_csv.py}; stored under \texttt{streamlit\_app/} in \texttt{llm-batch-eval} and mirrored to the private \texttt{llm-eval-dashboard} repository. &
-    Loaded by the hosted Streamlit dashboard so routine views use committed snapshots rather than live Langfuse API calls. \\
-    \hline
-    
-    \end{tabularx}
-    }
-\end{table}
+Workflows share only files: \texttt{data/batch\_ids.json}, \texttt{batches/}, \texttt{data/results/}, Langfuse, then CSV snapshots. Any stage can be replayed from the previous artifact without repeating provider calls.
 
 \FloatBarrier
 
 \section{Experimental Setup}
 \label{sec:experimental-design}
 
-The experiments use the full benchmark \(\mathcal{D}_N\) (\(N=1199\)) and the frozen subset \(\mathcal{D}_n\) (\(n=300\)) from Chapter~\ref{ch:data}. The monitored model roster is taken from \texttt{config/models.yaml} and listed in Table~\ref{tab:monitored-models}. The full benchmark is run once for baseline initialization, while repeated longitudinal runs are carried out on the fixed \(\mathcal{D}_n\) panel. Weekly monitoring therefore produces paired correctness vectors on the same 300 examples for the McNemar comparisons in Section~\ref{sec:mcnemar-section}.
-
-The results in this chapter are organized in three parts: the instantiated monitoring subset and its baseline snapshot, longitudinal monitoring on the fixed panel, and candidate comparison for corrective action. Figure~\ref{fig:run-decision-logic} summarizes the operational workflow. The figure includes prompt optimisation as one possible corrective branch of the overall framework, but this chapter reports only the monitoring and comparison stages. A realized degradation-and-recovery episode is discussed separately in Chapter~\ref{chap:degradation-case-study}.
+Datasets and roster are those of Chapter~\ref{ch:data} and Table~\ref{tab:monitored-models}. This chapter reports the frozen-panel baseline, longitudinal McNemar evidence, and the corrective-action comparison panel. Figure~\ref{fig:run-decision-logic} is the operational loop; prompt optimisation is shown as a branch but only monitoring and comparison are evaluated here. The realized degradation episode is Chapter~\ref{chap:degradation-case-study}.
 
 \FloatBarrier
 \begin{figure}[H]
@@ -437,9 +172,7 @@ The results in this chapter are organized in three parts: the instantiated monit
 \subsection{Baseline and Instantiated Monitoring Subset}
 \label{sec:baseline-subset}
 
-A one-time full-benchmark run on \(\mathcal{D}_N\) (\(N=1199\)) establishes the initial behaviour of the monitored models and identifies the disagreement cases used to construct the monitoring subset from Chapter~\ref{ch:data}. The resulting \(n=300\) disagreement-based set is stored as a separate Langfuse dataset and then frozen. All later drift statistics, dashboard views, and comparison panels in this chapter are computed on that fixed subset.
-
-Table~\ref{tab:phase1-baseline-snapshot} gives a compact baseline excerpt from the current metrics export (\texttt{assets/metrics\_export}, last score day 2026-04-13): accuracy, precision, recall, and F1 for two monitored models on \(\mathcal{D}_n\). Full-benchmark aggregates on \(\mathcal{D}_N\) are produced in the same way, but are not repeated here because this chapter focuses on the fixed hard-case panel and its longitudinal comparability.
+A one-time \(\mathcal{D}_N\) run seeds the disagreement construction of Chapter~\ref{ch:data}; the resulting \(n=300\) panel is frozen in Langfuse. Table~\ref{tab:phase1-baseline-snapshot} is a descriptive baseline excerpt on \(\mathcal{D}_n\) (metrics export, last score day 2026-04-13).
 
 \begin{table}[htbp]
     \centering
@@ -455,9 +188,20 @@ Table~\ref{tab:phase1-baseline-snapshot} gives a compact baseline excerpt from t
     \end{tabular}
 \end{table}
 
-\textbf{Interpretation for monitoring.}
+The baseline fixes the initial error profile against which later runs are compared; fallback choice depends on which error type is costly under Chapter~\ref{ch:cost-deployment-utility}.
 
-This baseline is descriptive, not inferential. It fixes the initial error profile on \(\mathcal{D}_n\) against which later runs are compared and shows whether the starting configuration is dominated by false negatives or false positives. This matters because later fallback choices depend not only on total accuracy but also on which error type is more costly under the campaign-specific decision rule from Chapter~\ref{ch:cost-deployment-utility}.
+\subsection{Realized discordance}
+\label{sec:realized-discordance}
+
+The panel size in Section~\ref{sec:monitoring-sample-size} was derived from a pilot discordance rate of $\hat\rho=0.114$, measured by running $\mathcal{D}_N$ twice two days apart. Table~\ref{tab:discordance} reports the discordance actually observed between each model's baseline run and its later runs.
+
+\input{assets/drift/discordance.tex}
+
+The pooled median is $0.033$, well below the pilot value. Two things drive the gap. First, the pilot measured one model; the roster spans a wide stability range, from \texttt{gpt-4.1-nano} at $0.156$ down to \texttt{gpt-5} at $0.007$. Second, the pilot model was the production model of the time, which sat in the churn-heavy part of that range.
+
+The consequence is a power loss concentrated in the stable models. The planning equation~\eqref{eq:planning-discordant-m} needs $m\approx 31$ discordant pairs to detect $\delta=0.05$ at $80\%$ power. At $\rho=0.007$, a 300-item panel yields $m\approx 2$. For \texttt{gpt-5} and \texttt{gpt-5.2} the panel is therefore too small to detect a five-point drop, and their flat monitoring series should be read as uninformative rather than as evidence of stability. For the models at $\rho\ge 0.10$ the panel delivers $m\approx 30$ or more and the sizing assumption holds.
+
+The panel was sized once, for one model, and then frozen. Per-model sizing --- a larger panel for low-churn models --- would fix this, at proportionally higher cost per run.
 
 \subsection{Longitudinal Monitoring Results}
 \label{sec:drift-results}
@@ -466,13 +210,13 @@ This subsection checks whether repeated evaluation on the fixed monitoring subse
 
 \begin{table}[htbp]
     \centering
-    \caption{McNemar table for \texttt{gpt-4.1-mini} between 6~April~2026 and 13~April~2026 on \(\mathcal{D}_n\).}
+    \caption{McNemar table for \texttt{gpt-4.1-mini} between 6~April~2026 and 13~April~2026 on \(\mathcal{D}_n\) ($n=299$).}
     \label{tab:mcnemar_gpt41mini}
     \begin{tabular}{lcc}
         \toprule
         & 2026-04-13 correct & 2026-04-13 wrong \\
         \midrule
-        2026-04-06 correct & 231 & 10 \\
+        2026-04-06 correct & 230 & 10 \\
         2026-04-06 wrong   & 10  & 49 \\
         \bottomrule
     \end{tabular}
@@ -498,28 +242,29 @@ For \texttt{gpt-4.1-nano}, the corresponding comparison in Table~\ref{tab:mcnema
 
 These two examples show two different situations on the fixed panel: balanced movement with no directional evidence (\texttt{gpt-4.1-mini}) and high-churn but non-degrading movement (\texttt{gpt-4.1-nano}). In both cases, the correct operational response is continued monitoring together with preparation of fallback comparisons on the metric and cost panel.
 
+\subsection{Alert counts over the full monitoring period}
+\label{sec:method-comparison}
+
+The monitoring series covers 8~March to 27~July~2026 and yields 265 baseline-to-current comparisons over 19 models. Twelve model-days are full-benchmark runs of about $1{,}190$ items rather than panel runs; these are escalation and prompt-transfer evaluations, not part of the weekly loop, and they are excluded from the drift series. Mixing them in would compare a panel run against a benchmark run and attribute the difference to the model.
+
+\input{assets/drift/alert_counts.tex}
+
+Table~\ref{tab:alert-counts} gives the alert counts. At the nominal $\alpha=0.05$ the rule fires 13 times. The Bonferroni correction of~\eqref{eq:bonferroni} reduces this to 3. Adding a three-point relevance floor removes nothing further: all three surviving comparisons are drops of $4.7$pp or more, so on this data the floor is inert and the correction is doing the filtering.
+
+The three surviving comparisons are not three episodes. Two of them are \texttt{gpt-4.1-mini} against its 8~March baseline on 22 and 23~March, which is one event observed on two consecutive days; Chapter~\ref{chap:degradation-case-study} treats it in full. The third is \texttt{gpt-5-mini} on 6~April, at $-4.7$pp with $p=1.3\times10^{-3}$, and it needs a different reading.
+
+\paragraph{The \texttt{gpt-5-mini} alert is baseline noise.}
+\texttt{gpt-5-mini} scores $0.940$ on the 8~March baseline and then sits between $0.893$ and $0.933$ for the following twenty-two runs, with no trend. The baseline is the highest single value in the series. Every later comparison therefore inherits a small negative offset, and nine of the twenty-two clear $p<0.05$ before correction. The 6~April run is simply the lowest of them. Reading this as a provider-side change would be wrong: nothing steps, and the post-baseline level is flat.
+
+This is the cost of the fixed-baseline design noted in Section~\ref{sec:baseline-multiplicity}. Anchoring on one batch makes the entire series inherit that batch's sampling error, and a baseline that happens to land high manufactures a persistent apparent decline. Bonferroni suppresses eight of the nine, but not the largest, so multiplicity control alone does not remove the problem. Two mitigations are available and neither was in place here: pool the first two runs into the baseline, or require an alert to repeat before it is acted on. On this data the second rule would have retained the \texttt{gpt-4.1-mini} event, which fired on two consecutive days, and dropped the \texttt{gpt-5-mini} alert, which fired once.
+
+By simple thresholds, a $-3$pp rule fires 15 times and a $-5$pp rule twice. The $-5$pp rule selects exactly the two \texttt{gpt-4.1-mini} comparisons --- on this data the crudest rule available recovers the one real event and nothing else. The paired test earns its place not through a lower alert count but by reporting $b$ and $c$ separately, which is what makes the \texttt{gpt-5-mini} case diagnosable at all: a threshold rule reports only that accuracy is down.
+
 \subsection{Candidate Comparison for Corrective Action}
 \label{sec:cost-aware-comparison}
 
-If drift is suspected, the next step is to compare alternative models. For each monitored run, the system records accuracy, precision, recall, F1, and mean cost per request. These quantities are first inspected on the fixed subset \(\mathcal{D}_n\). However, since \(\mathcal{D}_n\) is disagreement-based and not representative of the full benchmark, final deployment ranking by expected cost is computed on the full dataset \(\mathcal{D}_N\). In the implemented workflow, this full-benchmark comparison is used only after escalation, not in the routine weekly loop.
+After escalation, candidates are compared on accuracy, precision, recall, F1, and mean cost. Table~\ref{tab:model-metrics-snapshot} is the \(\mathcal{D}_n\) profile (confusion counts plus derived metrics; \texttt{cost\_usd} from Section~\ref{sec:metrics-dashboard}). Final expected-cost ranking uses \(\mathcal{D}_N\) under Chapter~\ref{ch:cost-deployment-utility} (Section~\ref{sec:selection-bias}).
 
-Figure~\ref{fig:decision-reading-order} shows the order in which the comparison is read: first the drift test, then the metric profile, and finally the cost-based utility.
-
-\begin{figure}[htbp]
-    \centering
-    \begin{tikzpicture}[node distance=8mm and 12mm]
-        \node[figbox, text width=35mm] (drift) {1) Drift evidence\\McNemar on fixed panel};
-        \node[figbox, right=of drift, text width=35mm] (profile) {2) Error profile\\Accuracy / Precision / Recall / F1 / Specificity};
-        \node[figbox, right=of profile, text width=35mm] (cost) {3) Decision utility\\Expected cost\\$E_t[\mathcal{C}](m)$};
-
-        \draw[figarrow] (drift) -- (profile);
-        \draw[figarrow] (profile) -- (cost);
-    \end{tikzpicture}
-    \caption{Recommended reading order for corrective-action decisions: drift evidence first, metric profile second, cost-based utility third. Metric definitions are in Chapter~\ref{ch:drift}; utility is in Chapter~\ref{ch:cost-deployment-utility}.}
-    \label{fig:decision-reading-order}
-\end{figure}
-
-The main comparison panel is Table~\ref{tab:model-metrics-snapshot}. The table reports confusion counts \((\mathrm{tp},\mathrm{fp},\mathrm{tn},\mathrm{fn})\), accuracy, precision, recall, F$_1$, specificity, and balanced accuracy for each candidate on \(\mathcal{D}_n\). Mean USD cost per request is taken from Langfuse traces as described in Section~\ref{sec:metrics-dashboard}.
 \begin{table}[htbp]
     \centering
     \footnotesize
@@ -530,18 +275,15 @@ The main comparison panel is Table~\ref{tab:model-metrics-snapshot}. The table r
     \end{adjustbox}
 \end{table}
 
-For final deployment ranking, Chapter~\ref{ch:cost-deployment-utility} applies the expected-cost utility \(E_t[\mathcal{C}](m)\) on \(\mathcal{D}_N\) with trade-off ratio \(R=C_{\mathrm{FP}}/C_{\mathrm{FN}}\). This does not produce one universally best model. The preferred model depends on the campaign and on whether false positives or false negatives are more costly.
-
-In practice, the table should be read from left to right: first the confusion counts, then the derived metrics, and only then the scalar utility. Two models can have similar accuracy but very different false-positive and false-negative profiles. Therefore, high-recall models are preferable when missing relevant posts is costly, while high-specificity models are preferable when false alarms create extra manual work.
+Read confusion counts first, then derived metrics, then \(E_t[\mathcal{C}]\) on \(\mathcal{D}_N\). Similar accuracy can hide very different FP/FN mixes; which model wins depends on campaign costs via \(R=C_{\mathrm{FP}}/C_{\mathrm{FN}}\).
 \section{Limitations}
 \label{sec:error-analysis}
 
-
 \begin{itemize}
-    \item \(\mathcal{D}_n\) is disagreement-enriched and is therefore designed for sensitivity to instability, not for unbiased estimation of \(\mathcal{D}_N\) accuracy.
     \item Provider state is unobserved; drift is inferred only from output changes on the fixed panel.
     \item Cost depends on provider pricing and tokenization, so monetary comparisons may change even when the confusion structure stays the same.
-    \item This chapter documents the implemented monitoring, escalation, and comparison pipeline, but not a full observed recovery episode after a verified alert.
+    \item Every comparison reuses one baseline run, so sampling error in that run propagates to the whole series for that model (Section~\ref{sec:method-comparison}).
+    \item The panel was sized from a single pilot discordance estimate. For the most stable models the realized discordance leaves the panel underpowered at the design effect size (Section~\ref{sec:realized-discordance}).
 \end{itemize}
 
-This chapter presented the implemented monitoring architecture, the frozen-subset baseline, longitudinal paired evidence, and the corrective-action comparison panel. Evidence from an actual degradation-and-recovery episode is deferred to Chapter~\ref{chap:degradation-case-study}.
+The degradation episode itself is Chapter~\ref{chap:degradation-case-study}.

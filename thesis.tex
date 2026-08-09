@@ -11,12 +11,11 @@
 
 \title{Statistical Drift Detection for Non-Stationary Black-Box LLM Classifiers}
 \author{Georgii}{Burdin}
-\submissiondate{2026}[07][01]
-\defensedate{2026}[08][01]
+\submissiondate{2026}[08][10]
 \courseofstudy{B.Sc. Applied Mathematics}
 \seminargroup{MA22w1-B}
-\examiner[Prof <Name>]{<First Examiner>}
-\addexaminer*{<Second Examiner>}[]
+\examiner[Prof.\ Dr.\ rer.\ nat.\ Dr.-Ing.\ habil.]{Florian Zaussinger}
+\addexaminer[M.Sc.]{Marin Ivankovic}
 \abstract{%
 \textbf{1. Context}\\
 GOCOMO uses API-based large language models (LLMs) for campaign-relevance classification on social-media posts.
@@ -51,7 +50,21 @@ Therefore, a framework is needed that can:
 \usepackage{graphicx}
 \usepackage{xurl}
 \usepackage{tikz}
-\usetikzlibrary{positioning,arrows.meta,calc,fit,shapes.geometric}
+\usetikzlibrary{positioning,arrows.meta,calc,fit,shapes.geometric,backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% Let TeX stretch spacing in hard paragraphs instead of running into the margin.
+% The chapters are dense with unbreakable \texttt{} identifiers and file paths.
+\setlength{\emergencystretch}{3em}
+
+% Figure palette (validated categorical slots 1-2 plus chrome greys).
+\definecolor{vizblue}{HTML}{2A78D6}
+\definecolor{vizorange}{HTML}{EB6834}
+\definecolor{vizgrid}{HTML}{E1E0D9}
+\definecolor{vizaxis}{HTML}{C3C2B7}
+\definecolor{vizmuted}{HTML}{898781}
+\definecolor{vizink}{HTML}{52514E}
 \usepackage[edges]{forest}
 \usepackage{float}
 \usepackage{placeins}
@@ -118,7 +131,7 @@ Therefore, a framework is needed that can:
 
 \begin{document}
 
-\input{chapters/00_company_approval_statement.tex}
+% 00_company_approval_statement.tex is signed separately and bound in by hand.
 
 \input{chapters/01_introduction.tex}
 

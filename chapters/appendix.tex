@@ -1,62 +1,69 @@
 \appendix
-\chapter{Supplementary Tables}
-\label{app:supplementary-tables}
+\chapter{Conditional Distribution of the McNemar Statistic}
+\label{app:mcnemar-derivation}
 
-\section{Per-metric ranking charts (monitoring snapshot)}
-\label{app:per-metric-ranking-charts}
+This appendix derives the conditional law used for the exact test in Section~\ref{sec:mcnemar-section} and for the sample-size calculation in Section~\ref{sec:monitoring-sample-size}.
 
-The following charts are supplementary visualizations of the exported monitoring snapshot from \texttt{assets/metrics\_export/}. They complement, but do not replace, the main decision tables in Chapters~\ref{ch:cost-deployment-utility} and~\ref{chap:system-architecture}.
-Formal metric definitions and formulas are given in Chapter~\ref{ch:drift} (Section~\ref{sec:classification-metrics}); interpretation of metric movement for operational decisions is provided in Chapter~\ref{chap:system-architecture} and the episode narrative in Chapter~\ref{chap:degradation-case-study}.
+For item $i$ the paired correctness outcome $(E_{i,t_1},E_{i,t_2})$ falls into one of four categories, with probabilities
+\[
+p_a=P(1,1),\quad
+p_b=P(1,0),\quad
+p_c=P(0,1),\quad
+p_d=P(0,0),
+\qquad
+p_a+p_b+p_c+p_d=1.
+\]
+Assume the $n$ paired items are independent and identically distributed across these categories. Then the counts are multinomial,
+\begin{equation}
+    (a,b,c,d)\sim \mathrm{Multinomial}(n;p_a,p_b,p_c,p_d).
+\end{equation}
 
-\IfFileExists{assets/fig-metric-accuracy.png}{%
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/fig-metric-accuracy.png}
-    \caption{Per-model ranking by accuracy on $\mathcal{D}_n$.}
-\end{figure}
-}{}
+McNemar's test uses only the discordant counts. Write $m=b+c$ and fix an integer $k\in\{0,\dots,m\}$. From the multinomial model,
+\begin{equation}
+    P(b=k,\;c=m-k)
+    =
+    \frac{n!}{k!\,(m-k)!\,(n-m)!}
+    (p_a+p_d)^{n-m}p_b^k p_c^{m-k},
+\end{equation}
+and marginalising over the split of the $m$ discordant items,
+\begin{equation}
+    P(b+c=m)
+    =
+    \frac{n!}{m!\,(n-m)!}
+    (p_a+p_d)^{n-m}(p_b+p_c)^m.
+\end{equation}
+Dividing, the factors $(p_a+p_d)^{n-m}$, $n!$ and $(n-m)!$ all cancel:
+\begin{align}
+P(b=k\mid b+c=m)
+&=
+\frac{
+\frac{n!}{k!\,(m-k)!\,(n-m)!}
+(p_a+p_d)^{n-m}p_b^k p_c^{m-k}
+}{
+\frac{n!}{m!\,(n-m)!}
+(p_a+p_d)^{n-m}(p_b+p_c)^m
+} \\
+&=
+\binom{m}{k}
+\left(\frac{p_b}{p_b+p_c}\right)^k
+\left(\frac{p_c}{p_b+p_c}\right)^{m-k}.
+\end{align}
+This is a binomial mass function, so
+\begin{equation}
+    b\mid (b+c=m)\sim \mathrm{Binomial}(m,\eta),
+    \qquad
+    \eta=\frac{p_b}{p_b+p_c}=\frac{p_b}{\rho}.
+    \label{eq:app-conditional-binomial}
+\end{equation}
+The concordant cells $a$ and $d$ have dropped out entirely: conditioning on $m$ removes all dependence on how many items were stable.
 
-\IfFileExists{assets/fig-metric-balanced_accuracy.png}{%
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/fig-metric-balanced_accuracy.png}
-    \caption{Per-model ranking by balanced accuracy on $\mathcal{D}_n$.}
-\end{figure}
-}{}
-
-\IfFileExists{assets/fig-metric-f1.png}{%
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/fig-metric-f1.png}
-    \caption{Per-model ranking by F1 score on $\mathcal{D}_n$.}
-\end{figure}
-}{}
-
-\IfFileExists{assets/fig-metric-precision.png}{%
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/fig-metric-precision.png}
-    \caption{Per-model ranking by precision on $\mathcal{D}_n$.}
-\end{figure}
-}{}
-
-\IfFileExists{assets/fig-metric-recall.png}{%
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/fig-metric-recall.png}
-    \caption{Per-model ranking by recall on $\mathcal{D}_n$.}
-\end{figure}
-}{}
-
-\IfFileExists{assets/fig-metric-specificity.png}{%
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/fig-metric-specificity.png}
-    \caption{Per-model ranking by specificity on $\mathcal{D}_n$.}
-\end{figure}
-}{}
-
-
-
-{}
-
+Writing $\rho=p_b+p_c$ and $\delta=p_b-p_c$ gives $p_b=(\rho+\delta)/2$ and $p_c=(\rho-\delta)/2$, hence
+\begin{equation}
+    \eta=\frac{1}{2}+\frac{\delta}{2\rho}.
+    \label{eq:app-eta}
+\end{equation}
+So $\eta$ depends on the directional imbalance only through the ratio $\delta/\rho$. Under the null hypothesis of no directional change, $H_0:p_b=p_c$, the imbalance $\delta$ is zero and therefore
+\begin{equation}
+    b\mid (b+c=m)\sim \mathrm{Binomial}(m,1/2):
+\end{equation}
+once the number of discordant items is fixed, each is equally likely to be a regression or an improvement. This is the basis of the exact conditional test. For one-sided degradation detection the alternative is $H_a:\eta>1/2$.

@@ -47,9 +47,7 @@ For this reason, monitoring is performed on a fixed subset
 \]
 with $n=300$.
 
-The role of $\mathcal{D}_n$ is not to replace $\mathcal{D}_N$. It is a smaller frozen panel for repeated inference over time.
-
-The datasets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored in Langfuse with the same schema and the binary label column \texttt{campaign\_relevant}. Table~\ref{tab:dataset-summary} summarises their composition.
+The datasets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored in Langfuse with the same schema and the binary label column \texttt{campaign\_relevant}. Table~\ref{tab:dataset-summary} summarises their composition. How $\mathcal{D}_n$ relates to $\mathcal{D}_N$ for detection versus deployment is fixed in Section~\ref{sec:selection-bias}.
 
 \begin{table}[htbp]
     \centering
@@ -84,6 +82,8 @@ The modality mix also differs slightly. In both datasets, most posts are videos.
 A simple random sample from $\mathcal{D}_N$ would be suitable if the main goal were unbiased estimation of $A_N(t)$. This is not the goal here. The subset is used for repeated paired monitoring, where the main goal is to detect changes in model behaviour.
 
 Many items in the full benchmark are easy: several models classify them in the same way. Such cases are less informative for monitoring than cases on which models disagree. Therefore, the monitoring subset is constructed from disagreement cases.
+
+The same idea appears in two established settings. Query-by-committee active learning selects the items on which an ensemble disagrees, because those items carry the most information per label~\cite{settles2009active}. Dynamic benchmarking concentrates evaluation on examples that current models get wrong, on the grounds that a saturated benchmark stops discriminating between systems~\cite{kiela2021dynabench}. Both select for informativeness at the cost of representativeness, which is the trade-off accepted here and quantified in Section~\ref{sec:selection-bias}.
 
 Let
 \begin{equation}
@@ -150,134 +150,27 @@ where $b$ counts regressions (correct $\to$ wrong) and $c$ counts improvements (
 
 Thus, a decrease in panel accuracy implies $b>c$, i.e.\ regressions outnumber improvements.
 
-For planning, let $P(\cdot)$ denote probability for a generic item under the monitoring model, and let $\mathbb{E}[\cdot]$ denote expectation with respect to the same probability law. Define
+For planning, let $P(\cdot)$ and $\mathbb{E}[\cdot]$ denote probability and expectation for a generic item under the monitoring model, and write
 \begin{equation}
     p_b=P(E_{i,t_1}=1,E_{i,t_2}=0),
     \qquad
-    p_c=P(E_{i,t_1}=0,E_{i,t_2}=1).
+    p_c=P(E_{i,t_1}=0,E_{i,t_2}=1),
+    \qquad
+    \rho=p_b+p_c,
+    \qquad
+    \delta=p_b-p_c,
 \end{equation}
-Here, $p_b$ is the probability that an item changes from correct to wrong between $t_1$ and $t_2$, and $p_c$ is the probability that it changes from wrong to correct.
-
-Let
-\begin{equation}
-    \rho=p_b+p_c
-\end{equation}
-be the discordance probability per item and
-\begin{equation}
-    \delta=p_b-p_c
-\end{equation}
-the directional imbalance.
-
-If the practically relevant event is a drop in panel accuracy of size $\Delta_{\mathrm{acc}}>0$, then
-\[
-\mathbb{E}\!\left[\hat A_{t_2}-\hat A_{t_1}\right]=p_c-p_b=-\delta,
-\]
-so the target effect is approximated by
-\[
-\delta\approx \Delta_{\mathrm{acc}}.
-\]
+so that $p_b$ and $p_c$ are the per-item probabilities of a regression and an improvement, $\rho$ is the discordance probability, and $\delta$ the directional imbalance. Since $\mathbb{E}[\hat A_{t_2}-\hat A_{t_1}]=p_c-p_b=-\delta$, a target degradation of size $\Delta_{\mathrm{acc}}>0$ corresponds to $\delta\approx\Delta_{\mathrm{acc}}$.
 
 \paragraph{Conditional view of McNemar's test.}
-For each item, the paired correctness outcome $(E_{i,t_1},E_{i,t_2})$ can fall into one of four categories:
-\[
-(1,1),\quad (1,0),\quad (0,1),\quad (0,0),
-\]
-with probabilities
-\[
-p_a=P(1,1),\quad
-p_b=P(1,0),\quad
-p_c=P(0,1),\quad
-p_d=P(0,0),
-\]
-respectively. These probabilities satisfy
-\[
-p_a+p_b+p_c+p_d=1.
-\]
-
-Assume that the $n$ paired items are independent and identically distributed across these four categories. Then the count vector $(a,b,c,d)$ follows a multinomial distribution:
+Sizing the panel requires the sampling law of the discordant counts. Assume the $n$ paired items are independent and identically distributed over the four outcomes $(1,1),(1,0),(0,1),(0,0)$ with probabilities $p_a,p_b,p_c,p_d$. Conditioning on the number of discordant items $m=b+c$ then gives
 \begin{equation}
-    (a,b,c,d)\sim \mathrm{Multinomial}(n;p_a,p_b,p_c,p_d).
+    b\mid (b+c=m)\sim \mathrm{Binomial}(m,\eta),
+    \qquad
+    \eta=\frac{p_b}{\rho}=\frac{1}{2}+\frac{\delta}{2\rho},
+    \label{eq:conditional-binomial}
 \end{equation}
-
-McNemar's test uses only the discordant counts $b$ and $c$. Let
-\[
-m=b+c.
-\]
-To derive the conditional law of $b$ given $m$, fix an integer $k\in\{0,\dots,m\}$. Then
-\begin{equation}
-    P(b=k\mid b+c=m)=\frac{P(b=k,\;c=m-k)}{P(b+c=m)}.
-\end{equation}
-
-From the multinomial model,
-\begin{equation}
-    P(b=k,\;c=m-k)
-    =
-    \frac{n!}{k!\,(m-k)!\,(n-m)!}
-    (p_a+p_d)^{n-m}p_b^k p_c^{m-k}.
-\end{equation}
-Also,
-\begin{equation}
-    P(b+c=m)
-    =
-    \frac{n!}{m!\,(n-m)!}
-    (p_a+p_d)^{n-m}(p_b+p_c)^m.
-\end{equation}
-Therefore,
-\begin{align}
-P(b=k\mid b+c=m)
-&=
-\frac{
-\frac{n!}{k!\,(m-k)!\,(n-m)!}
-(p_a+p_d)^{n-m}p_b^k p_c^{m-k}
-}{
-\frac{n!}{m!\,(n-m)!}
-(p_a+p_d)^{n-m}(p_b+p_c)^m
-} \\
-&=
-\frac{m!}{k!\,(m-k)!}
-\left(\frac{p_b}{p_b+p_c}\right)^k
-\left(\frac{p_c}{p_b+p_c}\right)^{m-k}.
-\end{align}
-
-This is the probability mass function of a binomial distribution. Hence
-\begin{equation}
-    b\mid (b+c=m)\sim \mathrm{Binomial}\!\left(m,\frac{p_b}{p_b+p_c}\right).
-\end{equation}
-
-Define
-\begin{equation}
-    \eta=\frac{p_b}{p_b+p_c}=\frac{p_b}{\rho}.
-\end{equation}
-Since
-\[
-p_b=\frac{\rho+\delta}{2},
-\qquad
-p_c=\frac{\rho-\delta}{2},
-\]
-it follows that
-\begin{equation}
-    \eta=\frac{1}{2}+\frac{\delta}{2\rho}.
-\end{equation}
-
-Under the null hypothesis of no directional change,
-\begin{equation}
-    H_0:p_b=p_c,
-\end{equation}
-so
-\begin{equation}
-    \eta=\frac12
-\end{equation}
-and therefore
-\begin{equation}
-    b\mid (b+c=m)\sim \mathrm{Binomial}(m,1/2).
-\end{equation}
-
-This means that, under $H_0$, once the total number of discordant items $m$ is fixed, each discordant item is equally likely to be a regression or an improvement. This conditional binomial law is the basis of the exact McNemar test.
-
-For one-sided degradation detection, the alternative is
-\begin{equation}
-    H_a:\eta>\frac{1}{2}.
-\end{equation}
+so that $\eta=1/2$ under $H_0:p_b=p_c$ and $H_a:\eta>1/2$ for one-sided degradation. Appendix~\ref{app:mcnemar-derivation} gives the derivation. Two features matter for what follows: the concordant counts drop out, so only $m$ discordant items carry information; and the detectable effect enters only through the ratio $\delta/\rho$, so a panel with low discordance needs a larger $\delta$ to reach the same $\eta$.
 
 \paragraph{From required discordant pairs to subset size.}
 The sample-size argument first determines how many discordant pairs are needed for the McNemar test, and only then converts this number into a subset size. The normal approximation in this subsection is used only for planning; the actual drift test in Section~\ref{sec:mcnemar-section} uses the exact conditional McNemar test.
@@ -418,18 +311,15 @@ is therefore slightly larger than the planning minimum under these assumptions. 
 \section{Selection bias and monitoring objective}
 \label{sec:selection-bias}
 
-Because the monitoring subset is built from disagreement cases, it is not representative of the full benchmark. In particular, it over-represents hard cases.
-
-Define subset accuracy by
+Because $\mathcal{D}_n$ is built from disagreement cases, it over-represents hard items and is not representative of $\mathcal{D}_N$. Subset accuracy
 \begin{equation}
-    \hat A_n(t)=\frac{1}{n}\sum_{i\in\mathcal{I}_n}\mathbb{I}\bigl(\hat y_{i,t}=y_i\bigr).
+    \hat A_n(t)=\frac{1}{n}\sum_{i\in\mathcal{I}_n}\mathbb{I}\bigl(\hat y_{i,t}=y_i\bigr)
 \end{equation}
-In general, $\hat A_n(t)$ is not an unbiased estimator of $A_N(t)$.
+is therefore not an unbiased estimator of $A_N(t)$. That is intentional: hard cases are more likely to flip under small model updates, so they are better for sensitive paired monitoring than for estimating full-benchmark accuracy.
 
-This is intentional. The subset is not designed for accurate estimation of full-benchmark accuracy, but for sensitive monitoring. Hard cases are more likely to change under small model updates, so they are more useful for drift detection.
-
-Therefore, $\hat A_n(t)$ is interpreted as a monitoring statistic on a fixed hard-case panel, not as a replacement for full-benchmark performance. The methodology keeps these two tasks separate:
+The methodology keeps the two jobs separate for the rest of the thesis:
 \begin{itemize}
-    \item drift detection is performed on the fixed subset $\mathcal{D}_n$;
-    \item final model comparison for deployment returns to the full benchmark $\mathcal{D}_N$.
+    \item drift detection runs on the fixed panel $\mathcal{D}_n$;
+    \item deployment ranking, expected cost, and constrained selection use $\mathcal{D}_N$ (or another representative set).
 \end{itemize}
+Later chapters cite this section instead of restating the distinction.

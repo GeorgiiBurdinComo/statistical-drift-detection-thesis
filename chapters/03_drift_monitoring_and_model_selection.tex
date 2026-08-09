@@ -29,7 +29,7 @@ The sequence $(\hat{A}_t)_{t=1}^T$ is not a sequence of independent Bernoulli me
 
 The goal is to detect whether the deployed model became worse between two evaluation times $t_1$ and $t_2$ on the fixed monitoring panel $\mathcal{D}_n$.
 
-Because the same items are evaluated at both times, the comparison is paired. For each item, we check whether the model was correct or wrong at $t_1$ and at $t_2$. McNemar's test \cite{mcnemar1947} then compares two kinds of changes:
+Because the same items are evaluated at both times, the comparison is paired. For each item, the model is either correct or wrong at $t_1$, and either correct or wrong at $t_2$. McNemar's test \cite{mcnemar1947} then compares two kinds of changes:
 \begin{itemize}
     \item regressions: correct at $t_1$, wrong at $t_2$;
     \item improvements: wrong at $t_1$, correct at $t_2$.
@@ -37,7 +37,7 @@ Because the same items are evaluated at both times, the comparison is paired. Fo
 
 If regressions clearly outnumber improvements, this is evidence of degradation. If the numbers are similar, the observed change is treated as noise rather than a clear deterioration.
 
-The test establishes degradation on the fixed monitoring panel $\mathcal{D}_n$. Because $\mathcal{D}_n$ is disagreement-enriched rather than distribution-representative, this should be interpreted as a high-sensitivity warning signal for broader model change, not as a formal proof of degradation on the full benchmark or production distribution.
+The test establishes degradation on $\mathcal{D}_n$ only. By Section~\ref{sec:selection-bias}, that is a high-sensitivity warning, not a claim about $\mathcal{D}_N$ or production.
 
 \subsection{Contingency table}
 
@@ -89,11 +89,7 @@ H_0:p_b=p_c
 H_a:p_b>p_c.
 \]
 
-Let
-\[
-n_{\mathrm{dis}}=b+c
-\]
-denote the number of discordant pairs. Conditional on $n_{\mathrm{dis}}>0$, the exact McNemar test uses the fact that under $H_0$ each discordant pair is equally likely to be a regression or an improvement \cite{mcnemar1947}. Therefore
+Let $n_{\mathrm{dis}}=b+c$ denote the number of discordant pairs. Conditional on $n_{\mathrm{dis}}>0$, and under $H_0$, each discordant pair is equally likely to be a regression or an improvement \cite{mcnemar1947}, so by~\eqref{eq:conditional-binomial}
 \begin{equation}
     B:=b \mid (b+c=n_{\mathrm{dis}})\sim \mathrm{Bin}\!\left(n_{\mathrm{dis}},\tfrac{1}{2}\right).
 \end{equation}
@@ -124,18 +120,44 @@ If $b+c=0$, there are no discordant pairs and no directional conclusion is drawn
 
 Because the monitoring rule is applied repeatedly over time, $\alpha=0.05$ should be interpreted as a \emph{per-comparison} threshold rather than as a long-run false-alert guarantee. Under repeated monitoring, cumulative false-alert probability increases over time.
 
+\subsection{Baseline choice and multiplicity control}
+\label{sec:baseline-multiplicity}
+
+Two operational details fix how the test in Section~\ref{sec:mcnemar-section} is applied over time.
+
+\paragraph{Fixed baseline.}
+Each model is compared against its \emph{earliest} available run on $\mathcal{D}_n$, not against the preceding week. Write $t_0$ for that first run and $t_1,\dots,t_{T-1}$ for the later ones. Every alert is then a test of $t_k$ against $t_0$. Consecutive-week testing would compare two runs that may both already be degraded, so a slow step down would never produce a large discordant imbalance in any single week. Anchoring on $t_0$ keeps the comparison against the state the deployment was accepted in.
+
+The cost is a dependence on one batch. Because every comparison reuses $t_0$, ordinary sampling noise in that single run shifts the whole series in one direction. Section~\ref{sec:drift-results} shows a case where this happens.
+
+\paragraph{Multiplicity.}
+With $T-1$ comparisons per model, each tested at $\alpha$, the probability of at least one false alert grows as $1-(1-\alpha)^{T-1}$ under independence: for $T-1=22$ and $\alpha=0.05$ this is about $0.68$. A Bonferroni correction restores family-wise control at level $\alpha$ by testing each comparison at
+\begin{equation}
+    \alpha_{\mathrm{adj}}=\frac{\alpha}{T-1}.
+    \label{eq:bonferroni}
+\end{equation}
+For $T-1=22$ this gives $\alpha_{\mathrm{adj}}\approx 0.0023$. The correction is applied per model, over that model's own comparisons, since alerts are acted on per deployment.
+
+Bonferroni is used rather than the step-down Holm procedure because the alert is evaluated online: at time $t_k$ the p-values of later comparisons do not yet exist, and Holm needs the whole family ranked before any threshold is fixed. Bonferroni gives a threshold that is known in advance and is therefore usable in a weekly job. It is the more conservative of the two.
+
+The alerting rule of Section~\ref{sec:mcnemar-section} is used unchanged, with $\alpha$ replaced by $\alpha_{\mathrm{adj}}$:
+\begin{enumerate}
+    \item $b>c$;
+    \item $p_{\mathrm{exact}}<\alpha_{\mathrm{adj}}$.
+\end{enumerate}
+
 \subsection{Empirical examples from monitoring runs}
 
-Tables~\ref{tab:mcnemar_gpt5_meth} and~\ref{tab:mcnemar_gpt5mini_meth} show paired contingency tables from two batch comparisons on the $n=300$ monitoring subset (8~March~2026 vs.\ 10~March~2026).
+Tables~\ref{tab:mcnemar_gpt5_meth} and~\ref{tab:mcnemar_gpt5mini_meth} show paired contingency tables from two batch comparisons on the monitoring subset (8~March~2026 vs.\ 10~March~2026). Panel sizes are slightly below $n=300$ because a small number of requests returned no parsable label in one of the two runs and those items drop out of the pairing.
 
 \begin{table}[htbp]
     \centering
-    \caption{McNemar table for \texttt{gpt-5} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$.}
+    \caption{McNemar table for \texttt{gpt-5} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$ ($n=299$).}
     \label{tab:mcnemar_gpt5_meth}
     \begin{tabular}{c|cc}
         & 2026-03-10 correct & 2026-03-10 wrong \\
         \hline
-        2026-03-08 correct & 291 & 0 \\
+        2026-03-08 correct & 290 & 0 \\
         2026-03-08 wrong   & 0   & 9 \\
     \end{tabular}
 \end{table}
@@ -144,12 +166,12 @@ Here $(b,c)=(0,0)$, so there are no discordant pairs. Operationally, no degradat
 
 \begin{table}[htbp]
     \centering
-    \caption{McNemar table for \texttt{gpt-5.1-mini} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$.}
+    \caption{McNemar table for \texttt{gpt-5-mini} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$ ($n=298$).}
     \label{tab:mcnemar_gpt5mini_meth}
     \begin{tabular}{c|cc}
         & 2026-03-10 correct & 2026-03-10 wrong \\
         \hline
-        2026-03-08 correct & 269 & 13 \\
+        2026-03-08 correct & 267 & 13 \\
         2026-03-08 wrong   & 7   & 11 \\
     \end{tabular}
 \end{table}
@@ -177,16 +199,16 @@ The observed accuracy change is
     =
     \frac{c-b}{n}
     =
-    \frac{7-13}{300}
-    =
-    -0.02.
+    \frac{7-13}{298}
+    \approx
+    -0.020.
 \]
-Thus the panel accuracy dropped by $2$ percentage points. Although $b>c$, the one-sided exact evidence does not meet $\alpha=0.05$. Therefore no degradation alert is triggered under the operational rule above.
+Thus the panel accuracy dropped by about $2$ percentage points. Although $b>c$, the one-sided exact evidence does not meet $\alpha=0.05$, let alone the corrected threshold of Section~\ref{sec:baseline-multiplicity}. No degradation alert is triggered.
 
 \section{Classification metrics on the monitoring subset}
 \label{sec:classification-metrics}
 
-All metrics below are computed on $\mathcal{D}_n$ (Section~\ref{sec:informative-sampling-disagreement}). They describe behaviour on the disagreement-enriched panel; their levels and rankings need not match the corresponding full-benchmark metrics on $\mathcal{D}_N$ (Section~\ref{sec:selection-bias}).
+All metrics below are computed on $\mathcal{D}_n$. Levels and rankings need not match $\mathcal{D}_N$ (Section~\ref{sec:selection-bias}).
 
 Let $\mathrm{TP}_t$, $\mathrm{FP}_t$, $\mathrm{TN}_t$, and $\mathrm{FN}_t$ be confusion counts on $\mathcal{D}_n$ at time $t$ for a given model and a fixed rule mapping provider output to $\hat{y}_{i,t}\in\{0,1\}$. Omit any ratio whose denominator is zero.
 
@@ -233,28 +255,8 @@ Specificity measures true-negative performance. Balanced accuracy mitigates infl
 The monitoring pipeline maps provider outputs to a single hard label $\hat{y}_{i,t}\in\{0,1\}$ via a fixed parsing rule; no per-example graded score is logged for the experiments reported here. The metrics above are therefore computed from one confusion table per model and batch. 
 
 \paragraph{Which metric is most diagnostic on the monitoring panel.}
-On the disagreement-enriched panel, prevalence is high (Chapter~\ref{ch:data}), so raw accuracy can hide asymmetric errors. Recall should dominate when missed relevant posts are expensive (high FN burden), while specificity should dominate when over-flagging irrelevant posts is operationally costly (high FP burden). Precision is useful when analyst workload is constrained by false alarms. Balanced accuracy can be more informative than raw accuracy when class imbalance is strong. McNemar remains the inferential test for panel-level degradation alerts.
-
-A limitation is that McNemar on total correctness may not fully reveal class-specific shifts when improvements in one error type are offset by regressions in another. For that reason, confusion-derived metrics are reported alongside the inferential alert rule.
+Prevalence on $\mathcal{D}_n$ is high (Chapter~\ref{ch:data}), so raw accuracy can hide asymmetric errors. Prefer recall when FN is expensive, specificity when FP is expensive, and precision when analyst capacity is limited by false alarms. McNemar remains the inferential alert; confusion metrics catch class-specific shifts that net correctness can cancel.
 \section{Model comparison and deployment choice}
 \label{sec:model-comparison-manual}
 
-Candidate models $m\in\mathcal{M}_{\mathrm{cand}}$ can be screened on $\mathcal{D}_n$ using
-$\hat{A}_t(m)$,
-$\widehat{\mathrm{Prec}}_t(m)$,
-$\widehat{\mathrm{Rec}}_t(m)$,
-$\widehat{\mathrm{F}}_{1,t}(m)$,
-$\widehat{\mathrm{Spec}}_t(m)$,
-$\widehat{\mathrm{BA}}_t(m)$,
-and mean inference cost $C_t(m)$.
-These quantities give a descriptive profile on the drift-sensitive panel.
-
-They are not sufficient for final deployment choice. The panel $\mathcal{D}_n$ is disagreement-enriched, class-skewed, and visually heavier than the full benchmark, so subset-level metrics and costs are not deployment-representative. Final selection under Chapter~\ref{ch:cost-deployment-utility} should therefore be based on the full benchmark $\mathcal{D}_N$ or another representative evaluation set.
-
-The decision logic has two stages:
-\begin{enumerate}
-    \item detect degradation for the current deployment $m_{\mathrm{curr}}$ on $\mathcal{D}_n$ using the exact one-sided McNemar rule from Section~\ref{sec:mcnemar-section};
-    \item if action is required, compare candidate models on $\mathcal{D}_N$ using the cost-aware or constrained rules from Chapter~\ref{ch:cost-deployment-utility}.
-\end{enumerate}
-
-Final deployment choice is not purely mechanical. Quantitative comparison must be interpreted together with campaign-specific error tolerance, budget, latency, and provider policy. If no acceptable fallback exists, prompt optimisation may be attempted before changing the API model (Chapter~\ref{chap:prompt-optimisation}). Exported numeric panels and dashboards used in the experiments are described in Chapter~\ref{chap:system-architecture}.
+Candidates can be screened on $\mathcal{D}_n$ with the metrics above and mean inference cost $C_t(m)$. Final deployment ranking still uses $\mathcal{D}_N$ under Chapter~\ref{ch:cost-deployment-utility} (Section~\ref{sec:selection-bias}). Operationally: detect on $\mathcal{D}_n$ with the one-sided McNemar rule; if action is required, compare on $\mathcal{D}_N$ (cost-aware or constrained), optionally with prompt repair before a model switch (Chapter~\ref{chap:prompt-optimisation}). The implemented loop is Figure~\ref{fig:run-decision-logic} in Chapter~\ref{chap:system-architecture}.
