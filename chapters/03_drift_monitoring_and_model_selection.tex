@@ -45,7 +45,7 @@ Compare $(E_{i,t_1},E_{i,t_2})$ for each $i\in\{1,\ldots,n\}$. The four outcomes
 
 \begin{table}[htbp]
     \centering
-    \caption{Paired $2\times2$ table for correctness at $t_1$ and $t_2$.}
+    \caption[Paired correctness table]{Paired $2\times2$ correctness at $t_1$ and $t_2$.}
     \label{tab:mcnemar_contingency}
     \begin{tabular}{c|cc}
         & $E_{i,t_2}=1$ & $E_{i,t_2}=0$ \\
@@ -146,65 +146,6 @@ The alerting rule of Section~\ref{sec:mcnemar-section} is used unchanged, with $
     \item $p_{\mathrm{exact}}<\alpha_{\mathrm{adj}}$.
 \end{enumerate}
 
-\subsection{Empirical examples from monitoring runs}
-
-Tables~\ref{tab:mcnemar_gpt5_meth} and~\ref{tab:mcnemar_gpt5mini_meth} show paired contingency tables from two batch comparisons on the monitoring subset (8~March~2026 vs.\ 10~March~2026). Panel sizes are slightly below $n=300$ because a small number of requests returned no parsable label in one of the two runs and those items drop out of the pairing.
-
-\begin{table}[htbp]
-    \centering
-    \caption{McNemar table for \texttt{gpt-5} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$ ($n=299$).}
-    \label{tab:mcnemar_gpt5_meth}
-    \begin{tabular}{c|cc}
-        & 2026-03-10 correct & 2026-03-10 wrong \\
-        \hline
-        2026-03-08 correct & 290 & 0 \\
-        2026-03-08 wrong   & 0   & 9 \\
-    \end{tabular}
-\end{table}
-
-Here $(b,c)=(0,0)$, so there are no discordant pairs. Operationally, no degradation alert is issued and no directional change is detected on the fixed panel.
-
-\begin{table}[htbp]
-    \centering
-    \caption{McNemar table for \texttt{gpt-5-mini} between 8~March~2026 and 10~March~2026 on $\mathcal{D}_n$ ($n=298$).}
-    \label{tab:mcnemar_gpt5mini_meth}
-    \begin{tabular}{c|cc}
-        & 2026-03-10 correct & 2026-03-10 wrong \\
-        \hline
-        2026-03-08 correct & 267 & 13 \\
-        2026-03-08 wrong   & 7   & 11 \\
-    \end{tabular}
-\end{table}
-
-Here $(b,c)=(13,7)$, so $n_{\mathrm{dis}}=20$ and
-\[
-    p_{\mathrm{exact}}
-    =
-    \sum_{k=13}^{20}\binom{20}{k}2^{-20}
-    \approx 0.132.
-\]
-As a large-sample reference summary,
-\[
-    \chi^2_{\mathrm{cc}}
-    =
-    \frac{(|13-7|-1)^2}{20}
-    =
-    \frac{25}{20}
-    =
-    1.25.
-\]
-The observed accuracy change is
-\[
-    \hat{A}_{t_2}-\hat{A}_{t_1}
-    =
-    \frac{c-b}{n}
-    =
-    \frac{7-13}{298}
-    \approx
-    -0.020.
-\]
-Thus the panel accuracy dropped by about $2$ percentage points. Although $b>c$, the one-sided exact evidence does not meet $\alpha=0.05$, let alone the corrected threshold of Section~\ref{sec:baseline-multiplicity}. No degradation alert is triggered.
-
 \section{Classification metrics on the monitoring subset}
 \label{sec:classification-metrics}
 
@@ -259,4 +200,4 @@ Prevalence on $\mathcal{D}_n$ is high (Chapter~\ref{ch:data}), so raw accuracy c
 \section{Model comparison and deployment choice}
 \label{sec:model-comparison-manual}
 
-Candidates can be screened on $\mathcal{D}_n$ with the metrics above and mean inference cost $C_t(m)$. Final deployment ranking still uses $\mathcal{D}_N$ under Chapter~\ref{ch:cost-deployment-utility} (Section~\ref{sec:selection-bias}). Operationally: detect on $\mathcal{D}_n$ with the one-sided McNemar rule; if action is required, compare on $\mathcal{D}_N$ (cost-aware or constrained), optionally with prompt repair before a model switch (Chapter~\ref{chap:prompt-optimisation}). The implemented loop is Figure~\ref{fig:run-decision-logic} in Chapter~\ref{chap:system-architecture}.
+Candidates can be screened on $\mathcal{D}_n$ with the metrics above and mean inference cost $C_t(m)$. Final deployment ranking still uses $\mathcal{D}_N$ under Chapter~\ref{ch:cost-deployment-utility} (Section~\ref{sec:selection-bias}). Operationally: detect on $\mathcal{D}_n$ with the one-sided McNemar rule; if action is required, compare on $\mathcal{D}_N$ (cost-aware or constrained), optionally with prompt repair before a model switch (Chapter~\ref{chap:prompt-optimisation}).

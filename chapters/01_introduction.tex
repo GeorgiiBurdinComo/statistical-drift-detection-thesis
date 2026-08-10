@@ -23,6 +23,7 @@ In addition, if a deployed model exhibits degraded performance, it is natural to
 Accordingly, the analysis does not treat model drift merely as an observational phenomenon. The objective is to develop a practically usable framework for benchmark design, drift-sensitive monitoring, metric-informed manual model selection, and post-drift adaptation for binary classification with black-box LLM APIs.
 
 \section{Research questions}
+\label{sec:research-questions}
 The stated problem is investigated through the following research questions:
 
 \begin{enumerate}
@@ -194,8 +195,13 @@ During evaluation, each social-media post is converted into a structured request
 
 \end{tikzpicture}%
 }
-\caption{Unified representation of the multimodal classification request. The left side shows an illustrative provider-facing API payload. The right side abstracts the same request into three conceptual input groups: campaign definition, post context, and visual content. The coloured arrows indicate how payload components map to the inputs of the LLM classifier, which returns a binary relevance decision.}
+\caption[Multimodal classification request]{API payload mapped to campaign definition, post context, and visual content; binary relevance output.}
 \label{fig:payload-unified}
 \end{figure}
 
 The system prompt defines the classification criteria and the list of campaign brands. The user messages contain the multimodal content of the post, including captions, transcriptions, hashtags, and selected video frames. Figure~\ref{fig:payload-unified} illustrates how the request combines instructions, textual content, and image inputs into one provider-facing payload. The model output is restricted to a binary relevance decision.
+
+\section{Structure of the thesis}
+\label{sec:thesis-structure}
+
+Chapters~\ref{ch:data}--\ref{chap:system-architecture} develop the methodology and the implemented monitoring loop. Chapter~\ref{chap:experimental-results} reports the evidence: discordance, alerts, the \texttt{gpt-4.1-mini} episode, cost rankings, and offline GEPA runs.
