@@ -1,207 +1,108 @@
 \chapter{Introduction}
 
 \section{Context and motivation}
-Industrial classification pipelines increasingly rely on Large Language Model (LLM) providers that expose their systems through application programming interfaces. In such settings, the deployed model can be viewed as a non-stationary black-box function $f_t(x)$ whose internal parameters and update schedule are controlled by the provider rather than by the user. As a result, the behaviour of the same API-accessible model may change over time even when the downstream task, the prompt, and the evaluation procedure remain fixed.
+This thesis studies a small applied-mathematics problem with a direct operational consequence: how to make decisions from repeated, costly observations of a black-box classifier whose behaviour is not assumed to be stationary. The application is campaign-relevance detection at GOCOMO GmbH, where batches of social-media posts are classified as relevant or not relevant to a campaign. Manual review does not scale to the incoming volume, while an erroneous automatic decision creates a campaign-dependent cost.
 
-The practical motivation for the study arises from the author's two-year work experience at GOCOMO GmbH. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, event, or other marketing entity. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, manual verification is not scalable, and automated classification becomes a necessary operational component.
+At time \(t\), an API configuration is therefore treated as a function \(q_t\) observed only through its inputs and outputs. Repeating a fixed benchmark reveals changes in those outputs. Provider-side model state, nondeterminism, request handling, and the surrounding evaluation pipeline are observationally equivalent possible sources of such changes. Behavioural variation of API models has also been documented in prior work~\cite{chen2023chatgpt,echterhoff2024muscle}.
 
-However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade due to silent provider-side updates~\cite{chen2023chatgpt}, and an update that improves a model on average can still break cases the previous version handled correctly~\cite{echterhoff2024muscle}. In a business-critical pipeline, such degradation must be detected early. At the same time, repeated full-scale benchmarking on a large labelled dataset is costly. This creates a need for a monitoring methodology that is statistically informative, operationally feasible, and economically justified.
+The resulting design problem has two constraints. First, evaluating every model repeatedly on the full labelled benchmark is expensive. Second, a statistically significant change is not yet a deployment decision: the importance of false positives and false negatives, together with inference price, determines which candidate is useful. The methodology must consequently connect statistical detection to decision cost without confusing their roles.
 
-\section{Problem statement}
-The problem is to evaluate and monitor API-based LLM classifiers in a production environment where model behaviour may change over time. The central challenge is that the user does not control the underlying model updates, yet must still make reliable deployment decisions based on observed task performance.
+\section{Problem statement and analytical decomposition}
+Let \(x_i\) denote multimodal post \(i\), \(y_i\in\{0,1\}\) its reference label, and \(\hat y_{i,t}(q)=q_t(x_i)\) the API output from configuration \(q\). The objective is to obtain reproducible evidence about changes in the observable mapping and to turn that evidence into an operational action.
 
-More specifically, the problem consists of four interconnected parts:
+Three functions are kept separate throughout:
 \begin{enumerate}
-    \item The social-media relevance detection task must be formalised in a way that permits consistent evaluation across models, prompts, and time points.
-    \item Because repeated evaluation on the full reference benchmark is economically expensive, a smaller monitoring subset must be constructed without losing the ability to detect practically relevant performance changes.
-    \item A statistical rule is required to distinguish variability in performance from statistically significant model drift.
-    \item Once multiple candidate models are monitored, deployment decisions must account for predictive performance, inference cost, and campaign-specific tolerance to false positives versus false negatives.
+    \item \textbf{Inference} fixes the task, prompt, request schema, parsing rule, and labelled benchmark used to obtain \(\hat y_{i,t}(q)\).
+    \item \textbf{Monitoring} compares paired correctness outcomes over time on a fixed, economical panel and raises an alert; it does not select a replacement model.
+    \item \textbf{Ranking} evaluates deployment candidates on the full benchmark under predictive error costs and inference cost; it does not reuse the deliberately non-representative monitoring panel as a leaderboard.
 \end{enumerate}
+This separation is central: detection and selection answer different mathematical questions and require different data.
 
-In addition, if a deployed model exhibits degraded performance, it is natural to ask whether this degradation can be mitigated without immediately replacing the model. This motivates the investigation of prompt optimisation as an adaptive mechanism within the monitoring framework.
+\section{Scope and contributions}
+The scope is binary, multimodal campaign-relevance classification through black-box batch APIs. The empirical evidence comprises one existing labelled benchmark, a fixed monitoring panel, and repeated observations over a finite monitoring window.
 
-Accordingly, the analysis does not treat model drift merely as an observational phenomenon. The objective is to develop a practically usable framework for benchmark design, drift-sensitive monitoring, metric-informed manual model selection, and post-drift adaptation for binary classification with black-box LLM APIs.
+Within that scope, the thesis contributes:
+\begin{itemize}
+    \item a formal evaluation target for a time-indexed black-box classifier and a disagreement-based monitoring panel with an explicit power calculation;
+    \item a paired alerting rule based on exact McNemar tests, multiplicity control, and an operational effect-size condition;
+    \item a cost-aware ranking rule that combines false-positive, false-negative, and inference costs on the full benchmark; and
+    \item a reproducible weekly implementation with explicit run identity and replayable artifacts.
+\end{itemize}
 
 \section{Research questions}
 \label{sec:research-questions}
-The stated problem is investigated through the following research questions:
-
+The four questions follow the operational sequence and permit negative or qualified answers:
 \begin{enumerate}
-    \item[RQ1:] How can the campaign-relevance detection task be formally represented as a binary classification problem in a non-stationary, black-box LLM setting?
-    \item[RQ2:] How can a reduced monitoring subset be derived from a larger reference benchmark so that routine evaluation remains substantially cheaper while preserving sensitivity to model drift?
-    \item[RQ3:] Which statistical criteria and alerting rules are appropriate for detecting practically significant performance degradation over time?
-    \item[RQ4:] How should candidate models be compared and selected when deployment decisions depend on predictive quality, inference cost, and campaign-specific error tolerance?
-    \item[RQ5:] To what extent can prompt optimisation improve or recover task performance after drift has been detected, and how can such optimisation be integrated into the monitoring loop?
+    \item[RQ1:] How can campaign relevance be represented as binary classification by a time-indexed black-box API while keeping the empirical evaluation target distinct from population risk?
+    \item[RQ2:] How much cost can a reduced monitoring panel save, and for which levels of output discordance does it retain useful power to detect degradation?
+    \item[RQ3:] Which paired statistical and operational conditions should trigger an alert, and how should repeated comparisons be controlled?
+    \item[RQ4:] How should deployment candidates be ranked when false positives, false negatives, and inference calls have different costs?
 \end{enumerate}
 
-\section{Task Definition}
-\subsection{Classification task}
-At a high level, the production pipeline takes each incoming social-media post and asks an LLM whether the content is relevant to a given marketing campaign. The model sees a structured description of the campaign (brands, slogans, product lines) together with the post's text, hashtags, and selected video frames, and must decide if at least one of the campaign entities is mentioned, visually present (e.g.\ a logo), or otherwise clearly implied. The LLM returns a binary decision for every post in the batch, which is then used downstream for filtering and reporting.
-
-\subsection{Example LLM Request Payload}
-
-During evaluation, each social-media post is converted into a structured request sent to the LLM provider API. The request consists of a system prompt describing the classification task together with user inputs containing the extracted content of the post (text, metadata, and video frames).
+\section{Task definition}
+For each post, the request combines a campaign definition with textual context---caption, transcription, hashtags, mentions, and metadata---and selected images or video frames. The current strict response schema requires the boolean field \texttt{campaign\_relevant} and an auxiliary string \texttt{relevancy\_reasoning}; only the boolean is scored. Figure~\ref{fig:payload-unified} shows the actual canonical request shape; Table~\ref{tab:provider-adapters} gives the three provider-specific batch envelopes derived from it.
 
 \begin{figure}[H]
 \centering
-\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-    font=\small,
     >=Latex,
-    box/.style={
-        draw,
-        rounded corners,
-        thick,
-        align=center,
-        minimum height=1.6cm,
-        text width=4.0cm,
-        inner sep=6pt
-    },
-    proc/.style={
-        draw,
-        rounded corners,
-        thick,
-        align=center,
-        fill=gray!10,
-        minimum height=2.2cm,
-        text width=4.7cm,
-        inner sep=8pt
-    },
-    outputbox/.style={
-        draw,
-        rounded corners,
-        thick,
-        align=center,
-        fill=green!8,
-        minimum height=1.9cm,
-        text width=3.4cm,
-        inner sep=6pt
-    },
-    labelbox/.style={
-        draw,
-        rounded corners,
-        fill=white,
-        font=\bfseries\small,
-        inner sep=3pt
-    },
-    payload/.style={
-        draw,
-        rounded corners,
-        thick,
-        fill=black!3,
-        inner sep=8pt,
-        align=left
-    },
-    mapline1/.style={->, thick, draw=blue!70},
-    mapline2/.style={->, thick, draw=orange!85!black},
-    mapline3/.style={->, thick, draw=green!50!black}
+    node distance=3mm,
+    request/.style={draw=vizaxis, rounded corners=1.5pt, align=left,
+                   fill=vizgrid!25, text width=5.35cm, minimum height=9mm,
+                   inner sep=3pt, font=\scriptsize},
+    process/.style={draw=vizaxis, rounded corners=1.5pt, align=center,
+                    fill=vizgrid!40, minimum height=18mm, text width=2.15cm,
+                    inner sep=4pt, font=\footnotesize},
+    response/.style={draw=vizaxis, rounded corners=1.5pt, align=left,
+                     text width=3.5cm, inner sep=5pt, font=\scriptsize},
+    flow/.style={->, line width=0.6pt, draw=vizink}
 ]
-
-% LEFT PANEL: payload
-\node[payload, anchor=north west] (payloadbox) at (0,0) {%
-\begin{minipage}{7.5cm}
-\ttfamily\footnotesize
-[\par
-\ \{\par
-\ \ \textcolor{blue!80!black}{"role": "system",}\par
-\ \ \textcolor{blue!80!black}{"content": "Classify whether the post is relevant to the campaign}\par
-\ \ \textcolor{blue!80!black}{'Douglas Beauty Day'. Return TRUE or FALSE"}\par
-\ \},\par
-\ \{\par
-\ \ \textcolor{orange!90!black}{"role": "user",}\par
-\ \ \textcolor{orange!90!black}{"content": "Hashtags: []"}\par
-\ \},\par
-\ \{\par
-\ \ \textcolor{orange!90!black}{"role": "user",}\par
-\ \ \textcolor{orange!90!black}{"content": "Transcription: ..."}\par
-\ \},\par
-\ \{\par
-\ \ \textcolor{green!50!black}{"role": "user",}\par
-\ \ \textcolor{green!50!black}{"content": [}\par
-\ \ \ \ \textcolor{green!50!black}{\{"type": "input\_text",}\par
-\ \ \ \ \textcolor{green!50!black}{"text": "Video frames extracted from the post"\},}\par
-\ \ \ \ \textcolor{green!50!black}{\{"type": "input\_image",}\par
-\ \ \ \ \textcolor{green!50!black}{"image\_url": "https://.../frame1.jpg"\},}\par
-\ \ \ \ \textcolor{green!50!black}{\{"type": "input\_image",}\par
-\ \ \ \ \textcolor{green!50!black}{"image\_url": "https://.../frame2.jpg"\}}\par
-\ \ \textcolor{green!50!black}{]}\par
-\ \}\par
-]
-\end{minipage}
+\node[request] (system) {%
+  \textbf{System instruction}\quad\texttt{body.input[0]}\\
+  Campaign definition and fixed decision rules
 };
-
-\node[labelbox] at ($(payloadbox.north)+(0,-0.25)$) {ILLUSTRATIVE API REQUEST};
-
-% conceptual blocks on right
-\node[box, anchor=north west] (prompt) at (10.2,-0.7) {
-    Campaign definition\\[2pt]
-    System prompt with\\
-    brands, slogans, products,\\
-    and relevance criteria
+\node[request, below=of system] (text) {%
+  \textbf{Textual context}\quad\texttt{input\_text}\\
+  Caption, transcript, hashtags, mentions, metadata
 };
-
-\node[box, below=1.0cm of prompt] (text) {
-    Post context\\[2pt]
-    Caption, transcription,\\
-    hashtags, mentions, metadata
+\node[request, below=of text] (media) {%
+  \textbf{Visual context}\quad\texttt{input\_image}\\
+  Post image URL and selected video-frame URLs
 };
-
-\node[box, below=1.0cm of text] (media) {
-    Visual content\\[2pt]
-    Selected video frames\\
-    or attached images
+\node[request, below=of media, fill=vizgrid!45] (schema) {%
+  \textbf{Strict response contract}\quad\texttt{body.text.format}\\
+  Required fields: decision (boolean);\\
+  rationale (string); no additional fields
 };
-
-\node[labelbox] at ($(prompt.north)!0.5!(prompt.north east)+(-1.7,0.35)$) {ABSTRACT INPUT GROUPS};
-
-\node[proc, right=2.5cm of text] (model) {
-    LLM classifier\\[4pt]
-    Multimodal mapping\\[4pt]
-    $f(\text{prompt},\text{ context},\text{ media}) \rightarrow y$\\[4pt]
-    where $y \in \{0,1\}$
+\node[font=\scriptsize\bfseries, anchor=south west]
+  at ($(system.north west)+(0,1.5mm)$) {Canonical batch item \texttt{custom\_id: post-042}};
+\node[font=\scriptsize\itshape, anchor=north west]
+  at ($(schema.south west)+(0,-1.5mm)$) {Ground-truth label remains local and is not sent.};
+\coordinate (busTop) at ($(system.east)+(6mm,0)$);
+\coordinate (busBottom) at ($(schema.east)+(6mm,0)$);
+\coordinate (join) at ($(busTop)!0.5!(busBottom)$);
+\node[process, anchor=west] (model) at ($(join)+(8mm,0)$)
+  {Provider\\adapter\\[2pt]\(+\)\\[2pt]batch API\\configuration \(q_t\)};
+\node[response, right=of model] (output) {%
+  \textbf{Structured response}\\[3pt]
+  \texttt{\{campaign\_relevant:}\\
+  \texttt{\quad true,}\\
+  \texttt{\ relevancy\_reasoning:}\\
+  \texttt{\quad ``Douglas event''\}}\\[3pt]
+  Scored prediction: \(\hat y_{i,t}(q)=1\)
 };
-
-\node[outputbox, right=2.5cm of model] (output) {
-    Binary decision\\[4pt]
-    $y = 1$: relevant\\
-    $y = 0$: not relevant
-};
-
-\node[labelbox] at ($(output.north)+(0,0.35)$) {OUTPUT};
-
-\node[
-    draw,
-    dashed,
-    rounded corners,
-    inner sep=8pt,
-    fit=(prompt)(text)(media)
-] (inputframe) {};
-
-% pipeline arrows
-\draw[->, thick] (prompt.east) -- (model.west);
-\draw[->, thick] (text.east) -- (model.west);
-\draw[->, thick] (media.east) -- (model.west);
-\draw[->, thick] (model.east) -- (output.west);
-
-% mapping anchors in payload
-\coordinate (sysanchor)   at ($(payloadbox.north east)+(-0.1,-1.4)$);
-\coordinate (textanchor)  at ($(payloadbox.north east)+(-0.1,-4.1)$);
-\coordinate (mediaanchor) at ($(payloadbox.north east)+(-0.1,-8.4)$);
-
-% colored mapping arrows
-\draw[mapline1] (sysanchor) .. controls +(1.5,0) and +(-1.3,0) .. (prompt.west);
-\draw[mapline2] (textanchor) .. controls +(1.5,0) and +(-1.3,0) .. (text.west);
-\draw[mapline3] (mediaanchor) .. controls +(1.5,0) and +(-1.3,0) .. (media.west);
-
-\end{tikzpicture}%
-}
-\caption[Multimodal classification request]{API payload mapped to campaign definition, post context, and visual content; binary relevance output.}
+\draw[draw=vizink, line width=0.5pt] (system.east) -- (busTop);
+\draw[draw=vizink, line width=0.5pt] (text.east) -- (text.east-|busTop);
+\draw[draw=vizink, line width=0.5pt] (media.east) -- (media.east-|busTop);
+\draw[draw=vizink, line width=0.5pt] (schema.east) -- (busBottom);
+\draw[draw=vizink, line width=0.5pt] (busTop) -- (busBottom);
+\draw[flow] (join) -- (model.west);
+\draw[flow] (model.east) -- (output.west);
+\end{tikzpicture}
+\caption[Canonical multimodal batch request]{Canonical body before provider adaptation. The strict schema requires a boolean decision and a string rationale, forbids additional properties, and exposes only the boolean decision to the evaluation metrics. Table~\ref{tab:provider-adapters} gives the exact JSONL envelopes.}
 \label{fig:payload-unified}
 \end{figure}
 
-The system prompt defines the classification criteria and the list of campaign brands. The user messages contain the multimodal content of the post, including captions, transcriptions, hashtags, and selected video frames. Figure~\ref{fig:payload-unified} illustrates how the request combines instructions, textual content, and image inputs into one provider-facing payload. The model output is restricted to a binary relevance decision.
-
 \section{Structure of the thesis}
 \label{sec:thesis-structure}
-
-Chapters~\ref{ch:data}--\ref{chap:system-architecture} develop the methodology and the implemented monitoring loop. Chapter~\ref{chap:experimental-results} reports the evidence: discordance, alerts, the \texttt{gpt-4.1-mini} episode, cost rankings, and offline GEPA runs.
+Chapter~\ref{ch:data} defines the benchmark, sentinel panel, and evaluation quantities. Chapter~\ref{ch:drift} develops paired monitoring, and Chapter~\ref{ch:cost-deployment-utility} separates an alert from the later deployment decision. Chapter~\ref{chap:system-architecture} maps these components to a reproducible implementation, and Chapter~\ref{chap:experimental-results} reports the monitoring and cost evidence. The conclusion answers the research questions and states the limits of the available evidence.

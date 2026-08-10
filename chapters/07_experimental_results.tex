@@ -1,183 +1,136 @@
 \chapter{Experimental Results}
 \label{chap:experimental-results}
 
-This chapter reports what the monitoring loop of Chapters~\ref{ch:data}--\ref{chap:system-architecture} produced when it was run for five months, and answers four of the five research questions of Section~\ref{sec:research-questions} in the order in which the loop encounters them:
+This chapter evaluates the complete operational chain studied in the main thesis: repeated panel monitoring, exact paired testing with multiplicity control, and cost-aware candidate ranking after escalation. The evidence window is 15~March--6~July~2026.
 
-\begin{enumerate}
-    \item \textbf{Did the monitor fire, and on what evidence?} (RQ3, Section~\ref{sec:drift-results})
-    \item \textbf{Was the panel cheap enough, and sensitive enough, to justify replacing the full benchmark?} (RQ2, Section~\ref{sec:realized-discordance})
-    \item \textbf{Once an alert escalates, how do candidates rank under expected cost?} (RQ4, Section~\ref{sec:cost-aware-comparison})
-    \item \textbf{Can prompt optimisation recover performance?} (RQ5, Section~\ref{sec:prompt-optimisation-results})
-\end{enumerate}
-
-\paragraph{What was held fixed, and what was not.}
-The monitoring window runs 8~March--27~July~2026. Frozen throughout are the panel $\mathcal{D}_n$ ($n=300$), the prompt, the parsing rule that maps provider output to $\hat y\in\{0,1\}$, and the alerting rule of Section~\ref{sec:baseline-multiplicity}. The \emph{roster} of monitored models is not frozen, and this matters for reading every table below. Fourteen models were evaluated on 8~March; \texttt{gpt-5.4} joined on 1~April; \texttt{gpt-5.4-mini}, \texttt{gpt-5.4-nano}, \texttt{gpt-5.5}, \texttt{claude-sonnet-5}, and \texttt{claude-opus-4-8} joined on 9~July; \texttt{gemini-2.0-flash} and the pinned \texttt{gpt-5.4-2026-03-05} snapshot left in March, and \texttt{gpt-4o-mini} was evaluated only once. Each model is therefore compared against \emph{its own first monitoring run}, not against a common calendar date: 8~March for the original fourteen, 1~April for \texttt{gpt-5.4}, 9~July for the late entrants. Nineteen models contribute at least one comparison; the number of comparisons per model ranges from $2$ to $23$, and a short series means a short history, not a stable model.
-
-\section{What the monitor detected}
+\section{Monitoring results}
 \label{sec:drift-results}
 
-The series comprises 265 baseline-to-current panel comparisons over those nineteen models (full-benchmark escalation days are excluded, since a 1188-item run is not paired against a 300-item panel). Table~\ref{tab:alert-counts} counts alerts under the rules of Section~\ref{sec:baseline-multiplicity}. Bonferroni is applied per model over that model's own $T-1$ comparisons, so the adjusted level differs by model: $\alpha_{\mathrm{adj}}=0.05/23\approx0.0022$ for \texttt{gpt-4.1-mini}, but $0.05/2=0.025$ for a model with a two-week history.
+The canonical monitoring set contains 187 eligible scheduled panel runs from 12 models. A model's first eligible run is its baseline; all later eligible runs for that model yield 173 baseline-to-later paired comparisons. Missing outputs are removed pairwise, so the effective sample size can be below the nominal panel size of 300.
 
-\input{assets/drift/alert_counts.tex}
+At the one-sided nominal level \(\alpha=.05\), three comparisons had \(p_{\mathrm{exact}}<.05\). Applying Holm correction globally across all 173 comparisons left one rejection. That rejection also exceeded the declared operational degradation floor of 3 percentage points, and was therefore the only operational alert. The distinction is important: a small unadjusted \(p_{\mathrm{exact}}\)-value alone did not constitute an alert.
 
-At nominal $\alpha=0.05$ the rule fires 13 times; Bonferroni~\eqref{eq:bonferroni} reduces this to 3. A $-3$pp relevance floor removes nothing further, so all three survivors are also operationally large. Of the three, two consecutive days belong to one \texttt{gpt-4.1-mini} episode (Section~\ref{sec:alerted-degradation-case}); the third is a \texttt{gpt-5-mini} comparison that Section~\ref{sec:gpt5mini-false-alert} shows is baseline noise.
-
-The last two rows show what a magnitude threshold would have done on its own, without any test. A $-3$pp rule fires 15 times --- \emph{more} often than the uncorrected test, and twelve of those fifteen do not survive correction. Tightening to $-5$pp recovers exactly the two \texttt{gpt-4.1-mini} days and nothing else, but only because that cut was chosen after seeing the series. The paired test reaches the same two days without a magnitude constant, and, as the next two subsections show, supplies the $(b,c)$ counts needed to tell a real event from a baseline artefact.
-
-\subsection{The real event: \texttt{gpt-4.1-mini}, 22--23~March}
-\label{sec:alerted-degradation-case}
-
-Figure~\ref{fig:panel-trajectory} plots panel accuracy for every monitored model; each series begins when that model entered the roster. Apart from two adjacent points on \texttt{gpt-4.1-mini}, the series is flat.
+\begin{table}[htbp]
+    \centering
+    \small
+    \caption{Canonical monitoring summary, 15~March--6~July~2026.}
+    \label{tab:canonical-monitoring-summary}
+    \input{assets/metrics_export/canonical_monitoring_summary.tex}
+\end{table}
 
 \begin{figure}[htbp]
     \centering
-    \input{assets/drift/fig_panel_trajectory.tex}
-    \caption[Panel accuracy, Mar--Jul 2026]{Panel accuracy on $\mathcal{D}_n$, 8~Mar--27~Jul~2026. \texttt{gpt-4.1-mini} in colour; others grey.}
-    \label{fig:panel-trajectory}
+    \includegraphics[width=\linewidth]{assets/evidence/fig_canonical_monitoring_trajectory.pdf}
+    \caption[Canonical panel-accuracy trajectories]{Panel accuracy for the 12 canonical monitoring series. The highlighted \texttt{gpt-4.1-mini} point is the only comparison that survived global Holm correction and the operational magnitude floor. Grey trajectories provide same-period context but are not formal controls for every model-specific failure mode.}
+    \label{fig:canonical-monitoring-trajectory}
 \end{figure}
+\FloatBarrier
 
-\texttt{gpt-4.1-mini} runs at $0.797$--$0.807$ through mid-March, falls to $0.663$ on 22~March and $0.513$ on 23~March ($-13.1$pp and $-28.3$pp vs.\ the 8~March baseline, both far beyond $\alpha_{\mathrm{adj}}=0.0022$), and is back at $0.797$ on 28~March. Thereafter it stays in $0.787$--$0.826$. The model was a monitored candidate rather than the one serving production traffic, so no corrective action was taken; the episode is used here as a detection case, not as an incident report.
-%% TODO: name the production model explicitly if it may be disclosed.
+\paragraph{The operational alert.}
+The alert compared \texttt{gpt-4.1-mini} on 15~March with its 22~March run. There were \(n_{\mathrm{paired}}=296\) complete pairs: \(b=49\) items degraded from correct to incorrect and \(c=12\) improved. Accuracy fell from \(0.7872\) to \(0.6622\), a change of \(-12.5\) percentage points. The one-sided exact McNemar p-value was \(p_{\mathrm{exact}}=9.849\times10^{-7}\); the global Holm-adjusted value was \(p_{\mathrm{Holm}}=1.704\times10^{-4}\). Thus both the statistical and operational conditions were met. The paired evidence identifies a change in this model's observed correctness on the panel. Provider state and other causal mechanisms remain unobserved.
 
-\paragraph{The evidence is the imbalance, not the churn.}
-Table~\ref{tab:contingency-trigger} gives the paired correctness table behind the 22~March alert.
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.68\linewidth]{assets/evidence/fig_canonical_mcnemar_matrix.pdf}
+    \caption[Paired transitions behind the alert]{Paired correctness transitions for \texttt{gpt-4.1-mini}, 15--22~March. McNemar's test ignores the two grey concordant cells and evaluates the imbalance between 49 regressions and 12 improvements.}
+    \label{fig:canonical-mcnemar-matrix}
+\end{figure}
+\FloatBarrier
 
-\input{assets/drift/contingency_trigger.tex}
-
-Of 297 paired items, 51 went from correct to wrong and only 12 the other way. A symmetric reshuffle of the same 63 discordant items would leave accuracy unchanged and produce no alert; it is the $51$-vs-$12$ asymmetry that carries the signal ($p_{\mathrm{exact}}=3.7\times10^{-7}$). On 23~March the counts are $b=91$, $c=6$, $n=300$, $p_{\mathrm{exact}}=6.7\times10^{-21}$.
-
-\paragraph{The degradation is one-sided.}
-Accuracy alone does not say \emph{which} errors appeared, and Section~\ref{sec:classification-metrics} argues that net correctness can hide a class-specific shift. Table~\ref{tab:episode-confusion} decomposes the same runs.
-
-\input{assets/drift/episode_confusion.tex}
-
-Specificity never moves: it is $0.96$--$1.00$ throughout, and false positives stay in $0..2$ on every day of the episode. The entire loss is recall, which falls from $0.755$ on 15~March to $0.597$ on 22~March and $0.420$ on 23~March, then returns to $0.760$ on 28~March. The item-level view is unambiguous: of the 51 items that flipped correct-to-wrong on 22~March, all 51 became false negatives, as did all 91 on 23~March. The model did not become noisier --- it stopped assigning the positive class, and the predicted positive rate fell accordingly. This is precisely the pattern that a recall-sensitive deployment would care about and that a raw-accuracy threshold reports only as ``$-13$pp''.
-
-\paragraph{A single-model monitor could not have made this call.}
-Table~\ref{tab:control-same-week} applies the same rule, on the same 22~March batch, to every model that had a pre-trigger baseline. A fault in the evaluation pipeline --- a parsing regression, a truncated batch, a mislabelled panel --- would move the whole roster together.
-
-\input{assets/drift/control_same_week.tex}
-
-Eleven of twelve models move by $-3.1$ to $+1.5$pp; only \texttt{gpt-4.1-mini} moves by $-13.1$pp. The shared-cause explanation is therefore ruled out by the batch itself, without any external information about the provider.
-
-\paragraph{One alert is a trigger, not a decision.}
-The drop recovered within one evaluation cycle. At fire time the rule cannot distinguish transient from sustained (Chapter~\ref{ch:drift}), so a single alert opens the escalation branch --- re-evaluate on $\mathcal{D}_N$, prepare a fallback, keep watching --- rather than a switch. Requiring persistence would have retained this event, since it fired on two consecutive days, and would also have removed the false alert examined next.
-
-\subsection{The false alert: \texttt{gpt-5-mini}}
-\label{sec:gpt5mini-false-alert}
-
-The remaining Bonferroni survivor is \texttt{gpt-5-mini} on 6~April ($-4.7$pp, $p=1.3\times10^{-3}$). Its 8~March baseline ($0.940$) is the highest point in an otherwise flat band ($0.893$--$0.933$), so every later comparison is measured against a favourable draw. Nine of twenty-two comparisons clear $p<0.05$ before correction; 6~April is simply the lowest of them. This is fixed-baseline sampling error (Section~\ref{sec:baseline-multiplicity}), not a step change: Bonferroni removes eight of the nine but not the largest, which is exactly the failure mode a one-off baseline produces. The diagnosis rests on the shape of the whole series and on the paired $(b,c)$ counts; a threshold on $\Delta\widehat A$ alone would have reported an unexplained $-4.7$pp. Persistence, again, is the cheap fix: the alert does not repeat.
-
-\section{Was the panel cheap enough, and sensitive enough?}
+\section{Realised discordance and detectable effects}
 \label{sec:realized-discordance}
 
-Section~\ref{sec:drift-results} produced one true detection and one false alert, and nothing else --- a mostly negative result. Whether that is good news about the models or bad news about the instrument depends on what the panel could have detected, which is what this section establishes. It has two halves: the saving the panel bought (the point of RQ2), and the sensitivity it cost.
+Across the 173 comparisons, median observed discordance was \(0.02685\), where discordance is \((b+c)/n_{\mathrm{paired}}\). This historical value describes how much paired movement occurred in these runs. Future failures may generate much larger discordance, as the alert itself did (\(61/296=0.2061\)); low historical discordance therefore says little about a model's intrinsic stability or the magnitude of future changes.
 
-\paragraph{The saving.}
-On 22~May the same eight candidates were run both on the panel (in the adjacent weekly cycles of 18 and 25~May) and on the full benchmark. The panel cycle cost \$12.26 against \$43.10 for the full-benchmark run: a factor of $3.5$, against a factor of $4.0$ in item count. The gap is not an accounting error but a property of the construction. Panel items were selected by model disagreement (Section~\ref{sec:informative-sampling-disagreement}), so they are harder, draw longer completions, and cost $13\%$ more per item than an average benchmark item. A full weekly monitoring cycle over the whole roster costs about \$25. Routine monitoring is thus affordable at weekly cadence, but the saving is bounded by item count and slightly eroded by the selection that makes the panel informative.
+The historical size calculation used pilot discordance \(\rho_{\mathrm{pilot}}=137/1199=0.1143\), a target degradation of 5 percentage points, and nominal one-sided \(\alpha=.05\). The construction-time approximation suggested \(n_{\mathrm{planned}}=273\), which was rounded upward to \(n_{\mathrm{panel}}=300\). Under the exact unconditional calculation, that rounding raises power from \(0.756\) to \(0.795\); \(n_{\mathrm{planned}}=304\), rather than 273, is the smallest size reaching \(0.80\) under the stated assumptions. The implemented panel therefore came close to its intended nominal sensitivity.
 
-\paragraph{The sensitivity.}
-Panel size was planned at pilot $\hat\rho=0.114$ (Section~\ref{sec:monitoring-sample-size}). Table~\ref{tab:discordance} reports the discordance actually observed against each model's baseline.
+Exact unconditional power calculations also clarify what a 300-item panel can establish outside that single sizing point. At the nearby design discordance \(\rho_{\mathrm{design}}=.12\), the 80\%-power minimum detectable degradation is \(5.15\) percentage points at nominal \(\alpha=.05\), but \(8.32\) percentage points at the family-conservative level \(\alpha=.05/173\). For a 3-percentage-point degradation, exact power is only \(0.387\) nominally and \(0.017\) under the family-conservative level.
 
-\input{assets/drift/discordance.tex}
-
-The pooled median is $0.033$, well below the pilot. Realised churn spans $0.156$ (\texttt{gpt-4.1-nano}) down to $0.007$ (\texttt{gpt-5}); the pilot model sat in the high-churn part of that range, so the panel was sized on the most favourable case in the roster. The one entry that looks like an outlier is \texttt{gpt-4.1-mini}, whose median is a low $0.060$ but whose maximum is $0.323$ --- the March episode, visible here as a churn spike independently of the accuracy series.
+\begin{table}[htbp]
+    \centering
+    \small
+    \caption{Exact power at \(n_{\mathrm{panel}}=300\) and \(\rho_{\mathrm{design}}=.12\).}
+    \label{tab:canonical-power}
+    \input{assets/metrics_export/canonical_power_summary.tex}
+\end{table}
 
 \begin{figure}[htbp]
     \centering
-    \input{assets/drift/fig_stability.tex}
-    \caption[Realized discordance over the monitoring period]{Discordance $\hat\psi=(b+c)/n$ vs.\ baseline, 8~Mar--27~Jul~2026. \texttt{gpt-4.1-nano}, \texttt{gpt-5}, and \texttt{gpt-5-mini} highlighted; rings mark $p<0.05$ before Bonferroni.}
-    \label{fig:stability}
+    \includegraphics[width=\linewidth]{assets/evidence/fig_canonical_power_heatmap.pdf}
+    \caption[Exact power over discordance and degradation]{Exact unconditional power of the one-sided McNemar test for \(n_{\mathrm{panel}}=300\). The white contour marks 80\% power; the cross marks design discordance \(\rho_{\mathrm{design}}=0.12\) and planned degradation \(g=3\text{pp}\). Multiplicity control moves the detectable region upward, making moderate degradation much harder to identify. The blank upper-left region is inadmissible because \(g>\rho_{\mathrm{design}}\).}
+    \label{fig:canonical-power-heatmap}
 \end{figure}
 
-Figure~\ref{fig:stability} shows each model's churn is flat across the window: churn is a model property, not a calendar effect, so a panel sized for one model does not transfer to another. The only spike is the \texttt{gpt-4.1-mini} episode; the rings on \texttt{gpt-5-mini} are the false-alert pattern of Section~\ref{sec:gpt5mini-false-alert}.
+The recorded API charges provide a monetary comparison in addition to the item-count reduction. For the eight models with both measurements, the 22~May full-benchmark sweep cost \(\$43.10\). The mean panel sweep over 18 and 25~May cost \(\$12.26\), a reduction of \(\$30.84\), or \(71.6\%\). The ratio is \(3.51\), slightly below the \(1199/300=4.00\) item ratio because request lengths, outputs, and model prices differ.
 
-Power follows directly. Equation~\eqref{eq:planning-discordant-m} needs $m\approx31$ discordant pairs to detect $\delta=0.05$ at $80\%$ power. At $\rho=0.007$ a 300-item panel yields $m\approx2$, so the flat series for \texttt{gpt-5} and \texttt{gpt-5.2} are uninformative rather than evidence of stability: the instrument could not have seen a $5$pp degradation in those models. Only the four models with $\rho\gtrsim0.10$ meet the sizing assumption. The negative result of Section~\ref{sec:drift-results} is therefore genuine for the high-churn end of the roster and vacuous for the low-churn end.
+\begin{table}[htbp]
+    \centering
+    \small
+    \caption[Observed panel and benchmark API costs]{Observed API cost per evaluation sweep. The production set is \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, and \texttt{gpt-5}.}
+    \label{tab:monitoring-cost}
+    \input{assets/metrics_export/monitoring_cost_summary.tex}
+\end{table}
 
-This does not weaken the same-batch control of Table~\ref{tab:control-same-week}, which is a different argument: there the low-churn models establish that the 22~March \emph{batch} was not corrupted, and small $b+c$ is what that argument needs. Low power hurts only the claim that a model did not degrade over months, not the claim that a single batch was clean.
+For the three production models---\texttt{gpt-5-mini}, \texttt{gpt-5-nano}, and \texttt{gpt-5}---one panel sweep cost \(\$2.74\), compared with \(\$9.53\) for a full-benchmark sweep. Weekly panel monitoring therefore costs approximately \(\$142.42\) per year in API charges.
 
-The practical consequence is that one panel sized once cannot serve both ends of the roster. Holding $m\approx31$ fixed while $\rho$ falls to $0.01$ would require roughly $n=3100$ items --- more than twice the full benchmark, which defeats the purpose. The workable alternative is a per-model panel size, or accepting that stable models are monitored for large degradations only.
+The error cost of an undetected episode can be estimated conditionally on the penalties used in Section~\ref{sec:cost-aware-comparison}. On the 296 items shared by the \texttt{gpt-4.1-mini} baseline and alert runs, the confusion counts changed from \((\mathrm{FP},\mathrm{FN})=(2,61)\) to \((0,100)\). Holding inference price fixed, the incremental error loss per affected classification is
+\[
+    \Delta L_{\mathrm{err}}
+    =\frac{0.155(0-2)+0.031(100-61)}{296}
+    =\$0.003037.
+\]
 
-\section{How candidates rank after escalation}
+\begin{table}[htbp]
+    \centering
+    \small
+    \caption[Production-model monitoring scenarios]{Model-specific monitoring costs and break-even volumes under the observed episode's incremental error loss of \(\$0.003037\) per affected classification. Costs are USD; annual panel cost assumes 52 weekly sweeps.}
+    \label{tab:production-monitoring-scenarios}
+    \input{assets/metrics_export/production_monitoring_scenarios.tex}
+\end{table}
+
+The first three rows represent separate failure scenarios in which exactly one production model develops an error shift of the observed severity. If \texttt{gpt-5-nano} degrades, its own weekly panel cost breaks even after approximately 37 affected posts; the corresponding thresholds are 142 posts for \texttt{gpt-5-mini} and 723 for \texttt{gpt-5}. If monitoring is treated as one indivisible portfolio covering all three models, the relevant weekly cost is \(\$2.74\) and the break-even volume is 902 affected classifications, regardless of which single model fails. The annual portfolio cost of \(\$142.42\) corresponds to approximately \(46{,}891\) affected classifications.
+
+These calculations are scenarios rather than universal incident costs: another degradation may change FP and FN counts differently, and simultaneous failures would require adding their affected volumes. They nevertheless show why all three models should remain monitored. Each model is a separate failure point, while the total weekly insurance cost remains lower than the estimated loss from one similarly severe undetected episode once approximately 902 posts pass through the failed model.
+
+This qualifies RQ2. The panel demonstrates a substantial measured reduction in API expenditure while retaining sensitivity to large changes such as the observed episode. Useful sensitivity still depends jointly on effect size, discordance, and multiplicity control. Disagreement determined which items entered the panel, whereas the pilot power calculation determined how many were retained. Its relative statistical efficiency and representativeness remain open because no equal-size random-panel comparison was run.
+
+\section{Cost-aware comparison}
 \label{sec:cost-aware-comparison}
 
-Detection uses $\mathcal{D}_n$; deployment ranking uses $\mathcal{D}_N$ (Section~\ref{sec:selection-bias}). This section exercises the second half of that split.
-
-One caveat on what the following table is and is not. The March episode had already recovered by 28~March, so no full-benchmark run was triggered in response to it; the escalation branch was never entered for that alert. The run analysed here is the scheduled full-benchmark evaluation of 22~May~2026, two months later, when \texttt{gpt-4.1-mini} was back at its normal level. It shows what an escalation \emph{would} produce and how the ranking behaves --- it is not the response to the March alert. The same limitation applies, for the same reason, to the GEPA runs in Section~\ref{sec:prompt-optimisation-results}.
-
-Table~\ref{tab:expected-cost-snapshot} applies~\eqref{eq:expected-cost} to that run with $C_{\mathrm{FP}}=0.155$, $C_{\mathrm{FN}}=0.031$ USD ($R=5$).
-
-\begin{table}[htbp]
-    \centering
-    \footnotesize
-    \caption[Expected cost on DN]{Expected cost per request on $\mathcal{D}_N$ (22~May~2026), $C_{\mathrm{FP}}=0.155$, $C_{\mathrm{FN}}=0.031$ USD.}
-    \label{tab:expected-cost-snapshot}
-    \begin{adjustbox}{max width=\linewidth}
-    \input{assets/drift/expected_cost_benchmark.tex}
-    \end{adjustbox}
-\end{table}
-
-Three readings matter.
-\begin{enumerate}
-    \item \textbf{Expected-cost order is not accuracy order.} \texttt{gpt-4.1-nano} is more accurate than \texttt{gpt-4.1-mini} ($0.774$ vs.\ $0.753$) but produces $55$ false positives against $2$, so at $R=5$ it ranks worse on $E_t[\mathcal{C}]$ --- last of the eight, against fourth for the less accurate model.
-    \item \textbf{Lowest inference cost is not lowest overall.} \texttt{gpt-5-nano} is cheapest per request ($0.00033$ USD, a fifth of \texttt{gpt-5-mini}) yet ranks second on expected cost, because $110$ false negatives outweigh the token saving.
-    \item \textbf{The panel would have mis-ordered the fallback.} On $\mathcal{D}_n$ at the last common evaluation day of the metrics export (13~April~2026), \texttt{gpt-4.1-mini} leads \texttt{gpt-4.1-nano} by ten accuracy points ($0.803$ vs.\ $0.700$); on $\mathcal{D}_N$ the accuracy order reverses. This is the selection bias of Section~\ref{sec:selection-bias} made concrete, and it is why escalation must leave the panel before any switch is made.
-\end{enumerate}
-
-\paragraph{How stable is that ranking?}
-Figure~\ref{fig:cost-decision-map} extends the table over the $(R,\lambda)$ plane: each shade is the minimiser of~\eqref{eq:expected-cost-lambda-R}, and the boundaries are the break-even curves of Section~\ref{sec:break-even-analysis}.
-
-\begin{figure}[htbp]
-    \centering
-    \input{assets/drift/fig_cost_decision_map.tex}
-    \caption[Cost-optimal model over $(R,\lambda)$]{Cost-optimal candidate on $\mathcal{D}_N$ over $(R,\lambda)$. Shade encodes winner mean inference cost (light = cheap). Cross: Table~\ref{tab:expected-cost-snapshot}.}
-    \label{fig:cost-decision-map}
-\end{figure}
-
-The flat boundary at $\lambda\approx0.026$~USD separates \texttt{gpt-5-nano} from \texttt{gpt-5-mini}; the two have identical false-positive counts, so the switch between them is driven entirely by the price of a false negative. The operating point of Table~\ref{tab:expected-cost-snapshot} sits just above that boundary, which means a $16\%$ reduction in the assumed $C_{\mathrm{FN}}$ hands deployment to \texttt{gpt-5-nano}. Accuracy leaders occupy only the corner $R\lesssim4$, $\lambda\gtrsim0.10$~USD, and \texttt{gpt-4.1-mini} becomes optimal above $R\approx75$ on false-positive minimality alone.
-
-The recommendation for this roster and this cost model is therefore \texttt{gpt-5-mini}, but held with an explicit caveat: the choice is not robust to the cost parameters. The margin over \texttt{gpt-5-nano} is $5\%$ of expected cost and vanishes under a modest re-estimate of $C_{\mathrm{FN}}$, so $C_{\mathrm{FN}}$ deserves more elicitation effort than the model comparison itself. What the ranking \emph{is} robust to is the choice between accuracy and inference price as a single criterion: neither, taken alone, selects the expected-cost minimiser.
-
-\section{Can prompt optimisation recover performance?}
-\label{sec:prompt-optimisation-results}
-
-As noted above, the March episode resolved before the GEPA branch of Figure~\ref{fig:run-decision-logic} could be entered. The runs reported here are therefore offline: they test whether the mechanism can improve a prompt on this task, not whether it can repair a live drift. Five optimisation runs were launched; two were aborted before completion and are excluded. Table~\ref{tab:gepa-runs} reports the three that finished.
+The deployment comparison uses the 22~May common complete-case intersection: 1113 items observed for all eight candidate models. This avoids changing the evaluated item set across candidates. The illustrative operating point is
+\[
+    w=\frac{C_{\mathrm{FN}}}{C_{\mathrm{FP}}}=0.2,
+    \qquad
+    \lambda=C_{\mathrm{FP}}+C_{\mathrm{FN}}=0.186,
+\]
+equivalently \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\) USD, in addition to mean inference cost. Thus a false positive is assigned five times the cost of a false negative, reflecting the operational burden of sending irrelevant posts into downstream processing.
 
 \begin{table}[htbp]
     \centering
-    \footnotesize
-    \caption[Completed GEPA runs]{Offline GEPA runs (train/validation/test). Validation selects; test is held out.}
-    \label{tab:gepa-runs}
-    \begin{tabular}{llccccr}
-    \toprule
-    Model & Split & Seed val. & Best val. & Seed test & Best test & $\Delta$test \\
-    \midrule
-    \texttt{gpt-4.1-nano} & 719/239/241 & 0.766 & 0.795 & 0.784 & 0.768 & $-1.7$pp \\
-    \texttt{gpt-4.1-nano} & 719/239/241 & 0.762 & 0.816 & 0.747 & 0.776 & $+2.9$pp \\
-    \texttt{gpt-5.4-nano} & 719/239/241 & 0.778 & 0.954 & 0.751 & 0.929 & $+17.8$pp \\
-    \bottomrule
-    \end{tabular}
+    \small
+    \caption{Complete-case results on 22~May 2026 (\(n_t=1113\)); \(w=0.2\), \(\lambda=0.186\).}
+    \label{tab:canonical-cost-comparison}
+    \input{assets/metrics_export/canonical_cost_summary.tex}
 \end{table}
 
-Validation gains are always positive, spanning $+2.9$ to $+17.6$pp, which is what a search that selects on validation must produce. Test gains are not: the first \texttt{gpt-4.1-nano} run loses $1.7$pp on held-out data despite a $+2.9$pp validation gain. The scale of the smaller gains should also be read against measurement noise --- re-scoring the same prompt on the same validation split differs by $3.3$pp from inference variability alone, which is larger than the first run's selected gain. Only the \texttt{gpt-5.4-nano} run improves by a margin that noise cannot explain.
+\texttt{gpt-5-mini} minimises plug-in loss at \(0.003697\). It balances low inference cost with five false positives and 62 false negatives. The cheaper \texttt{gpt-5-nano} is a close second at \(0.003779\): saving on inference and one false positive does not offset its 104 false negatives. The accuracy leader \texttt{gpt-5.2} reaches \(0.97844\) accuracy but has loss \(0.01098\), mainly because its inference cost and 17 false positives are expensive under the stated business asymmetry. Therefore neither maximum accuracy nor minimum API price alone selects the preferred deployment model.
 
 \begin{figure}[htbp]
     \centering
-    \input{assets/drift/fig_gepa_trajectory.tex}
-    \caption[GEPA search trajectory]{GEPA on \texttt{gpt-4.1-nano}: accepted-candidate validation scores and running best.}
-    \label{fig:gepa-opt-curve}
+    \includegraphics[width=0.9\linewidth]{assets/evidence/fig_canonical_cost_decision_map.pdf}
+    \caption[Cost-minimising model over error-cost assumptions]{Model minimising the empirical plug-in loss over relative false-negative cost \(w\) and total error severity \(\lambda\). The cross marks the operating point reported in Table~\ref{tab:canonical-cost-comparison}. Large regions with different winners show why the result is conditional on declared penalties.}
+    \label{fig:canonical-cost-decision-map}
 \end{figure}
 
-Figure~\ref{fig:gepa-opt-curve} shows why: accepted-candidate scores are non-monotone under Pareto retention (Section~\ref{sec:gepa}), and the running best is still improving when the metric-call budget is exhausted. The search had not converged, so these numbers bound the mechanism from below rather than characterising it. Taken together, the three runs show that GEPA can move a prompt on this task and that a single-split validation gain is not sufficient evidence to deploy the result.
+The penalties encode the intended business preference, but they are not estimated from realised downstream losses. The choice is also close: the loss advantage of \texttt{gpt-5-mini} over \texttt{gpt-5-nano} is about \(8.2\times10^{-5}\) USD per request. The decision map therefore matters as much as the point ranking: a modest change in the assumed penalties can change the winner. Sampling uncertainty in the plug-in ranking is not quantified here.
 
-\section{Takeaways and limitations}
+\section{What these results establish}
 \label{sec:what-established}
 
-\begin{itemize}
-    \item \textbf{RQ2 --- partially answered.} The 300-item panel costs $3.5\times$ less than a full-benchmark cycle over the same candidates and is affordable weekly at about \$25 for the whole roster. Sensitivity is preserved only where it was planned for: models with $\rho\gtrsim0.10$ meet the $80\%$-power assumption, while for $\rho<0.03$ a 300-item panel cannot detect a $5$pp degradation at all. The subset is a valid instrument for the high-churn part of the roster and a null instrument for the rest.
-    \item \textbf{RQ3 --- answered.} The paired rule with per-model Bonferroni produced one real, model-specific detection (\texttt{gpt-4.1-mini}, 22--23~March, a pure recall collapse) and one fixed-baseline false alert (\texttt{gpt-5-mini}). Same-batch controls rule out shared pipeline causes; the $(b,c)$ counts, not the accuracy delta, distinguish the two cases; and requiring persistence separates them at no cost.
-    \item \textbf{RQ4 --- answered.} Expected cost reorders the candidates relative to both accuracy and inference price, and relative to the panel ranking. For this roster \texttt{gpt-5-mini} minimises $E_t[\mathcal{C}]$ at $R=5$, but the boundary to \texttt{gpt-5-nano} lies $16\%$ away in $C_{\mathrm{FN}}$, so the decision is governed by cost elicitation rather than by model measurement.
-    \item \textbf{RQ5 --- unanswered.} A conclusive answer needs a sustained episode in which live repair is compared against a switch. Offline GEPA shows the mechanism can move a prompt, on an unconverged budget, with one of three runs regressing on held-out data --- not that it recovers a drifted deployment.
-\end{itemize}
+The results show that the monitoring procedure performed its intended task. Across 173 scheduled comparisons, it detected the one severe episode: a \(12.5\)-percentage-point decrease with 49 regressions against 12 improvements, significant after global Holm correction and above the pre-declared magnitude floor. None of the other 172 comparisons met both alert conditions. This does not prove that their underlying effects were exactly zero, but it does show that none supplied corrected evidence of a degradation large enough to trigger operational escalation. The procedure therefore separated a material change from ordinary week-to-week variation without relying on unadjusted significance alone.
 
-The results are further limited in four ways. Provider state is unobserved, so drift is inferred only from panel outputs and no claim is made about its cause. A single baseline run propagates its own sampling error through every subsequent comparison for that model, which is the mechanism behind the false alert of Section~\ref{sec:gpt5mini-false-alert}. One panel sized from one pilot underpowers the low-churn models, as Section~\ref{sec:realized-discordance} quantifies. Finally, monetary rankings move with provider pricing even when the confusion structure is fixed, so Table~\ref{tab:expected-cost-snapshot} is a snapshot of a pricing regime as much as of a model roster.
+The exact provider-side cause of the alert is not identifiable from a black-box API. Model weights, routing, serving configuration, and execution state are not exposed by the provider, so no external evaluation can determine which internal mechanism changed. What the observations can establish is narrower and operationally sufficient: the failure was model-specific, was not accompanied by a comparable same-period decline in the other monitored models, and disappeared in subsequent runs without a local prompt, parser, dataset, or pipeline change. These controls make a shared failure in the evaluation pipeline unlikely; they do not justify inventing an unavailable provider-internal explanation.
+
+The research questions are answered at the level supported by the experiment. For RQ2, the reduced panel lowered the observed sweep cost by \(71.6\%\) and retained sufficient sensitivity to detect the observed large degradation; the power analysis states explicitly which smaller effects cannot be guaranteed under multiplicity control. For RQ3, an alert requires the pre-specified conjunction of directional exact McNemar evidence, family-wise Holm control, and the three-percentage-point operational floor, and the experiment demonstrates that rule end to end. For RQ4, ranking by the declared empirical loss selects \texttt{gpt-5-mini} rather than the most accurate or the cheapest model, while the decision map shows how that choice changes with the cost assumptions.
+
+Taken together, the results validate the complete detection-and-selection pipeline: material degradation was detected, non-alerting variation was not over-interpreted, and the alert was translated into an explicit cost-aware deployment decision. Causal diagnosis inside a closed provider model is outside the observable scope of this pipeline, not a missing statistical conclusion.

@@ -11,30 +11,13 @@
 
 \title{Statistical Drift Detection for Non-Stationary Black-Box LLM Classifiers}
 \author{Georgii}{Burdin}
-\submissiondate{2026}[08][10]
+\submissiondate{2026}[08][14]
 \courseofstudy{B.Sc. Applied Mathematics}
 \seminargroup{MA22w1-B}
 \examiner[Prof.\ Dr.\ rer.\ nat.\ Dr.-Ing.\ habil.]{Florian Zaussinger}
-\addexaminer[M.Sc.]{Marin Ivankovic}
+\addexaminer[M.Sc.]{Marin Ivankovic}[Co-Founder \& CEO of GOCOMO GmbH]
 \abstract{%
-\textbf{1. Context}\\
-GOCOMO uses API-based large language models (LLMs) for campaign-relevance classification on social-media posts.
-
-\textbf{2. Practical Problem}\\
-These API models change over time without full transparency, so the performance of a deployed classification pipeline may degrade.
-
-\textbf{3. Operational Constraint}\\
-Re-running a full benchmark frequently is too expensive.
-
-\textbf{4. Methodological Problem}\\
-Therefore, a framework is needed that can:
-\begin{itemize}
-    \item represent the task consistently,
-    \item monitor performance over time with a smaller but informative sample,
-    \item detect drift statistically,
-    \item support informed model selection using accuracy, precision, recall, F1, and cost,
-    \item and possibly recover performance through prompt optimisation.
-\end{itemize}
+This thesis investigates how black-box Large Language Model classifiers used for campaign-relevance detection can be monitored over time and evaluated for deployment when their behaviour may change without notice. It combines repeated evaluation on a fixed sentinel panel with exact paired statistical testing, multiplicity control, and a separate cost-aware comparison of deployment candidates. The approach is implemented as a reproducible batch workflow that preserves item-level outputs and run identity for later analysis. The empirical study shows that the framework can identify a meaningful change in observed model behaviour, while distinguishing such an alert from evidence about its cause or production impact. It further demonstrates that model selection depends on both classification errors and inference cost rather than accuracy alone. Overall, the thesis provides an auditable decision process connecting monitoring, statistical escalation, and deployment selection.
 }
 \email{\href{mailto:gburdin@hs-mittweida.de}{gburdin@hs-mittweida.de}}
 \location{Mittweida}
@@ -126,7 +109,13 @@ Therefore, a framework is needed that can:
 \newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
 \newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
 
+% Keep the main contents at thesis-outline level; derivation signposts remain in the body.
+\setcounter{tocdepth}{1}
+\RedeclareSectionCommand[tocbeforeskip=0pt]{chapter}
+\BeforeStartingTOC[toc]{\small}
+
 \input{assets/metrics_export/metrics_macros.tex}
+\input{assets/metrics_export/canonical_macros.tex}
 
 \newsavebox{\PayloadListingBox}
 
@@ -142,11 +131,11 @@ Therefore, a framework is needed that can:
 
 \input{chapters/04_cost_aware_deployment_utility.tex}
 
-\input{chapters/05_prompt_optimisation.tex}
-
 \input{chapters/06_system_implementation_and_evaluation.tex}
 
 \input{chapters/07_experimental_results.tex}
+
+\input{chapters/08_conclusion.tex}
 
 \input{chapters/appendix.tex}
 

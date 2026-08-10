@@ -1,325 +1,431 @@
-\chapter{Data and Evaluation Setup}
+\chapter{Evaluation Design and Monitoring Panel}
 \label{ch:data}
 
-This chapter defines the evaluation setting used in the thesis. It introduces the labelled benchmark $\mathcal{D}_N$, the fixed monitoring subset $\mathcal{D}_n$ with $n=300$, and a planning-based rationale for its size. It also clarifies how performance on $\mathcal{D}_n$ should be interpreted. Repeated evaluation over time and the formal drift test are presented later in Section~\ref{sec:formalisation-temporal}.
+\paragraph{Objective.}
+The task of this chapter is to construct a defensible evaluation design before choosing a statistical test. Three questions must be resolved: which performance quantity is actually observable, how the economical sentinel panel was obtained from the full benchmark, and whether its size provides the intended sensitivity to paired degradation. The required output is therefore a fixed monitoring estimand, a reproducible panel definition, an exact power calculation, and an explicit boundary on what can be inferred. The derivation must keep three objects separate: an unobserved production distribution, a finite internal benchmark, and a deliberately non-representative sentinel panel.
 
-\section{Formal problem definition}
+\section{Evaluation target and observable quantities}
 
-At time $t$, the deployed API model is treated as a binary classifier
+Monitoring cannot be designed until ``performance'' has been tied to a precise quantity. This section starts from one API output, converts it into an item-level loss, and then separates the ideal production target from the finite quantity that the available labels can actually support. That separation determines what later changes may legitimately be called degradation.
+
+\paragraph{Time-indexed classifier.}
+
+Let \(x\) denote one multimodal social-media post and let
 \[
-f_t(x)=f(x;\pi,\theta_t)\in\{0,1\},
+y\in\{0,1\}
 \]
-where $\pi$ is the fixed prompt and $\theta_t$ is the provider-controlled model state at time $t$. For benchmark item $x_i$, let
-\[
-\hat y_{i,t}=f_t(x_i)
-\]
-denote the predicted label.
+be its reference label, where \(1\) means campaign-relevant and \(0\) means not campaign-relevant.
 
-Ideally, performance would be measured on the true data distribution at time $t$. Let $P_t$ denote this unobserved distribution. Under zero--one loss, the corresponding population risk is
+At evaluation time \(t\), one API configuration is represented as a binary classifier
 \begin{equation}
-    R_t(f)=\mathbb{E}_{(x,y)\sim P_t}\bigl[\mathbb{I}(f_t(x)\neq y)\bigr].
+    q_t(x)\in\{0,1\}.
+    \label{eq:time-indexed-classifier}
+\end{equation}
+The symbol \(q_t\) represents more than a provider model name. It includes the model exposed at time \(t\), the fixed prompt, request schema, parsing rule, and provider-controlled execution state. For labelled item \((x_i,y_i)\), write the returned prediction as
+\begin{equation}
+    \hat y_{i,t}(q)=q_t(x_i).
+    \label{eq:item-prediction}
 \end{equation}
 
-In practice, $P_t$ is not observed. Evaluation therefore uses a fixed labelled benchmark
-\[
-\mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^N,\qquad N=1199.
-\]
-The set $\mathcal{D}_N$ was not created by the monitoring method itself. It already existed before this study as a manually labelled internal benchmark for the campaign-relevance task and is treated here as a fixed input dataset.
+The time index matters because a black-box API can produce different outputs at different times even when the client sends the same request. The observations reveal the input--output behaviour; they do not reveal whether a difference came from provider weights, routing, nondeterminism, request handling, or another hidden component.
 
-% If true, uncomment:
-% The labels were reused in this thesis without modification.
+\paragraph{Zero--one loss.}
 
-The full-benchmark accuracy at time $t$ is
+Temporal outputs must be placed on a common numerical scale before they can be averaged or paired. Define the zero--one loss for one prediction by
 \begin{equation}
-    A_N(t)=\frac{1}{N}\sum_{i=1}^N \mathbb{I}\bigl(\hat y_{i,t}=y_i\bigr).
+    \ell\bigl(q_t(x),y\bigr)
+    =
+    \mathbb{I}\{q_t(x)\neq y\}
+    =
+    \begin{cases}
+        1,&\text{if the prediction is wrong},\\
+        0,&\text{if the prediction is correct}.
+    \end{cases}
+    \label{eq:zero-one-loss}
 \end{equation}
+The indicator \(\mathbb{I}\{\cdot\}\) equals \(1\) when its condition is true and \(0\) otherwise. Thus averaging zero--one losses gives an error rate.
 
-In general, $A_N(t)$ does not have to equal $1-R_t(f)$, because $\mathcal{D}_N$ is not assumed to be a probability sample from $P_t$. Therefore, the thesis uses $A_N(t)$ and corresponding subset-based quantities as operational evaluation targets, while $R_t(f)$ only motivates the non-stationary setting.
+\paragraph{Ideal production risk.}
 
-\section{Reference benchmark, operational constraint, and monitoring subset}
+The ideal target is introduced first so that the empirical quantities below are not silently given a population interpretation. Suppose, hypothetically, that incoming production pairs \((x,y)\) followed a distribution \(P_t\) that was known at time \(t\). The production zero--one risk of configuration \(q\) would be
+\begin{equation}
+    R_t(q)
+    =
+    \mathbb{E}_{(x,y)\sim P_t}
+    \left[
+        \mathbb{I}\{q_t(x)\neq y\}
+    \right].
+    \label{eq:production-risk}
+\end{equation}
+Because the quantity inside the expectation is either \(0\) or \(1\), its expectation equals the probability of an error:
+\begin{equation}
+    R_t(q)
+    =
+    P_{(x,y)\sim P_t}\{q_t(x)\neq y\}.
+    \label{eq:risk-as-error-probability}
+\end{equation}
+The corresponding production accuracy would be \(1-R_t(q)\).
+
+This quantity is conceptually useful, but it is not observed in this study. The production distribution \(P_t\) is not available as a probability model, and the labelled data were not drawn through a documented probability-sampling design from \(P_t\).
+
+\paragraph{Observed benchmark accuracy.}
+
+Because \(R_t(q)\) is unavailable, the analysis needs a computable replacement whose scope is stated exactly. The available reference is a pre-existing, manually labelled internal benchmark
+\begin{equation}
+    \mathcal{D}_N
+    =
+    \{(x_i,y_i)\}_{i=1}^{N},
+    \qquad
+    N=1199.
+    \label{eq:full-benchmark}
+\end{equation}
+For each benchmark item, define a correctness indicator
+\[
+E_{i,t}(q)
+=
+\mathbb{I}\{\hat y_{i,t}(q)=y_i\}.
+\]
+The finite-benchmark accuracy is
+\begin{equation}
+    A_N(q,t)
+    =
+    \frac{1}{N}\sum_{i=1}^{N}E_{i,t}(q)
+    =
+    \frac{\text{number of correct benchmark predictions}}{N}.
+    \label{eq:finite-benchmark-accuracy}
+\end{equation}
+For example, 900 correct predictions among 1199 items give \(A_N=900/1199\approx0.751\).
+
+Equation~\eqref{eq:finite-benchmark-accuracy} is a complete description of performance on these \(N\) items. It is not automatically an estimate of production accuracy. Such an interpretation would require an additional argument that links the benchmark to \(P_t\), for example a probability sample from the deployment population or a justified transport model. No such link is available here.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Quantity & Data source & Supported interpretation \\
+\midrule
+\(R_t(q)\) & Unobserved \(P_t\) & Production error probability \\
+\(A_N(q,t)\) & Fixed \(\mathcal{D}_N\) & Accuracy on 1199 benchmark items \\
+\(A_n(q,t)\) & Fixed \(\mathcal{D}_n\) & Accuracy on 300 sentinel items \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Benchmark and sentinel panel}
 \label{sec:input-datasets}
 
-Evaluating every candidate model on the full benchmark at high frequency is too expensive for routine monitoring. In the implemented pipeline, one full run over $\mathcal{D}_N$ costs about \$90. This is acceptable for setup or re-evaluation, but not for weekly monitoring.
+The full benchmark supplies a stable empirical reference, but evaluating it every week would defeat the cost-saving purpose of monitoring. This section therefore defines a smaller repeated-evaluation object and compares its composition with the benchmark. The comparison is necessary to establish what economy is gained without mistaking the panel for a representative leaderboard.
 
-For this reason, monitoring is performed on a fixed subset
-\[
-\mathcal{D}_n\subset\mathcal{D}_N,\qquad n\ll N,
-\]
-with $n=300$.
+\paragraph{Economical repeated monitoring.}
 
-The datasets $\mathcal{D}_N$ and $\mathcal{D}_n$ are stored in Langfuse with the same schema and the binary label column \texttt{campaign\_relevant}. Table~\ref{tab:dataset-summary} summarises their composition. How $\mathcal{D}_n$ relates to $\mathcal{D}_N$ for detection versus deployment is fixed in Section~\ref{sec:selection-bias}.
+Running every monitored configuration on all \(N=1199\) items every week is expensive. Repeated monitoring therefore uses a smaller fixed subset
+\begin{equation}
+    \mathcal{D}_n
+    =
+    \{(x_i,y_i):i\in\mathcal{I}_n\}
+    \subset\mathcal{D}_N,
+    \qquad
+    |\mathcal{I}_n|=n=300.
+    \label{eq:sentinel-panel}
+\end{equation}
+Here \(\mathcal{I}_n\) is the set of the 300 retained benchmark identifiers. Once selected, these identifiers and their labels are frozen and reused at every monitoring time. Freezing membership is necessary because later drift calculations pair each item with itself; changing the panel would confound temporal change with a change in evaluated cases.
 
-\begin{table}[htbp]
+The finite-panel accuracy is
+\begin{equation}
+    A_n(q,t)
+    =
+    \frac{1}{n}
+    \sum_{i\in\mathcal{I}_n}
+    \mathbb{I}\{\hat y_{i,t}(q)=y_i\}.
+    \label{eq:finite-panel-accuracy}
+\end{equation}
+This is the primary monitoring estimand: the proportion of this particular panel classified correctly by configuration \(q\) at time \(t\). It is not the full-benchmark accuracy and not the production accuracy.
+
+\paragraph{Observed composition.}
+
+The panel's composition must be inspected because enrichment can change both its accuracy level and the meaning of any comparison with the benchmark. Both datasets are stored in Langfuse with the binary label \texttt{campaign\_relevant}. Table~\ref{tab:dataset-summary} contains direct counts from the fixed exports.
+
+\begin{table}[H]
     \centering
-    \caption[Benchmark and monitoring subset]{Composition of $\mathcal{D}_N$ and $\mathcal{D}_n$: size, class balance, modality.}
+    \caption[Benchmark and monitoring subset]{Composition of the full benchmark and frozen sentinel panel.}
     \label{tab:dataset-summary}
     \begin{tabular}{lcc}
         \toprule
-        & Full benchmark & Monitoring subset ($\mathcal{D}_n$) \\
+        & Full benchmark & Sentinel panel \\
         \midrule
-        Number of posts ($N$ / $n$) & 1199 & 300 \\
+        Number of posts (\(N\) / \(n\)) & 1199 & 300 \\
         Relevant (\texttt{campaign\_relevant}${}=1$) & 682 (56.9\%) & 250 (83.3\%) \\
         Not relevant (\texttt{campaign\_relevant}${}=0$) & 517 (43.1\%) & 50 (16.7\%) \\
         Image posts & 288 & 78 \\
         Video posts & 911 & 222 \\
-        Total attached images (all posts) & 5911 & 1762 \\
+        Total attached images & 5911 & 1762 \\
         Mean images per post & 4.93 & 5.87 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-The counts in Table~\ref{tab:dataset-summary} are direct dataset counts from the fixed Langfuse exports.
+The full-benchmark identifier is
+\[
+\texttt{campaign\_relevance\_02e1a68ccb0f},
+\]
+and the sentinel-panel identifier is
+\[
+\texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}.
+\]
+Recording both identifiers makes the distinction operational: every reported value can be traced to one fixed dataset rather than inferred from its size or class counts.
 
-The corresponding Langfuse dataset identifiers are \texttt{campaign\_relevance\_02e1a68ccb0f} for the full benchmark and \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46} for the monitoring subset.
+The class proportions immediately show that the panel is not a miniature copy of the full benchmark. Positive items make up \(83.3\%\) of the panel but only \(56.9\%\) of the benchmark. The modality and frame-count mix also differ. Consequently:
+\begin{itemize}
+    \item the panel and benchmark can have different accuracy levels even in the same run;
+    \item a direct comparison of \(A_n\) with \(A_N\) confounds model performance with dataset composition; and
+    \item the panel must not be used as a representative deployment leaderboard.
+\end{itemize}
 
-Each post is either an image post or a video post with multiple extracted frames. Both datasets are class-imbalanced. The subset $\mathcal{D}_n$ is much more positive-heavy than $\mathcal{D}_N$, which follows from its construction. Therefore, accuracy values on $\mathcal{D}_N$ and on $\mathcal{D}_n$ are not directly comparable.
-
-The modality mix also differs slightly. In both datasets, most posts are videos. Since video posts contain multiple frames, they are usually more expensive to evaluate than single-image posts. Thus, $\mathcal{D}_n$ is not a stratified copy of $\mathcal{D}_N$.
-
-\section{Disagreement-based subset construction}
+\section{Sentinel-panel construction and reproducibility}
 \label{sec:informative-sampling-disagreement}
 
-A simple random sample from $\mathcal{D}_N$ would be suitable if the main goal were unbiased estimation of $A_N(t)$. This is not the goal here. The subset is used for repeated paired monitoring, where the main goal is to detect changes in model behaviour.
+Once monitoring uses a deliberately selected subset, the selection mechanism becomes part of the evaluation design. Reconstructing it is necessary both to freeze the same items for future comparisons and to understand which conclusions are affected by the panel's disagreement enrichment.
 
-Many items in the full benchmark are easy: several models classify them in the same way. Such cases are less informative for monitoring than cases on which models disagree. Therefore, the monitoring subset is constructed from disagreement cases.
+\paragraph{Selection objective.}
 
-The same idea appears in two established settings. Query-by-committee active learning selects the items on which an ensemble disagrees, because those items carry the most information per label~\cite{settles2009active}. Dynamic benchmarking concentrates evaluation on examples that current models get wrong, on the grounds that a saturated benchmark stops discriminating between systems~\cite{kiela2021dynabench}. Both select for informativeness at the cost of representativeness, which is the trade-off accepted here and quantified in Section~\ref{sec:selection-bias}.
+The historical objective was not representative sampling. It was to spend repeated-evaluation calls on items for which a group of models tended to disagree. This idea is related to query-by-committee and dynamic benchmarking~\cite{settles2009active,kiela2021dynabench}.
+Because disagreement is relative to the models that supplied the votes, the construction ensemble must be documented to define what the panel was enriched for.
 
-Let
+The ensemble contained ten OpenAI and six Gemini models; the exact roster is retained in the provenance export. Coverage was sparse, so items could have different numbers \(K_i\) of available votes.
+
+\paragraph{Available ensemble votes.}
+
+For binary votes \(\hat y_i^{(1)},\ldots,\hat y_i^{(K_i)}\), define
 \begin{equation}
-    \mathcal{M}_{\mathrm{ens}}=\{f^{(1)},\dots,f^{(K)}\}
-\end{equation}
-be the ensemble of $K$ models evaluated on the full benchmark
-\begin{equation}
-    \mathcal{D}_N=\{(x_i,y_i)\}_{i=1}^N.
-\end{equation}
-For item $i$, let
-\[
-\hat y_i^{(k)}\in\{0,1\}
-\]
-denote the prediction of model $f^{(k)}$.
-
-Define the disagreement index set
-\begin{equation}
-    \mathcal{I}_{\mathrm{dis}}
+    \hat p_i
     =
-    \left\{
-        i\in\{1,\dots,N\}
-        \;\middle|\;
-        \exists\,k\neq \ell
-        \text{ such that }
-        \hat y_i^{(k)}\neq \hat y_i^{(\ell)}
-    \right\}.
+    \frac{1}{K_i}
+    \sum_{k=1}^{K_i}\hat y_i^{(k)}.
+    \label{eq:positive-vote-fraction}
 \end{equation}
-Thus, an item belongs to $\mathcal{I}_{\mathrm{dis}}$ if the ensemble does not fully agree on its label.
 
-The monitoring subset is then defined by a fixed index set
-\[
-\mathcal{I}_n\subseteq \mathcal{I}_{\mathrm{dis}},\qquad |\mathcal{I}_n|=n,
-\]
-and
+\paragraph{Disagreement score.}
+
+The historical score multiplied population vote standard deviation by binary entropy:
 \begin{equation}
-    \mathcal{D}_n=\{(x_i,y_i):i\in\mathcal{I}_n\}\subset\mathcal{D}_N.
+s_i
+=
+\sqrt{\frac{1}{K_i}\sum_{k=1}^{K_i}
+\left(\hat y_i^{(k)}-\hat p_i\right)^2}
+\left[-\hat p_i\log\hat p_i-(1-\hat p_i)\log(1-\hat p_i)\right].
+\label{eq:historical-disagreement-score}
 \end{equation}
+It is largest near balanced votes and zero under unanimity. It does not adjust for \(K_i\).
 
-% Optional, if known:
-% In the initial ensemble evaluation, the disagreement pool contained $|\mathcal{I}_{\mathrm{dis}}|=\dots$ items, from which 300 were selected and then frozen.
+\paragraph{Score buckets.}
 
-The reason is simple. Disagreement cases are usually harder than unanimous cases. Harder cases are more likely to reveal small changes in decision behaviour. Therefore, they are more useful for drift monitoring under a limited budget.
+Using score percentiles \(p_{50}\) and \(p_{80}\), the sampler planned \(201\) high-score, \(69\) middle-score, and \(30\) low-score items, drawn without replacement.
 
-% \textit{(Draft.)} Replace the informal ``harder cases'' line above with a precise claim: e.g.\ link disagreement to decision instability (margin / sensitivity) and show that monitoring on $\mathcal{I}_{\mathrm{dis}}$ improves the budget--power trade-off for detecting shifts in paired outcomes or discordant counts compared to uniform sampling from $\mathcal{D}_N$, or give conditions under which it does
+\paragraph{Seeded random draw.}
 
-\section{Monitoring subset size}
+The draw used \texttt{numpy.random.default\_rng(42)}. In the recorded execution, \(p_{50}=0\) and \(p_{80}=0.3000557\); the empty low pool was filled from remaining scored items. The result is a seeded disagreement-weighted sample, not a top-\(300\) ranking or strict disagreement filter.
+
+\paragraph{Reproducibility boundary.}
+
+The provenance export records the roster, coverage, score rule, thresholds, seed, selected identifiers, and their hash. The original ordered prediction matrix is unavailable, so exact replay is impossible. Reproducibility therefore means verifying and reusing the committed 300 identifiers.
+
+\paragraph{Limits of disagreement enrichment.}
+
+Construction-time disagreement does not prove future difficulty, temporal instability, representativeness, or greater power than random membership.
+
+\section{Power design for paired monitoring}
 \label{sec:monitoring-sample-size}
 
-For item $i$ at time $t$, define the correctness indicator
-\begin{equation}
-    E_{i,t}=\mathbb{I}(\hat y_{i,t}=y_i).
-\end{equation}
+The construction procedure explains \emph{which} items entered the panel; it does not show whether \(300\) paired outcomes are enough to detect a relevant change. Panel size therefore requires a separate probability model that connects a hypothesised degradation to the rejection probability of the later alert test.
 
-Section~\ref{sec:mcnemar-section} defines the discordant counts
-\[
-b=\sum_{i=1}^n \mathbb{I}(E_{i,t_1}=1,E_{i,t_2}=0),
-\qquad
-c=\sum_{i=1}^n \mathbb{I}(E_{i,t_1}=0,E_{i,t_2}=1),
-\]
-where $b$ counts regressions (correct $\to$ wrong) and $c$ counts improvements (wrong $\to$ correct). As shown in Section~\ref{sec:mcnemar-section},
-\begin{equation}
-    \hat A_{t_2}-\hat A_{t_1}=\frac{c-b}{n}.
-\end{equation}
+\paragraph{Working model for power.}
 
-Thus, a decrease in panel accuracy implies $b>c$, i.e.\ regressions outnumber improvements.
+\begin{assumption}[Working model for design sensitivity]
+For a candidate planned panel size \(n\), the \(n\) paired correctness outcomes are treated as independent draws from a common four-outcome distribution. An item regresses with probability \(p_b\) and improves with probability \(p_c\).
+\label{ass:chapter2-power-model}
+\end{assumption}
 
-For planning, let $P(\cdot)$ and $\mathbb{E}[\cdot]$ denote probability and expectation for a generic item under the monitoring model, and write
+This model concerns hypothetical complete pairs on the fixed design; it does not make the panel a production sample. Unequal item probabilities or dependence can change the actual power.
+
+\paragraph{Discordance and degradation parameters.}
+
+Separate the probability of any correctness change from its net degradation:
 \begin{equation}
-    p_b=P(E_{i,t_1}=1,E_{i,t_2}=0),
-    \qquad
-    p_c=P(E_{i,t_1}=0,E_{i,t_2}=1),
-    \qquad
     \rho=p_b+p_c,
     \qquad
-    \delta=p_b-p_c,
+    g=p_b-p_c.
+    \label{eq:rho-g-definition}
 \end{equation}
-so that $p_b$ and $p_c$ are the per-item probabilities of a regression and an improvement, $\rho$ is the discordance probability, and $\delta$ the directional imbalance. Since $\mathbb{E}[\hat A_{t_2}-\hat A_{t_1}]=p_c-p_b=-\delta$, a target degradation of size $\Delta_{\mathrm{acc}}>0$ corresponds to $\delta\approx\Delta_{\mathrm{acc}}$.
-
-\paragraph{Conditional view of McNemar's test.}
-Sizing the panel requires the sampling law of the discordant counts. Assume the $n$ paired items are independent and identically distributed over the four outcomes $(1,1),(1,0),(0,1),(0,0)$ with probabilities $p_a,p_b,p_c,p_d$. Conditioning on the number of discordant items $m=b+c$ then gives
+Here \(\rho\) is discordance probability and \(g\) is expected fixed-design accuracy loss. Equivalently,
+\begin{align}
+    p_b&=\frac{\rho+g}{2},\\
+    p_c&=\frac{\rho-g}{2}.
+    \label{eq:rho-g-inverse}
+\end{align}
+Valid degradation scenarios satisfy
 \begin{equation}
-    b\mid (b+c=m)\sim \mathrm{Binomial}(m,\eta),
-    \qquad
-    \eta=\frac{p_b}{\rho}=\frac{1}{2}+\frac{\delta}{2\rho},
+    0\le g\le\rho\le1.
+    \label{eq:admissible-power-region}
+\end{equation}
+
+\paragraph{Distribution of discordant pairs.}
+
+The number of discordant pairs is
+\begin{equation}
+    D\sim\mathrm{Binomial}(n,\rho).
+    \label{eq:discordance-binomial}
+\end{equation}
+
+\paragraph{Direction conditional on discordance.}
+
+Conditional on \(D=d\), regressions satisfy
+\begin{equation}
+    B\mid D=d
+    \sim
+    \mathrm{Binomial}
+    \left(
+        d,\frac{\rho+g}{2\rho}
+    \right).
     \label{eq:conditional-binomial}
 \end{equation}
-so that $\eta=1/2$ under $H_0:p_b=p_c$ and $H_a:\eta>1/2$ for one-sided degradation. Appendix~\ref{app:mcnemar-derivation} gives the derivation. Two features matter for what follows: the concordant counts drop out, so only $m$ discordant items carry information; and the detectable effect enters only through the ratio $\delta/\rho$, so a panel with low discordance needs a larger $\delta$ to reach the same $\eta$.
-
-\paragraph{From required discordant pairs to subset size.}
-The sample-size argument first determines how many discordant pairs are needed for the McNemar test, and only then converts this number into a subset size. The normal approximation in this subsection is used only for planning; the actual drift test in Section~\ref{sec:mcnemar-section} uses the exact conditional McNemar test.
-
-Under $H_0$,
+The improvement probability among discordant items is correspondingly
 \[
-b\mid m\sim \mathrm{Binomial}(m,1/2).
+1-p_{\mathrm{reg}\mid\mathrm{disc}}
+=
+\frac{\rho-g}{2\rho}.
 \]
-For moderate or large $m$, the binomial distribution can be approximated by a normal distribution via the Central Limit Theorem. Since
+
+\paragraph{Exact rejection threshold.}
+
+The alternative distribution above becomes a power calculation only after the test's rejection region has been fixed. Under the boundary null of no directional degradation, regressions and improvements are equally likely among discordant pairs. Thus
 \[
-b\mid m \sim \mathrm{Binomial}(m,1/2),
+B\mid D=d,H_0
+\sim
+\mathrm{Binomial}(d,1/2).
 \]
-it can be written as a sum of $m$ independent Bernoulli variables. Therefore,
+At significance level \(\alpha\), define the smallest regression count whose upper-tail probability is at most \(\alpha\):
+\begin{equation}
+k_\alpha(d)
+=
+\min
+\left\{
+    k\in\{0,\ldots,d\}:
+    \sum_{j=k}^{d}
+    \binom{d}{j}2^{-d}
+    \le\alpha
+\right\}.
+\label{eq:exact-critical-value}
+\end{equation}
+The test rejects when \(B\ge k_\alpha(d)\). If no \(k\) satisfies the condition, set \(k_\alpha(d)=d+1\); rejection is then impossible for that \(d\). This convention includes \(d=0\). A separate threshold is required for each \(d\) because the exact test is discrete and its attainable tail probabilities depend on how many discordant pairs were observed.
+
+\paragraph{Unconditional power.}
+
+At design time \(d\) is not known, so conditional power alone would overstate certainty by treating the future information count as fixed. Before data are observed, \(D\) is random. The unconditional power is therefore the weighted average
 \[
-\mathbb{E}[b\mid m]=\frac{m}{2},
+\sum_{d=0}^{n}
+P(D=d)\,
+\operatorname{Power}(\rho,g;\alpha\mid d).
+\]
+Substituting Equations~\eqref{eq:discordance-mass} and~\eqref{eq:conditional-power} gives
+\begin{equation}
+\begin{split}
+\operatorname{Power}(n,\rho,g;\alpha)
+={}&
+\sum_{d=0}^{n}
+\binom{n}{d}\rho^d(1-\rho)^{n-d}\\
+&{}\times
+\sum_{j=k_\alpha(d)}^{d}
+\binom{d}{j}
+\left(\frac{\rho+g}{2\rho}\right)^j
+\left(\frac{\rho-g}{2\rho}\right)^{d-j}.
+\end{split}
+\label{eq:planning-discordant-m}
+\end{equation}
+Equation~\eqref{eq:planning-discordant-m} is exact under Assumption~\ref{ass:chapter2-power-model}. Unlike the shortcut \(D=n\rho\), it includes the probability of obtaining few or no discordant pairs. Section~\ref{sec:mcnemar-section} derives the conditional binomial law directly from the four-cell multinomial model.
+
+When \(\rho=0\), Equation~\eqref{eq:admissible-power-region} forces \(g=0\). Then \(D=0\) with probability one and degradation-detection power is zero. The fractions containing \(\rho\) are used only for \(\rho>0\).
+
+\paragraph{Sample-size rule.}
+
+The power expression can now be inverted to turn a desired sensitivity into a panel-size requirement. Let the target power be \(1-\beta\), such as \(0.80\). After specifying plausible values of \(\rho\), \(g\), and \(\alpha\), choose
+\begin{equation}
+    n_{\min}
+    =
+    \min
+    \left\{
+        n\in\mathbb{N}:
+        \operatorname{Power}(n,\rho,g;\alpha)
+        \ge1-\beta
+    \right\}.
+    \label{eq:minimum-panel-size}
+\end{equation}
+This is evaluated by integer search: calculate the exact power at \(n=1,2,\ldots\) and stop at the first \(n\) meeting the target.
+
+The threshold \(\alpha\) must match the planning question. Using \(\alpha=0.05\) gives nominal per-comparison power. Using a smaller threshold from a pre-specified family-wise rule gives family-conservative power. These values should be reported separately because repeated-testing control can materially reduce sensitivity.
+
+\paragraph{Historical panel size.}
+
+The abstract rule must finally be applied to the historical design to determine whether the implemented \(n=300\) actually met its stated target. Panel \emph{membership} and panel \emph{size} were chosen by different arguments:
+\begin{itemize}
+    \item membership came from the seeded disagreement-weighted sampler;
+    \item size came from a pilot estimate of discordance and a target degradation.
+\end{itemize}
+
+A pilot repeated evaluation on the full \(N=1199\) benchmark produced \(D=137\) changed correctness outcomes. The estimated discordance probability was therefore
+\begin{equation}
+    \rho_{\mathrm{pilot}}
+    =
+    \frac{137}{1199}
+    =
+    0.1143.
+    \label{eq:pilot-discordance}
+\end{equation}
+The historical planning inputs were
+\[
+g=0.05,
 \qquad
-\mathrm{Var}(b\mid m)=\frac{m}{4},
-\]
-and for sufficiently large $m$,
-\begin{equation}
-    b\mid m \approx \mathcal N\!\left(\frac{m}{2},\frac{m}{4}\right),
-\end{equation}
-where $\mathcal N(\mu,\sigma^2)$ denotes a normal distribution with mean $\mu$ and variance $\sigma^2$.
-
-A common rule of thumb for the normal approximation to a $\mathrm{Binomial}(m,q)$ distribution is
-\[
-mq\ge 5
-\qquad\text{and}\qquad
-m(1-q)\ge 5.
-\]
-Here $q=1/2$, so this requires $m\ge 10$. The estimated values of $m$ in this work are well above this threshold.
-
-Let $z_{1-\alpha}$ and $z_{1-\beta}$ denote the $(1-\alpha)$- and $(1-\beta)$-quantiles of the standard normal distribution. A one-sided level-$\alpha$ test rejects for large $b$, that is,
-\begin{equation}
-    b \ge \frac{m}{2}+z_{1-\alpha}\sqrt{\frac{m}{4}}.
-\end{equation}
-
-Under the alternative,
-\[
-b\mid m\sim \mathrm{Binomial}(m,\eta),
+\alpha=0.05,
 \qquad
-b\mid m \approx \mathcal N\!\bigl(m\eta,m\eta(1-\eta)\bigr).
+1-\beta=0.80.
 \]
-To obtain power at least $1-\beta$, require
-\begin{equation}
-    P_\eta\!\left(
-        b \ge \frac{m}{2}+z_{1-\alpha}\sqrt{\frac{m}{4}}
-    \right)\ge 1-\beta.
-\end{equation}
-After standardization, a sufficient condition is
-\begin{equation}
-    \frac{
-        m(\eta-\tfrac12)-z_{1-\alpha}\sqrt{m/4}
-    }{
-        \sqrt{m\eta(1-\eta)}
-    }
-    \ge z_{1-\beta}.
-\end{equation}
-Rearranging gives
-\begin{equation}
-    m
-    \ge
-    \left(
-        \frac{
-            z_{1-\alpha}\sqrt{0.25}+z_{1-\beta}\sqrt{\eta(1-\eta)}
-        }{
-            \eta-0.5
-        }
-    \right)^2.
-    \label{eq:planning-discordant-m}
-\end{equation}
+Under these inputs, the approximation used during construction suggested \(n=273\). The panel was rounded upward to \(n=300\) to improve sensitivity while remaining much smaller than the full benchmark.
 
-This gives the required number of discordant pairs. To convert it into a panel size, use
+Recalculation with the exact unconditional Equation~\eqref{eq:planning-discordant-m}, using the unrounded \(\rho_{\mathrm{pilot}}=137/1199\), gives:
 \[
-m\approx n\rho,
+\operatorname{Power}(273,137/1199,0.05;0.05)=0.756125,
 \]
-because $\rho$ is the probability that a panel item is discordant. Hence the required subset size is approximately
-\begin{equation}
-    n
-    \ge
-    \frac{1}{\rho}
-    \left(
-        \frac{
-            z_{1-\alpha}\sqrt{0.25}+z_{1-\beta}\sqrt{\eta(1-\eta)}
-        }{
-            \eta-0.5
-        }
-    \right)^2,
-    \qquad
-    \eta=\frac{1}{2}+\frac{\delta}{2\rho}.
-\end{equation}
-
-\paragraph{Operational calibration.}
-First, the discordance probability was estimated from a pilot repeated evaluation of the production model on the full benchmark $\mathcal{D}_N$. Running the same 1199-item dataset twice produced 137 discordant items. Hence the empirical discordance rate is
-\begin{equation}
-    \hat\rho=\frac{137}{1199}\approx 0.1143.
-\end{equation}
-
-Second, the minimum relevant degradation was set to
-\begin{equation}
-    \Delta_{\mathrm{acc}}=0.05.
-\end{equation}
-This value was chosen as an operational threshold motivated by internal annotation practice: especially difficult or disputed posts were on the order of a few percent and were typically reviewed jointly by several analysts. Since this threshold was part of internal workflow practice rather than a formal company-wide metric, it is used here as a pragmatic design assumption.
-
-With
 \[
-\delta\approx \Delta_{\mathrm{acc}}=0.05,
+\operatorname{Power}(300,137/1199,0.05;0.05)=0.795457,
+\]
+and the smallest integer reaching \(0.80\) is
+\[
+n_{\min}=304,
 \qquad
-\hat\rho\approx 0.1143,
+\operatorname{Power}(304,137/1199,0.05;0.05)=0.800729.
 \]
-one obtains
-\begin{equation}
-    \eta=\frac{1}{2}+\frac{\delta}{2\rho}
-    \approx
-    \frac{1}{2}+\frac{0.05}{2\cdot 0.1143}
-    \approx 0.7187.
-\end{equation}
+Thus \(n=300\) did not mathematically guarantee the intended \(80\%\) target under the exact model, but it came close and materially improved on \(n=273\).
 
-For $(\alpha,\beta)=(0.05,0.2)$, this gives a required discordant count of approximately
-\begin{equation}
-    m\approx 31.1.
-\end{equation}
-Using $m\approx n\rho$, the corresponding estimated subset size is
-\begin{equation}
-    n\approx \frac{31.1}{0.1143}\approx 272.2.
-\end{equation}
-Rounding up gives an estimated planning size of about
-\[
-n\approx 273.
-\]
+This conclusion is conditional on the planning assumptions. It supports the chosen \emph{size} only for approximately \((\rho,g,\alpha)=(0.1143,0.05,0.05)\). Sensitivity changes with the monitored model, dependence among items, the future failure mode, and the multiplicity threshold. It does not establish that disagreement-based \emph{membership} is more powerful than random membership.
 
-The implemented choice
-\[
-n=300
-\]
-is therefore slightly larger than the planning minimum under these assumptions. It should be interpreted as a conservative practical rounding up.
-
-\section{Selection bias and monitoring objective}
+\section{Scope of inference}
 \label{sec:selection-bias}
 
-Because $\mathcal{D}_n$ is built from disagreement cases, it over-represents hard items and is not representative of $\mathcal{D}_N$. Subset accuracy
-\begin{equation}
-    \hat A_n(t)=\frac{1}{n}\sum_{i\in\mathcal{I}_n}\mathbb{I}\bigl(\hat y_{i,t}=y_i\bigr)
-\end{equation}
-is therefore not an unbiased estimator of $A_N(t)$. That is intentional: hard cases are more likely to flip under small model updates, so they are better for sensitive paired monitoring than for estimating full-benchmark accuracy.
+The preceding derivation supplies an estimand, a panel, and a sensitivity calculation. This final separation translates those mathematical objects into admissible claims, preventing the economical warning system from being presented as production-risk estimation or deployment ranking.
 
-The methodology keeps the two jobs separate for the rest of the thesis:
+The datasets now have clearly separated roles:
+\begin{enumerate}
+    \item \(P_t\) defines the ideal production risk, but it is unobserved.
+    \item \(\mathcal{D}_N\) supports finite full-benchmark calculations on 1199 labelled items.
+    \item \(\mathcal{D}_n\) supports economical paired monitoring on 300 frozen, disagreement-enriched items.
+\end{enumerate}
+
+Because the panel was not probability-sampled from \(\mathcal{D}_N\) or production, its accuracy and temporal changes describe that panel. Because the full benchmark was not probability-sampled from \(P_t\), its accuracy also remains a finite-benchmark quantity rather than an automatically generalisable production estimate.
+
+The rest of the thesis therefore keeps two jobs separate:
 \begin{itemize}
-    \item drift detection runs on the fixed panel $\mathcal{D}_n$;
-    \item deployment ranking, expected cost, and constrained selection use $\mathcal{D}_N$ (or another representative set).
+    \item paired drift detection describes and tests change on the frozen \(\mathcal{D}_n\);
+    \item deployment ranking, empirical loss, and constrained selection use \(\mathcal{D}_N\) or another deployment-relevant evaluation set.
 \end{itemize}
-Later chapters cite this section instead of restating the distinction.
+An alert triggers full-benchmark evaluation and a separate deployment decision. Estimating production risk, proving a causal mechanism, or establishing the superiority of the disagreement sampler requires additional evidence.
+
+\paragraph{Established result.}
+The chapter has produced the evaluation design required for monitoring. The observable monitoring quantity is the finite-panel accuracy \(A_n(q,t)\) on the same frozen \(n=300\) identifiers at every time point; it is neither \(A_N(q,t)\) nor the unobserved production accuracy \(1-R_t(q)\). Panel membership is fixed by the recovered seeded disagreement-weighted selection record, while panel size is assessed separately by the exact unconditional power model. Under the historical inputs \((\rho,g,\alpha)=(137/1199,0.05,0.05)\), the implemented size has power \(0.795457\), and \(n_{\min}=304\) is required to exceed \(0.80\). Thus the intended economical monitoring object has been defined and its sensitivity quantified, subject to the stated fixed-panel and working-model assumptions. Chapter~\ref{ch:drift} can now derive an alert rule on this object.

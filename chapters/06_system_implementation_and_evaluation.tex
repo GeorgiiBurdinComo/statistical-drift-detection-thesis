@@ -1,168 +1,214 @@
 \chapter{System Implementation}
 \label{chap:system-architecture}
 
-This chapter describes the implemented weekly monitoring pipeline and the post-run decision loop.
+This chapter maps the statistical workflow to an auditable batch system. The implementation is intentionally narrower than a general MLOps platform: it preserves the fixed inputs needed for temporal comparison, records the identity and completeness of each run, and produces artifacts from which monitoring and ranking can be repeated.
 
-\section{Overview}
+\section{Pipeline boundary}
 \label{sec:evaluation-pipeline-overview}
+The implementation has five stages: load \(\mathcal{D}_n\) or \(\mathcal{D}_N\) from Langfuse; construct one canonical multimodal request; serialize it through a provider adapter; retrieve and score the asynchronous results; and export trace snapshots for analysis. Routine monitoring uses the frozen \(n=300\) panel. The full benchmark is reserved for baseline construction and explicit ranking or escalation. The changing model roster and token prices are configuration data in \texttt{config/models.yaml}, not part of the analytical design.
 
-The system has five layers: Langfuse datasets (\(\mathcal{D}_N\), \(\mathcal{D}_n\)); orchestration via \texttt{run\_eval.py} into one canonical request; provider adapters (OpenAI, Gemini, Claude); retrieval/ingestion into Langfuse traces; export/dashboard CSVs. Three GitHub Actions workflows implement the weekly loop (Figure~\ref{fig:ga-weekly-pipelines}): submit batches, retrieve and ingest, sync the Streamlit dashboard.
-
-Routine automation uses only the frozen \(n=300\) panel (\(\approx\) USD~20/pass). Full-benchmark passes (\(N=1199\), \(\approx\) USD~90) are for baseline initialization and explicit escalation. The roster and prices live in \texttt{config/models.yaml} (Table~\ref{tab:monitored-models}).
-
-\begin{table}[htbp]
-\centering
-\caption[Monitored models]{Monitored LLM models by provider.}
-\label{tab:monitored-models}
-\begin{tabular}{ll}
-\toprule
-Provider & Models \\
-\midrule
-OpenAI   & \texttt{gpt-5.4-2026-03-05}, \texttt{gpt-5.2}, \texttt{gpt-5.1}, \texttt{gpt-5}, \\
-         & \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, \texttt{gpt-4.1-mini}, \texttt{gpt-4.1-nano}. \\
-Gemini   & \texttt{gemini-2.5-flash}. \\
-Claude   & \texttt{claude-sonnet-4-6}, \texttt{claude-sonnet-4-5}, \texttt{claude-haiku-4-5}. \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\section{Implemented Monitoring Pipeline}
-
-Provider batch APIs are asynchronous, so submission and retrieval are separate jobs. Figure~\ref{fig:ga-weekly-pipelines} shows the weekly schedule: \texttt{weekly\_drift\_monitoring.yml} (Fri 05:00 UTC), \texttt{weekly\_retrieve.yml} (Mon 05:00 UTC), \texttt{sync-streamlit-dashboard.yml} (Mon 07:00 UTC).
+Figure~\ref{fig:ga-weekly-pipelines} shows the three scheduled workflows. Submission and retrieval are separate because provider batch APIs are asynchronous; the dashboard export begins only after retrieval and ingestion.
 
 \begin{figure}[htbp]
     \centering
     \begin{adjustbox}{max width=\linewidth}
     \input{assets/fig_ga_pipeline.tex}
     \end{adjustbox}
-    \caption[Weekly GitHub Actions schedule]{Weekly GitHub Actions schedule; blue edges are the only shared state between submit and retrieve.}
+    \caption[Weekly GitHub Actions schedule]{Scheduled submission, retrieval and ingestion, and dashboard export. Persisted artifacts connect the asynchronous steps.}
     \label{fig:ga-weekly-pipelines}
 \end{figure}
 
-\subsection{Workflow~1: Submit Batches}
+\section{Inference and submission}
 \label{sec:batch-process}
+Each dataset row is normalized to
+\[
+\{\texttt{custom\_id},\ \texttt{body},\ \texttt{campaign\_relevant}\}.
+\]
+The stable \texttt{custom\_id} is the join key across dates, providers, and ground truth. The request \texttt{body} combines the fixed template in \texttt{config/request\_template.json} with the item's multimodal input. Holding the template, prompt, dataset, output schema, and parser fixed prevents changes in request construction from being mistaken for changes in model output.
 
-Langfuse holds \(\mathcal{D}_N\) and the frozen \(\mathcal{D}_n\) with stable \texttt{custom\_id} join keys and the boolean label \texttt{campaign\_relevant} (Chapter~\ref{ch:data}). Weekly runs submit only \(\mathcal{D}_n\).
+The merge performed by \texttt{load\_dataset.py} is explicit:
+\[
+\texttt{body}
+=
+\{\texttt{**request\_template},\ \texttt{"input"}:\texttt{item.input}\}.
+\]
+Here \texttt{item.input} is a Responses-style message array. A system item contains the campaign instruction; user content contains \texttt{input\_text} and zero or more \texttt{input\_image} parts with image URLs. The ground-truth \texttt{campaign\_relevant} value remains beside \texttt{body} and is not transmitted to the model.
 
-Rows normalize to \(\{\texttt{custom\_id},\;\texttt{body},\;\texttt{campaign\_relevant}\}\), with \texttt{body} built from \texttt{config/request\_template.json} plus the multimodal \texttt{input}. The same template is reused every week so temporal differences are not request-construction artefacts. Orchestrator \texttt{run\_eval.py} loads the panel, ensures Gemini image uploads when needed, and dispatches each model to \texttt{batch\_*.py}. Adapters serialize to the provider batch format, upload JSONL, submit the job, and write the run manifest \texttt{data/batch\_ids.json} (\texttt{run\_id}, \texttt{subset\_size}, per-model batch IDs) into the Actions cache for retrieval.
+The current template sets \texttt{store=true} and requests a strict JSON object named \texttt{CampaignRelevanceMinimal}. Its properties are \texttt{campaign\_relevant:boolean} and \texttt{relevancy\_reasoning:string}; both are required and \texttt{additionalProperties=false}. The reasoning string is therefore required by the current request schema, but it is auxiliary: ingestion stores it while all binary metrics use only \texttt{campaign\_relevant}.
 
-The prediction task is identical across providers: JSON boolean \texttt{campaign\_relevant} under a schema-constrained output. Adapter differences are only transport-level (Table~\ref{tab:provider-adapters}). Claude sanitizes \texttt{custom\_id} on the wire and remaps on download. Gemini replaces image URLs with Files API URIs via \texttt{upload\_gemini\_images.py} and \texttt{data/gemini\_image\_cache.json} (TTL \(\approx\) 47~h). Across providers the output schema is \(\{\texttt{campaign\_relevant},\; \texttt{relevancy\_reasoning}\}\).
+\texttt{run\_eval.py} inserts the selected model and dispatches the canonical body to a provider adapter. Table~\ref{tab:provider-adapters} records the transformations implemented in the three adapters rather than treating them as interchangeable wire formats.
 
 \begin{table}[htbp]
 \centering
-\footnotesize
-\caption[Provider adapter mapping]{Per-provider adapter differences for a shared task and request body.}
+\scriptsize
+\caption[Exact provider batch mapping]{Provider-specific JSONL envelopes and transformations applied to the canonical request body.}
 \label{tab:provider-adapters}
-\setlength{\tabcolsep}{5pt}
-\renewcommand{\arraystretch}{1.25}
-\begin{tabular}{|p{2.0cm}|p{4.2cm}|p{8.1cm}|}
-\hline
-Provider & Schema / response constraint & Provider-specific preprocessing \\
-\hline
-OpenAI & \texttt{text.format} with JSON schema & Reuse canonical multimodal \texttt{input}; keep image URLs as-is \\
-\hline
-Gemini & \texttt{responseSchema} with JSON MIME type & Convert URLs to Files API \texttt{fileUri}; use upload cache (TTL \(\approx\) 47 h); skip rows with missing media \\
-\hline
-Claude & Anthropic \texttt{output\_config} schema & Sanitize \texttt{custom\_id} for submission; remap IDs on result download \\
-\hline
-\end{tabular}
+\begin{tabularx}{\linewidth}{lYY}
+\toprule
+Provider & One JSONL record & Implemented request transformation \\
+\midrule
+OpenAI &
+\texttt{\{custom\_id, method, url, body\}} &
+\texttt{POST /v1/responses}; add \texttt{model}; preserve canonical \texttt{input}, image URLs, and \texttt{text.format}; use low reasoning effort for supported models. \\
+Gemini &
+\texttt{\{key, request\}} &
+Map system text to \texttt{systemInstruction} and user parts to \texttt{contents}; replace image URLs by Files API \texttt{fileData} URI/MIME pairs; map the schema to \texttt{generationConfig.responseSchema}, with temperature zero and thinking disabled for supported models. \\
+Claude &
+\texttt{\{custom\_id, params\}} &
+Sanitize the ID reversibly; map input to \texttt{system} and \texttt{messages}, retaining URL image sources; map the schema to \texttt{output\_config.format}; set \texttt{max\_tokens=1024} and low effort where supported. \\
+\bottomrule
+\end{tabularx}
 \end{table}
 
-\textbf{Output.} The submission workflow produces \texttt{data/batch\_ids.json} and the submitted JSONL files under \texttt{batches/}.
+Every invocation receives a UTC \texttt{run\_id}. Submission writes \texttt{data/batch\_ids.json}, containing that identifier, the requested subset size, and each model's provider and batch identifier. A failed submission is retained in the manifest with a null batch identifier and an error message. Thus a run is identified by its manifest, not inferred later from timestamps.
 
-\subsection{Workflow~2: Retrieve and Ingest}
+\section{Retrieval, completeness, and scoring}
 \label{sec:metrics-dashboard}
+\texttt{poll\_and\_ingest.py} restores the manifest, polls each submitted batch, and writes completed JSONL files to \texttt{data/results/}. Failed, cancelled, expired, and timed-out jobs are reported separately. A missing result file is listed in the retrieval summary and is not replaced by synthetic predictions; the corresponding model--run is incomplete and must not be used as a complete panel observation. The retrieval code reports this state but does not enforce an \(n\)-row completeness gate in the dashboard, so completeness must be checked before a paired test is interpreted.
 
-\texttt{poll\_and\_ingest.py} restores the manifest, polls until completion, and downloads JSONL into \texttt{data/results/}. Then \texttt{ingest.py} normalizes each response, joins \texttt{campaign\_relevant} to ground truth via \texttt{custom\_id}, maps token usage to \texttt{cost\_usd} via \texttt{config/models.yaml}, and writes Langfuse traces with scores.
+For downloaded rows, \texttt{ingest.py} joins the response to its label by \texttt{custom\_id}, records \texttt{model}, \texttt{provider}, and \texttt{run\_id} in trace metadata, and writes three downstream quantities: binary correctness, the TP/FP/TN/FN error type, and token-derived inference cost. Precision, recall, and F1 are then computed as defined in Section~\ref{sec:classification-metrics}. Results without a matching label receive no accuracy or error-type score.
 
-Table~\ref{tab:batch-pricing-examples} lists batch prices for the monitored roster; \texttt{models.yaml} also carries unused candidates for future adds.
+The implementation distinguishes an absent provider result from a malformed returned result. Absence leaves no scored row. By contrast, the current parser maps a missing or invalid structured boolean in a returned row to \texttt{false}; this deterministic fallback avoids silently dropping the row but makes format failure observationally indistinguishable from a valid negative prediction. Schema-constrained responses reduce this risk, but completeness counts and provider error summaries remain necessary when interpreting a run.
 
-\begin{table}[htbp]
+The same scored outputs feed a read-only Streamlit reporting layer used with product stakeholders. Offline Langfuse score and trace snapshots drive three views: Overview (filterable metric trajectories by model and date), McNemar Test (paired alert evidence), and Expected Cost (deployment ranking under declared FP/FN penalties). Figures~\ref{fig:dashboard-overview}--\ref{fig:dashboard-cost} show the implemented tabs. The dashboard does not execute alert or deployment actions; those decisions remain outside the UI.
+
+\begin{figure}[htbp]
     \centering
-    \caption[Batch-API prices]{Batch-API prices (USD per 1M tokens), 16~March~2026. Claude batch = half standard.}
-    \label{tab:batch-pricing-examples}
-    \begin{tabular}{lrr}
-        \toprule
-        Model & Input & Output \\
-        \midrule
-        \texttt{gpt-5.4-2026-03-05}      & 1.25  & 7.50  \\
-        \texttt{gpt-5.2}                 & 0.875 & 7.00  \\
-        \texttt{gpt-5.1}                 & 0.625 & 5.00  \\
-        \texttt{gpt-5}                   & 0.625 & 5.00  \\
-        \texttt{gpt-5-mini}              & 0.125 & 1.00  \\
-        \texttt{gpt-5-nano}              & 0.025 & 0.20  \\
-        \texttt{gpt-4.1-mini}            & 0.20  & 0.80  \\
-        \texttt{gpt-4.1-nano}            & 0.05  & 0.20  \\
-        \midrule
-        \texttt{gemini-2.5-flash}        & 0.15  & 1.25  \\
-        \midrule
-        \texttt{claude-sonnet-4-6}       & 1.78 & 8.92  \\
-        \texttt{claude-sonnet-4-5}       & 1.78 & 8.92  \\
-        \texttt{claude-haiku-4-5}        & 0.59 & 2.97  \\
-        \bottomrule
-    \end{tabular}
-\end{table}
+    \begin{adjustbox}{max width=\linewidth,max totalheight=.72\textheight,center}
+    \includegraphics{assets/evidence/fig_dashboard_overview.png}
+    \end{adjustbox}
+    \caption[Dashboard Overview tab]{Implemented Streamlit Overview tab over offline Langfuse score and trace snapshots. It supports model, metric, and date selection and displays the resulting accuracy trajectories.}
+    \label{fig:dashboard-overview}
+\end{figure}
 
-Trace scores used later: \texttt{accuracy} (\(1/0\) match), \texttt{error\_type} (TP/FP/TN/FN), and \texttt{cost\_usd}. Precision, recall, and F1 follow Section~\ref{sec:classification-metrics}.
+\begin{figure}[htbp]
+    \centering
+    \begin{adjustbox}{max width=\linewidth,max totalheight=.72\textheight,center}
+    \includegraphics{assets/evidence/fig_dashboard_mcnemar.png}
+    \end{adjustbox}
+    \caption[Dashboard McNemar Test tab]{Implemented Streamlit McNemar Test tab. For each model, the tab displays a paired contingency table, discordant counts, and the exact binomial p-value for the selected dates.}
+    \label{fig:dashboard-mcnemar}
+\end{figure}
 
-\subsection{Workflow~3: Dashboard Sync}
+\begin{figure}[htbp]
+    \centering
+    \begin{adjustbox}{max width=\linewidth,max totalheight=.72\textheight,center}
+    \includegraphics{assets/evidence/fig_dashboard_expected_cost.png}
+    \end{adjustbox}
+    \caption[Dashboard Expected Cost tab]{Implemented Streamlit Expected Cost tab. It exposes the cost function and the false-positive/false-negative penalty inputs used for deployment ranking.}
+    \label{fig:dashboard-cost}
+\end{figure}
 
-\texttt{sync-streamlit-dashboard.yml} exports traces/scores via \texttt{export\_langfuse\_csv.py} into committed CSVs in \texttt{gocomo/llm-batch-eval}, then mirrors \texttt{streamlit\_app/} to \texttt{GeorgiiBurdinComo/llm-eval-dashboard}. Tabs: Overview (accuracy/cost over time), McNemar (contingency tables and exact \(p\)), Utility (\(E_t[\mathcal{C}](m)\) with \(R=C_{\mathrm{FP}}/C_{\mathrm{FN}}\)).
-
-\subsection{Artifacts and Cross-Step Data Flow}
+\section{Run identity and stored artifacts}
 \label{sec:artifacts-data-flow}
+Here, a \emph{run} means one submission event covering one dataset subset and one or more models. Its \texttt{run\_id} distinguishes results produced by different scheduled executions. Within a run, one prediction is identified by
+\[
+(\texttt{run\_id},\ \texttt{provider},\ \texttt{model},\ \texttt{custom\_id}).
+\]
+The first three fields identify the execution and model; \texttt{custom\_id} identifies the benchmark item and permits an exact join to its baseline prediction and label.
 
-Workflows share only files: \texttt{data/batch\_ids.json}, \texttt{batches/}, \texttt{data/results/}, Langfuse, then CSV snapshots. Any stage can be replayed from the previous artifact without repeating provider calls.
+The persisted records have the following schemas (question marks denote optional fields and \texttt{|} alternatives):
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize,columns=fullflexible]
+batch_ids.json = {
+  "run_id": string,
+  "subset_size": integer,
+  "batches": [{
+    "model": string,
+    "provider": string,
+    "batch_id": string | null,
+    "error"?: string,
+    "claude_id_map"?: object
+  }]
+}
 
-\FloatBarrier
+result JSONL row = {
+  ("custom_id" | "key"): string,
+  "response": provider_response
+}
+
+Langfuse trace = {
+  "id": string,
+  "timestamp": datetime,
+  "metadata": {
+    "run_id": string, "provider": string, "model": string,
+    "custom_id": string, "batch_eval": boolean
+  },
+  "output": {"campaign_relevant": boolean}
+}
+
+Langfuse score = {
+  "traceId": string,
+  "name": string,
+  ("value": number | "stringValue": string)
+}
+\end{lstlisting}
+The manifest connects a local run to each provider batch. Each downloaded JSONL row retains the provider response and item identifier. Ingestion converts that row into a trace and attaches accuracy, error type, and cost as scores; \texttt{traceId} joins the score records back to the trace. The analysis export then selects the trace identity fields and score values into CSV snapshots.
+
+These records serve two purposes. First, \texttt{run\_id} keeps predictions from different weekly executions separate, while \texttt{custom\_id} pairs the same benchmark item across runs. Second, the saved provider responses allow scoring and statistical analysis to be repeated without calling the model again. This reproduces the processing of existing outputs, not the original model inference. Repeating the inference exactly would additionally require immutable copies or hashes of the dataset, request template, prompt, parser, and model configuration; the current manifest records only the subset size and provider batch identifiers.
 
 \section{Post-run decision logic}
 \label{sec:decision-logic}
+The implementation keeps monitoring and ranking as separate transitions (Figure~\ref{fig:run-decision-logic}). An eligible panel run is compared with the model's baseline on \(\mathcal{D}_n\). The alert rule combines paired statistical evidence with the operational magnitude floor. If it passes, three diagnostics determine whether escalation is justified. First, the run manifest, matched identifiers, missing pairs, provider errors, and malformed structured outputs are audited; this matters because the parser maps an invalid returned boolean to \texttt{false}. Second, the next scheduled observation is checked to distinguish persistence from a rebound. Third, models evaluated in the same batch are inspected for a shared failure pattern. These other models provide context, not formal controls for every model-specific mechanism. Only a credible, operationally actionable episode opens full-benchmark candidate comparison. The dashboard reports this evidence but does not execute a configuration change automatically.
 
-Figure~\ref{fig:run-decision-logic} is the operational loop after each monitoring batch: McNemar on $\mathcal{D}_n$, optional escalation to $\mathcal{D}_N$, then model switch or GEPA.
+Because provider weights are inaccessible, an observed behavioural change leaves two controllable candidate-generation actions: switch to another available model, or revise the hard prompt while retaining the model. The dotted branch in Figure~\ref{fig:run-decision-logic} denotes the second, optional action. Appendix~\ref{app:prompt-optimisation} describes automatic prompt optimisation and the exploratory GEPA runs. A revised prompt is not accepted because its optimisation score improved; it enters the same evaluation on \(\mathcal{D}_N\) and the same acceptance rule as a model-switch candidate.
 
-\FloatBarrier
-\begin{figure}[H]
+\begin{figure}[htbp]
     \centering
-    \begin{adjustbox}{max width=0.92\textwidth}
+    \begin{adjustbox}{max width=\textwidth}
     \begin{tikzpicture}[
     >=Latex,
-    node distance=9mm and 14mm
+    node distance=5mm and 13mm,
+    flowbox/.style={figbox, text width=30mm},
+    auditbox/.style={figbox, text width=66mm, align=left},
+    optionalbox/.style={flowbox, dashed, draw=vizmuted}
     ]
-    
-    \node[figbox] (baseline) {Baseline\\Run\\Metrics};
-    \node[figbox, right=of baseline] (newrun) {New\\Run\\Metrics};
-    
-    \node[figbox, below=11mm of $(baseline)!0.5!(newrun)$] (drift) {DriftTest\\McNemar on fixed\\300-example subset};
-    
-    \node[figbox, left=24mm of drift] (deploy) {Deploy\\Current\\Setup};
-    \node[figbox, right=20mm of drift] (reeval) {Escalation:\\Optional Full\\Re-evaluation\\$ \mathcal{D}_N $};
-    \node[figbox, right=16mm of reeval] (metriccost) {Compare\\metrics + cost};
-    
-    \node[figdiamond, below=9mm of metriccost] (decision) {Choose\\corrective\\action};
-    
-    \node[figbox, below left=7mm and 12mm of decision] (switch) {Switch\\Model};
-    \node[figbox, below right=7mm and 12mm of decision] (gepa) {Run\\GEPA};
-    
-    \draw[figarrow] (baseline) -- (drift);
-    \draw[figarrow] (newrun) -- (drift);
-    
-    \draw[figarrow] (drift) -- node[midway, above, font=\scriptsize]{no drift} (deploy);
-    \draw[figarrow] (drift) -- node[midway, above, font=\scriptsize]{drift + escalation} (reeval);
-    
+    \node[flowbox, fill=vizgrid!35] (baseline) {Baseline\\panel run};
+    \node[flowbox, right=of baseline, fill=vizgrid!35] (newrun) {Eligible current\\panel run};
+    \node[figdiamond, below=7mm of $(baseline)!0.5!(newrun)$, fill=vizgrid!35] (alert)
+      {Alert rule\\passes?};
+    \node[flowbox, left=of alert] (monitor)
+      {No alert:\\continue monitoring};
+    \node[auditbox, below=7mm of alert] (audit) {%
+      \textbf{Diagnostic review}\\[-1pt]
+      1.\ Audit manifest, matched IDs, missing pairs, and provider/parser errors.\\
+      2.\ Check the next run for persistence or rebound.\\
+      3.\ Compare models evaluated in the same batch for a shared failure.};
+    \node[figdiamond, below=6mm of audit, fill=vizgrid!35] (escalate)
+      {Sustained and\\actionable?};
+    \node[flowbox, left=of escalate] (document)
+      {Document episode;\\continue monitoring};
+    \node[flowbox, below left=7mm and 9mm of escalate] (modelcandidate)
+      {Alternative\\model candidate};
+    \node[optionalbox, below right=7mm and 9mm of escalate] (promptcandidate)
+      {Optional revised prompt\\(Appendix~\ref{app:prompt-optimisation})};
+    \node[flowbox, below=13mm of $(modelcandidate)!0.5!(promptcandidate)$] (reeval)
+      {Evaluate candidates\\on \(\mathcal{D}_N\)};
+    \node[flowbox, below=of reeval] (metriccost)
+      {Compare predictive loss\\and API cost};
+    \node[figdiamond, below=6mm of metriccost, fill=vizgrid!35] (decision)
+      {Candidate meets\\acceptance rule?};
+    \node[flowbox, left=of decision] (retain)
+      {Retain current\\setup};
+    \node[flowbox, below=6mm of decision] (switch)
+      {Recommend model\\or prompt change};
+    \draw[figarrow] (baseline) -- (alert);
+    \draw[figarrow] (newrun) -- (alert);
+    \draw[figarrow] (alert.west) -- node[midway, above, font=\scriptsize]{no} (monitor.east);
+    \draw[figarrow] (alert) -- node[midway, right, font=\scriptsize]{yes} (audit);
+    \draw[figarrow] (audit) -- (escalate);
+    \draw[figarrow] (escalate.west) -- node[midway, above, font=\scriptsize]{no} (document.east);
+    \draw[figarrow] (escalate) -- node[pos=0.35, left, font=\scriptsize]{yes} (modelcandidate);
+    \draw[figarrow, dashed, draw=vizmuted] (escalate) --
+      node[pos=0.35, right, font=\scriptsize, text=vizmuted]{yes} (promptcandidate);
+    \draw[figarrow] (modelcandidate) -- (reeval);
+    \draw[figarrow, dashed, draw=vizmuted] (promptcandidate) -- (reeval);
     \draw[figarrow] (reeval) -- (metriccost);
     \draw[figarrow] (metriccost) -- (decision);
-    
-    \draw[figarrow] (decision) -- (switch);
-    \draw[figarrow] (decision) -- (gepa);
-    
-    \coordinate (loopabove) at ($(reeval.north)+(0,1.0)$);
-    \draw[figarrow, rounded corners=2.5pt]
-      (gepa.east) -- ++(0.9,0) |- (loopabove) -- (reeval.north);
-    
+    \draw[figarrow] (decision.west) -- node[midway, above, font=\scriptsize]{no} (retain.east);
+    \draw[figarrow] (decision) -- node[midway, right, font=\scriptsize]{yes} (switch);
     \end{tikzpicture}
     \end{adjustbox}
-    \caption[Post-run decision logic]{Post-run decision logic: McNemar on $\mathcal{D}_n$, optional $\mathcal{D}_N$ re-eval, then switch or GEPA.}
+    \caption[Post-run decision logic]{A panel alert opens diagnostic review rather than automatic deployment. For a sustained, actionable episode, the solid path considers an alternative model and the dotted optional path generates a revised prompt. Either candidate must pass full-benchmark evaluation and the same declared acceptance rule.}
     \label{fig:run-decision-logic}
 \end{figure}
 \FloatBarrier

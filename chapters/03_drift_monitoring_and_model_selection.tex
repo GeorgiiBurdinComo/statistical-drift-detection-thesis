@@ -1,203 +1,344 @@
-\chapter{Drift Monitoring and Model Selection Methodology}
+\chapter{Paired Drift Monitoring and Alerting}
 \label{ch:drift}
 
-Chapter~\ref{ch:data} fixes the monitoring panel $\mathcal{D}_n=\{(x_i,y_i)\}_{i=1}^{n}$ with $n=300$. This chapter specifies repeated evaluation on $\mathcal{D}_n$, paired degradation detection via McNemar's test \cite{mcnemar1947}, classification metrics for reporting and candidate comparison, and the decision logic linking degradation evidence to corrective action.
+\paragraph{Objective.}
+Chapter~\ref{ch:data} supplied a fixed monitoring object; the task here is to derive a decision rule for whether one API configuration has degraded on that object. The rule must use the pairing of identical items, distinguish statistical evidence from operational magnitude, remain valid for the declared family of repeated comparisons, and state what action follows an alert. The required output is a reproducible mapping from two eligible runs to either ``no alert'' or ``escalate'', not an explanation of the cause, an estimate of production risk, or a replacement-model choice.
 
-\section{Temporal evaluation on a fixed panel}
+\section{Fixed-panel comparison design}
 \label{sec:formalisation-temporal}
 
-Let $t\in\{1,\ldots,T\}$ index discrete evaluation batches (e.g.\ weekly). At each $t$, each model under study is evaluated on the same $\mathcal{D}_n$. Cross-time differences therefore reflect changes in outputs on a fixed set of items rather than resampling of the evaluation panel. This removes panel-resampling variation, but cross-time differences may still reflect provider-side model updates, inference-time nondeterminism, or other operational variability.
+An observed accuracy difference is interpretable only if both runs refer to the same task and the same items. This section fixes that comparison contract, defines the common item-level outcome, and handles missing outputs before any effect size or p-value is calculated.
 
-For instance $i$ and time $t$, let $\hat{y}_{i,t}\in\{0,1\}$ be the predicted label and define the correctness indicator
+\paragraph{Correctness representation.}
+
+Let \(q\) denote one complete API configuration: provider model, prompt, parsing rule, and the other fixed client-side settings described in Chapter~\ref{ch:data}. Let \(t=0,1,\ldots\) index evaluation batches. For panel item \(i\),
+\[
+y_i\in\{0,1\}
+\]
+is the manually assigned reference label, and
+\[
+\hat y_{i,t}(q)\in\{0,1\}
+\]
+is the prediction returned by configuration \(q\) at time \(t\).
+
+The alert concerns net classification performance rather than a particular predicted class, so each output is reduced to the common correct/incorrect scale needed for pairing. Define the correctness indicator
 \begin{equation}
-    E_{i,t} = \mathbb{I}(\hat{y}_{i,t}=y_i).
+    E_{i,t}(q)
+    =
+    \mathbb{I}\{\hat y_{i,t}(q)=y_i\}
+    =
+    \begin{cases}
+        1,&\text{if the prediction is correct},\\
+        0,&\text{if the prediction is incorrect}.
+    \end{cases}
+    \label{eq:correctness-indicator}
 \end{equation}
+The symbol \(\mathbb{I}\{\cdot\}\) is an indicator: it returns \(1\) when the statement inside braces is true and \(0\) otherwise.
 
-For any candidate model $m\in\mathcal{M}_{\mathrm{cand}}$, let $\hat{y}_{i,t}(m)$ denote model $m$'s prediction on instance $i$ at time $t$. Define empirical accuracy on $\mathcal{D}_n$ by
+If a run contains \(n\) scored items, its finite-panel accuracy is the average of these zeros and ones:
 \begin{equation}
-    \hat{A}_t(m) = \frac{1}{n}\sum_{i=1}^{n} \mathbb{I}\bigl(\hat{y}_{i,t}(m)=y_i\bigr).
+    A_n(q,t)
+    =
+    \frac{1}{n}\sum_{i=1}^{n}E_{i,t}(q).
+    \label{eq:chapter3-panel-accuracy}
 \end{equation}
-For the current deployment $m_{\mathrm{curr}}$, write
-\begin{equation}
-    \hat{A}_t:=\hat{A}_t(m_{\mathrm{curr}})=\frac{1}{n}\sum_{i=1}^{n}E_{i,t}.
-\end{equation}
+For example, if 240 of 300 indicators equal \(1\), then \(A_{300}=240/300=0.80\). No probability theorem is needed for this calculation: it is simply the observed proportion correct on these items.
 
-The sequence $(\hat{A}_t)_{t=1}^T$ is not a sequence of independent Bernoulli means, because the same items are reused across time. Independent-sample comparisons of $\hat{A}_{t_1}$ and $\hat{A}_{t_2}$, such as two-proportion $z$-tests, do not use the correct matched-pair variance and are therefore inappropriate here. Degradation detection instead uses the paired structure through $(E_{i,t_1},E_{i,t_2})$ (Section~\ref{sec:mcnemar-section}).
+\paragraph{Fixed evaluation contract.}
 
-\section{Statistical degradation detection via McNemar's test}
-\label{sec:mcnemar-section}
+The monitoring comparison relies on the following design condition.
 
-The goal is to detect whether the deployed model became worse between two evaluation times $t_1$ and $t_2$ on the fixed monitoring panel $\mathcal{D}_n$.
+\begin{assumption}[Fixed evaluation contract]
+Between the two runs being compared, the panel identifiers, reference labels, prompt, parsing rule, and intended API configuration are unchanged. Each retained record is aligned by item identifier.
+\label{ass:fixed-evaluation-contract}
+\end{assumption}
 
-Because the same items are evaluated at both times, the comparison is paired. For each item, the model is either correct or wrong at $t_1$, and either correct or wrong at $t_2$. McNemar's test \cite{mcnemar1947} then compares two kinds of changes:
-\begin{itemize}
-    \item regressions: correct at $t_1$, wrong at $t_2$;
-    \item improvements: wrong at $t_1$, correct at $t_2$.
-\end{itemize}
+This condition removes item resampling as an explanation for an accuracy difference. It does not freeze provider-controlled model weights, routing, nondeterministic inference, service failures, or other hidden execution state. Those components are part of the black-box behaviour being observed. Therefore, a detected change means that outputs changed; it does not by itself identify which hidden component caused the change.
 
-If regressions clearly outnumber improvements, this is evidence of degradation. If the numbers are similar, the observed change is treated as noise rather than a clear deterioration.
+\paragraph{Complete pairs and effective denominator.}
 
-The test establishes degradation on $\mathcal{D}_n$ only. By Section~\ref{sec:selection-bias}, that is a high-sensitivity warning, not a claim about $\mathcal{D}_N$ or production.
+The stored panel contains 300 items, but an API run can have missing outputs. A valid paired comparison may use only items observed and scored at both times. For baseline \(t_1\) and follow-up \(t_2\), define
+\[
+\mathcal{C}(q,t_1,t_2)
+=
+\{i:\text{item \(i\) has a valid scored result at both \(t_1\) and \(t_2\)}\}
+\]
+and let
+\[
+n_{12}=|\mathcal{C}(q,t_1,t_2)|\le 300.
+\]
+All counts and both accuracy values in one paired comparison must use this same complete-pair set. To keep the formulas readable, the rest of the derivation writes \(n=n_{12}\) and sums over the retained items. This is why an empirical comparison can legitimately report, for example, \(n=296\) rather than 300.
 
-\subsection{Contingency table}
+This complete-pair rule prevents mismatched denominators, but it cannot remove informative missingness. If failures are more likely on items the configuration would classify incorrectly, the retained pairs can make performance look too favourable. Every result must therefore report the effective \(n\) and provider or parsing failures alongside the test.
 
-Compare $(E_{i,t_1},E_{i,t_2})$ for each $i\in\{1,\ldots,n\}$. The four outcomes partition $\mathcal{D}_n$:
+\section{Paired correctness and observed degradation}
 
-\begin{table}[htbp]
+The purpose of pairing is to isolate within-item changes that an aggregate comparison of two accuracies would hide. For the fixed configuration \(q\), which is suppressed below, the same item appears at the baseline and follow-up. Its two correctness values therefore form a pair,
+\[
+\bigl(E_{i,t_1},E_{i,t_2}\bigr).
+\]
+Treating the two runs as unrelated samples would discard useful information. A change from \(1\) to \(0\) is direct evidence of regression on one item; a pair \((1,1)\) shows no temporal change even though it contributes to both accuracy levels.
+
+There are exactly four possible paired outcomes. Table~\ref{tab:mcnemar_contingency} assigns a count to each one.
+
+\begin{table}[H]
     \centering
-    \caption[Paired correctness table]{Paired $2\times2$ correctness at $t_1$ and $t_2$.}
+    \caption[Paired correctness table]{The four possible correctness transitions for one fixed-panel comparison.}
     \label{tab:mcnemar_contingency}
     \begin{tabular}{c|cc}
-        & $E_{i,t_2}=1$ & $E_{i,t_2}=0$ \\
+        & Follow-up correct: \(E_{i,t_2}=1\)
+        & Follow-up wrong: \(E_{i,t_2}=0\) \\
         \hline
-        $E_{i,t_1}=1$
-            & $\displaystyle a=\sum_{i=1}^{n}\mathbb{I}(E_{i,t_1}=1,\;E_{i,t_2}=1)$
-            & $\displaystyle b=\sum_{i=1}^{n}\mathbb{I}(E_{i,t_1}=1,\;E_{i,t_2}=0)$ \\
-        $E_{i,t_1}=0$
-            & $\displaystyle c=\sum_{i=1}^{n}\mathbb{I}(E_{i,t_1}=0,\;E_{i,t_2}=1)$
-            & $\displaystyle d=\sum_{i=1}^{n}\mathbb{I}(E_{i,t_1}=0,\;E_{i,t_2}=0)$
+        Baseline correct: \(E_{i,t_1}=1\)
+        & \(a\): stayed correct
+        & \(b\): regressed \((1\to0)\) \\
+        Baseline wrong: \(E_{i,t_1}=0\)
+        & \(c\): improved \((0\to1)\)
+        & \(d\): stayed wrong
     \end{tabular}
 \end{table}
 
-Then
+The four cells partition the complete pairs, so
 \begin{equation}
     a+b+c+d=n.
+    \label{eq:paired-count-total}
 \end{equation}
-Concordant cells $a$ and $d$ carry no information on directional change; evidence is in the discordant cells $b$ (regressions) and $c$ (improvements). Moreover,
-\begin{equation}
-    \hat{A}_{t_1}=\frac{a+b}{n},
-    \qquad
-    \hat{A}_{t_2}=\frac{a+c}{n},
-    \qquad
-    \hat{A}_{t_2}-\hat{A}_{t_1}=\frac{c-b}{n}.
-\end{equation}
+The directional notation is fixed throughout the thesis:
+\begin{align}
+    b
+    &=
+    \sum_{i=1}^{n}
+    \mathbb{I}\{E_{i,t_1}=1,E_{i,t_2}=0\},
+    \label{eq:regression-count}\\
+    c
+    &=
+    \sum_{i=1}^{n}
+    \mathbb{I}\{E_{i,t_1}=0,E_{i,t_2}=1\}.
+    \label{eq:improvement-count}
+\end{align}
+Thus \(b\) always means ``correct to wrong'', whereas \(c\) always means ``wrong to correct''.
 
-Thus the panel-level accuracy drop is determined by the net imbalance between regressions and improvements.
+\paragraph{Observed accuracy change.}
 
-\subsection{Exact conditional test and alerting rule}
-
-Under the panel-level stochastic model, let $p_b$ and $p_c$ denote the item-level probabilities of falling into the two discordant cells:
+The four-cell table must now be converted into an effect size that has an operational interpretation. At baseline, the correct items are those in cells \(a\) and \(b\). Therefore
 \[
-p_b=P(E_{i,t_1}=1,E_{i,t_2}=0),
-\qquad
-p_c=P(E_{i,t_1}=0,E_{i,t_2}=1).
+A_n(q,t_1)=\frac{a+b}{n}.
 \]
-When degradation is the operational concern, McNemar's test is formulated as
+At follow-up, the correct items are those in cells \(a\) and \(c\). Therefore
 \[
-H_0:p_b=p_c
+A_n(q,t_2)=\frac{a+c}{n}.
+\]
+Subtracting the baseline accuracy from the follow-up accuracy gives
+\begin{align}
+A_n(q,t_2)-A_n(q,t_1)
+&=\frac{a+c}{n}-\frac{a+b}{n}\\
+&=\frac{a+c-a-b}{n}\\
+&=\frac{c-b}{n}.
+\label{eq:paired-accuracy-change}
+\end{align}
+The count \(a\) cancels. The count \(d\) appears in neither accuracy numerator. Consequently, only the two \emph{discordant} cells \(b\) and \(c\) determine the change.
+
+Equation~\eqref{eq:paired-accuracy-change} immediately gives the direction:
+\[
+\begin{array}{lll}
+b>c &\Longrightarrow& \text{accuracy decreased},\\
+b=c &\Longrightarrow& \text{accuracy did not change},\\
+b<c &\Longrightarrow& \text{accuracy increased}.
+\end{array}
+\]
+It is convenient to express a positive degradation magnitude as
+\begin{equation}
+    \Delta A_{\mathrm{paired}}
+    =
+    A_n(q,t_1)-A_n(q,t_2)
+    =
+    \frac{b-c}{n}.
+    \label{eq:observed-drop}
+\end{equation}
+
+\section{Exact directional McNemar test}
+\label{sec:mcnemar-section}
+
+The observed drop describes what happened on this panel but does not measure how much evidence its direction provides under a repeated-outcome model. This section derives an exact test from the paired table so that the alert can remain valid when the number of changed pairs is small.
+
+\paragraph{Directional hypotheses.}
+
+The observed counts \(b\) and \(c\) describe this comparison exactly. Statistical testing adds a working probability model to judge how surprising their imbalance would be under repeated comparable evaluations.
+
+Let
+\[
+p_b=P\{(E_{i,t_1},E_{i,t_2})=(1,0)\}
+\]
+be the probability of regression and let
+\[
+p_c=P\{(E_{i,t_1},E_{i,t_2})=(0,1)\}
+\]
+be the probability of improvement in that model. The monitoring question is directional: is regression more likely than improvement? The hypotheses are therefore
+\begin{equation}
+H_0:p_b\le p_c
 \qquad\text{against}\qquad
 H_a:p_b>p_c.
-\]
-
-Let $n_{\mathrm{dis}}=b+c$ denote the number of discordant pairs. Conditional on $n_{\mathrm{dis}}>0$, and under $H_0$, each discordant pair is equally likely to be a regression or an improvement \cite{mcnemar1947}, so by~\eqref{eq:conditional-binomial}
-\begin{equation}
-    B:=b \mid (b+c=n_{\mathrm{dis}})\sim \mathrm{Bin}\!\left(n_{\mathrm{dis}},\tfrac{1}{2}\right).
+\label{eq:mcnemar-hypotheses}
 \end{equation}
-The exact one-sided p-value for degradation is
+The null hypothesis \(H_0\) includes equal probabilities and situations in which improvement is more likely. The alternative \(H_a\) represents degradation.
+
+\begin{assumption}[Working paired-outcome model]
+For the exact test calculation, item pairs are treated as independent draws from a common four-outcome distribution with probabilities \(p_a,p_b,p_c,p_d\), where \(p_a+p_b+p_c+p_d=1\).
+\label{ass:paired-outcome-model}
+\end{assumption}
+
+This is an inferential model, not a claim that the sentinel panel was randomly sampled from production. Strong dependence among near-duplicate or clustered items can invalidate the nominal test level. The frozen-panel conclusion is therefore narrower than a production-population conclusion.
+
+\paragraph{Conditional law for discordant pairs.}
+
+Concordant pairs contain no directional information. Let \(D\) be the number of discordant pairs and \(B\) the number of regressions among them. Conditional on discordance,
 \begin{equation}
-    p_{\mathrm{exact}}
+P(\text{regression}\mid\text{discordant})
+=
+\frac{p_b}{p_b+p_c}.
+\label{eq:conditional-regression-probability}
+\end{equation}
+At the boundary \(p_b=p_c\), this probability is \(1/2\); cases with \(p_b<p_c\) make a large regression count still less likely.
+
+\begin{proposition}[Exact conditional McNemar law]
+Under Assumption~\ref{ass:paired-outcome-model} and the boundary null \(p_b=p_c\), conditional on observing \(D\) discordant pairs, the random number \(B\) of regressions satisfies
+\begin{equation}
+    B\mid D\sim\mathrm{Binomial}(D,1/2).
+    \label{eq:exact-mcnemar-law}
+\end{equation}
+\end{proposition}
+
+\paragraph{One-sided exact p-value.}
+
+For \(b_{\mathrm{obs}}\) regressions among \(D\) discordant pairs, the exact upper-tail p-value is
+\begin{equation}
+p_{\mathrm{exact}}
+=
+\sum_{j=b_{\mathrm{obs}}}^{D}\binom{D}{j}2^{-D}.
+\label{eq:exact-mcnemar-p}
+\end{equation}
+At per-comparison level \(\alpha\), reject when
+\begin{equation}
+    b>c
+    \qquad\text{and}\qquad
+    p_{\mathrm{exact}}\le\alpha.
+    \label{eq:nominal-rejection-rule}
+\end{equation}
+Set \(p_{\mathrm{exact}}=1\) when \(D=0\). The exact rule remains valid for small \(D\), where asymptotic approximations are unreliable~\cite{fagerland2013mcnemar}.
+
+\paragraph{Scope of rejection.}
+
+Rejection supports directional degradation on the frozen panel under the working model. It does not identify a cause, estimate production-risk change, establish representativeness, or select a replacement model.
+
+\section{Alert decision and multiplicity control}
+
+Statistical rejection alone is not yet an operational alert: a detectable change can be too small to matter, and repeated testing can make an isolated nominal p-value misleading. This section combines evidence, magnitude, and the time structure of the monitoring programme into one decision rule.
+
+\paragraph{Operational degradation floor.}
+
+The p-value measures evidence; the observed drop measures operational magnitude. Alongside nominal \(\alpha=0.05\), the workflow requires
+\begin{equation}
+    \Delta A_{\mathrm{paired}}
     =
-    P\!\left(B\ge b_{\mathrm{obs}}\right)
-    =
-    \sum_{k=b_{\mathrm{obs}}}^{n_{\mathrm{dis}}}\binom{n_{\mathrm{dis}}}{k}2^{-n_{\mathrm{dis}}}.
+    \frac{b-c}{n}
+    \ge0.03.
+    \label{eq:operational-drop-floor}
 \end{equation}
+The \(3\)pp floor is an operational choice, not an error-control device; both conditions must hold.
 
-For reference, one may also report the continuity-corrected asymptotic McNemar statistic
-\begin{equation}
-    \chi^2_{\mathrm{cc}}=\frac{(|b-c|-1)^2}{b+c},
-\end{equation}
-defined when $b+c>0$. This is a large-sample approximation based on the discordant counts only. Large values indicate a stronger imbalance between regressions and improvements. However, $\chi^2_{\mathrm{cc}}$ is non-directional because it depends on $|b-c|$, so it does not distinguish degradation from improvement by itself. It is therefore reported only as a descriptive reference statistic. Different variants of the McNemar test, including exact conditional and asymptotic forms, are discussed in \cite{fagerland2013mcnemar}. Alerting in this thesis uses the exact one-sided p-value because discordant counts can be small on the fixed 300-item panel.
-
-A degradation alert is registered when both of the following conditions hold:
-\begin{enumerate}
-    \item $b>c$;
-    \item $p_{\mathrm{exact}}<\alpha=0.05$.
-\end{enumerate}
-
-Condition (i) enforces the direction of interest. Condition (ii) provides statistical evidence against equal probabilities of regressions and improvements.
-
-If $b+c=0$, there are no discordant pairs and no directional conclusion is drawn.
-
-Because the monitoring rule is applied repeatedly over time, $\alpha=0.05$ should be interpreted as a \emph{per-comparison} threshold rather than as a long-run false-alert guarantee. Under repeated monitoring, cumulative false-alert probability increases over time.
-
-\subsection{Baseline choice and multiplicity control}
+\paragraph{Repeated-testing problem.}
 \label{sec:baseline-multiplicity}
 
-Two operational details fix how the test in Section~\ref{sec:mcnemar-section} is applied over time.
+Before correcting multiplicity, the comparison family and its reference point must be defined. Otherwise the error guarantee could be chosen after seeing which runs produce small p-values.
 
-\paragraph{Fixed baseline.}
-Each model is compared against its \emph{earliest} available run on $\mathcal{D}_n$, not against the preceding week. Write $t_0$ for that first run and $t_1,\dots,t_{T-1}$ for the later ones. Every alert is then a test of $t_k$ against $t_0$. Consecutive-week testing would compare two runs that may both already be degraded, so a slow step down would never produce a large discordant imbalance in any single week. Anchoring on $t_0$ keeps the comparison against the state the deployment was accepted in.
+\paragraph{Baseline convention.}
 
-The cost is a dependence on one batch. Because every comparison reuses $t_0$, ordinary sampling noise in that single run shifts the whole series in one direction. Section~\ref{sec:drift-results} shows a case where this happens.
+For each configuration \(q\), every later eligible run is compared with that configuration's earliest eligible panel run \(t_0\). A fixed baseline has a clear interpretation: it is the accepted reference state. It also creates a limitation. If \(t_0\) was unusually favourable or unfavourable, every later comparison inherits that baseline noise. The trajectory, repeated comparisons, effective pair counts, and same-batch controls must therefore accompany an isolated trigger.
 
-\paragraph{Multiplicity.}
-With $T-1$ comparisons per model, each tested at $\alpha$, the probability of at least one false alert grows as $1-(1-\alpha)^{T-1}$ under independence: for $T-1=22$ and $\alpha=0.05$ this is about $0.68$. A Bonferroni correction restores family-wise control at level $\alpha$ by testing each comparison at
+\paragraph{Family-wise error.}
+
+Every new comparison creates another false-rejection opportunity. Repeating unadjusted \(0.05\) tests therefore does not control the family-wise error rate \(P(\text{at least one false rejection})\); correction applies to the decision family, not to the paired calculation within each test.
+
+\paragraph{Retrospective Holm rule.}
+
+For a completed family of \(K\) eligible comparisons, order the p-values as \(p_{(1)}\le\cdots\le p_{(K)}\). Holm rejects sequentially while
 \begin{equation}
-    \alpha_{\mathrm{adj}}=\frac{\alpha}{T-1}.
-    \label{eq:bonferroni}
+p_{(j)}\le\frac{0.05}{K-j+1},
+\label{eq:holm-step}
 \end{equation}
-For $T-1=22$ this gives $\alpha_{\mathrm{adj}}\approx 0.0023$. The correction is applied per model, over that model's own comparisons, since alerts are acted on per deployment.
+stopping at the first failure~\cite{holm1979}. Chapter~\ref{chap:experimental-results} applies this retrospective rule to the pre-defined completed family.
 
-Bonferroni is used rather than the step-down Holm procedure because the alert is evaluated online: at time $t_k$ the p-values of later comparisons do not yet exist, and Holm needs the whole family ranked before any threshold is fixed. Bonferroni gives a threshold that is known in advance and is therefore usable in a weekly job. It is the more conservative of the two.
+\paragraph{Prospective alpha spending.}
 
-The alerting rule of Section~\ref{sec:mcnemar-section} is used unchanged, with $\alpha$ replaced by $\alpha_{\mathrm{adj}}$:
-\begin{enumerate}
-    \item $b>c$;
-    \item $p_{\mathrm{exact}}<\alpha_{\mathrm{adj}}$.
-\end{enumerate}
+An open-ended monitor needs thresholds before future results exist. For \(M\) pre-specified configurations and comparison index \(k\), one valid schedule is
+\begin{equation}
+    \alpha_{r,k}
+    =
+    \frac{0.05}{M\,k(k+1)},
+    \qquad
+    r=1,\ldots,M.
+    \label{eq:online-alpha-spending}
+\end{equation}
+Since \(\sum_{k\ge1}1/[k(k+1)]=1\), the total allocation is \(0.05\); the union bound gives conservative FWER control. The roster must be fixed or assigned reserved weights, and these smaller thresholds reduce power.
 
-\section{Classification metrics on the monitoring subset}
+\paragraph{Retrospective and prospective decisions.}
+
+The two multiplicity settings produce two distinct decision rules:
+\begin{itemize}
+    \item A \emph{retrospective study alert} occurs when a comparison is rejected by global Holm within the completed study family and its observed drop is at least \(3\)pp.
+    \item A \emph{prospective operational alert} occurs when the current exact p-value passes the threshold allocated before that result was observed, such as \(\alpha_{r,k}\) in Equation~\eqref{eq:online-alpha-spending}, and its observed drop is at least \(3\)pp.
+\end{itemize}
+Chapter~\ref{chap:experimental-results} reports the first rule because the canonical evidence is a completed retrospective study. It does not claim that final-family Holm correction was executed online. A deployed monitor must use the second rule or another prospectively specified sequential procedure.
+
+\section{Diagnostics and escalation}
 \label{sec:classification-metrics}
 
-All metrics below are computed on $\mathcal{D}_n$. Levels and rankings need not match $\mathcal{D}_N$ (Section~\ref{sec:selection-bias}).
+The alert rule deliberately compresses each item to correct or incorrect. Once an alert occurs, that compression is insufficient for diagnosis or action, so the workflow must restore class-specific information and define the handoff to full-benchmark evaluation.
 
-Let $\mathrm{TP}_t$, $\mathrm{FP}_t$, $\mathrm{TN}_t$, and $\mathrm{FN}_t$ be confusion counts on $\mathcal{D}_n$ at time $t$ for a given model and a fixed rule mapping provider output to $\hat{y}_{i,t}\in\{0,1\}$. Omit any ratio whose denominator is zero.
+\paragraph{Class-specific diagnostics.}
 
-\paragraph{Accuracy.}
-Empirical accuracy is
-\begin{equation}
-    \widehat{\mathrm{Acc}}_t
-    =
-    \frac{\mathrm{TP}_t+\mathrm{TN}_t}
-         {\mathrm{TP}_t+\mathrm{TN}_t+\mathrm{FP}_t+\mathrm{FN}_t}.
-\end{equation}
-For a fixed model and parsing rule, this equals $\hat{A}_t$. It summarises global correctness but weights errors by class prevalence on $\mathcal{D}_n$.
+Correctness transitions reveal whether net accuracy changed, but not which class of error caused the change. For one batch, define:
+\begin{itemize}
+    \item \(\mathrm{TP}\): positive items predicted positive;
+    \item \(\mathrm{TN}\): negative items predicted negative;
+    \item \(\mathrm{FP}\): negative items incorrectly predicted positive;
+    \item \(\mathrm{FN}\): positive items incorrectly predicted negative.
+\end{itemize}
+These four counts sum to the number of scored items. The dashboard derives:
+\begin{align}
+\mathrm{Acc}
+&=\frac{\mathrm{TP}+\mathrm{TN}}{n},
+&
+\mathrm{Prec}
+&=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}},
+&
+\mathrm{Rec}
+&=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}},
+\label{eq:basic-classification-metrics}\\
+\mathrm{Spec}
+&=\frac{\mathrm{TN}}{\mathrm{TN}+\mathrm{FP}},
+&
+F_1
+&=\frac{2\mathrm{Prec}\,\mathrm{Rec}}
+{\mathrm{Prec}+\mathrm{Rec}},
+&
+\mathrm{BA}
+&=\frac{\mathrm{Rec}+\mathrm{Spec}}{2}.
+\label{eq:derived-classification-metrics}
+\end{align}
+Undefined metrics are reported as unavailable, never zero. These quantities diagnose the form of deterioration but do not add rejection criteria. An alert initiates investigation and full-benchmark candidate evaluation; it does not identify a cause or mandate a switch.
 
-\paragraph{Precision, recall, and $F_1$.}
-\begin{equation}
-    \widehat{\mathrm{Prec}}_t
-    =
-    \frac{\mathrm{TP}_t}{\mathrm{TP}_t+\mathrm{FP}_t},
-    \qquad
-    \widehat{\mathrm{Rec}}_t
-    =
-    \frac{\mathrm{TP}_t}{\mathrm{TP}_t+\mathrm{FN}_t},
-    \qquad
-    \widehat{\mathrm{F}}_{1,t}
-    =
-    \frac{2\,\widehat{\mathrm{Prec}}_t\,\widehat{\mathrm{Rec}}_t}
-         {\widehat{\mathrm{Prec}}_t+\widehat{\mathrm{Rec}}_t}.
-\end{equation}
-Precision is positive predictive value; recall is sensitivity on the positive class. The $F_1$ score is their harmonic mean when both are defined and $\widehat{\mathrm{Prec}}_t+\widehat{\mathrm{Rec}}_t>0$.
-
-\paragraph{Specificity and balanced accuracy.}
-\begin{equation}
-    \widehat{\mathrm{Spec}}_t
-    =
-    \frac{\mathrm{TN}_t}{\mathrm{TN}_t+\mathrm{FP}_t},
-    \qquad
-    \widehat{\mathrm{BA}}_t
-    =
-    \tfrac{1}{2}\bigl(\widehat{\mathrm{Rec}}_t+\widehat{\mathrm{Spec}}_t\bigr).
-\end{equation}
-Specificity measures true-negative performance. Balanced accuracy mitigates inflation of raw accuracy under prevalence skew on the panel.
-
-\paragraph{Hard labels only.}
-The monitoring pipeline maps provider outputs to a single hard label $\hat{y}_{i,t}\in\{0,1\}$ via a fixed parsing rule; no per-example graded score is logged for the experiments reported here. The metrics above are therefore computed from one confusion table per model and batch. 
-
-\paragraph{Which metric is most diagnostic on the monitoring panel.}
-Prevalence on $\mathcal{D}_n$ is high (Chapter~\ref{ch:data}), so raw accuracy can hide asymmetric errors. Prefer recall when FN is expensive, specificity when FP is expensive, and precision when analyst capacity is limited by false alarms. McNemar remains the inferential alert; confusion metrics catch class-specific shifts that net correctness can cancel.
-\section{Model comparison and deployment choice}
-\label{sec:model-comparison-manual}
-
-Candidates can be screened on $\mathcal{D}_n$ with the metrics above and mean inference cost $C_t(m)$. Final deployment ranking still uses $\mathcal{D}_N$ under Chapter~\ref{ch:cost-deployment-utility} (Section~\ref{sec:selection-bias}). Operationally: detect on $\mathcal{D}_n$ with the one-sided McNemar rule; if action is required, compare on $\mathcal{D}_N$ (cost-aware or constrained), optionally with prompt repair before a model switch (Chapter~\ref{chap:prompt-optimisation}).
+\paragraph{Established result.}
+For any eligible baseline--follow-up comparison, the chapter has reduced observed degradation to the discordant counts \(b\) and \(c\), with magnitude
+\[
+\Delta A_{\mathrm{paired}}=\frac{b-c}{n}.
+\]
+The retrospective study decision is now fully specified:
+\[
+\operatorname{Alert}_{\mathrm{study}}=1
+\quad\Longleftrightarrow\quad
+p_{\mathrm{Holm}}\le0.05
+\ \text{and}\
+\Delta A_{\mathrm{paired}}\ge0.03,
+\]
+where \(p_{\mathrm{Holm}}\) is the Holm-adjusted value of the underlying one-sided exact McNemar p-value, computed from \(B\mid D\sim\mathrm{Binomial}(D,1/2)\), \(D=b+c\), and all quantities use the same complete-pair denominator \(n\). A live monitor replaces final-family Holm adjustment by a threshold allocated before the result is observed. Hence the monitoring question has been answered with an exact, directional, multiplicity-aware escalation rule; the resulting alert establishes evidence of panel degradation only and passes the separate deployment question to Chapter~\ref{ch:cost-deployment-utility}.

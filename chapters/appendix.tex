@@ -1,69 +1,48 @@
 \appendix
-\chapter{Conditional Distribution of the McNemar Statistic}
-\label{app:mcnemar-derivation}
 
-This appendix derives the conditional law used for the exact test in Section~\ref{sec:mcnemar-section} and for the sample-size calculation in Section~\ref{sec:monitoring-sample-size}.
+\chapter{Exploratory Automatic Prompt Optimisation}
+\label{app:prompt-optimisation}
 
-For item $i$ the paired correctness outcome $(E_{i,t_1},E_{i,t_2})$ falls into one of four categories, with probabilities
-\[
-p_a=P(1,1),\quad
-p_b=P(1,0),\quad
-p_c=P(0,1),\quad
-p_d=P(0,0),
-\qquad
-p_a+p_b+p_c+p_d=1.
-\]
-Assume the $n$ paired items are independent and identically distributed across these categories. Then the counts are multinomial,
-\begin{equation}
-    (a,b,c,d)\sim \mathrm{Multinomial}(n;p_a,p_b,p_c,p_d).
-\end{equation}
+\section{Concept and search procedure}
 
-McNemar's test uses only the discordant counts. Write $m=b+c$ and fix an integer $k\in\{0,\dots,m\}$. From the multinomial model,
-\begin{equation}
-    P(b=k,\;c=m-k)
-    =
-    \frac{n!}{k!\,(m-k)!\,(n-m)!}
-    (p_a+p_d)^{n-m}p_b^k p_c^{m-k},
-\end{equation}
-and marginalising over the split of the $m$ discordant items,
-\begin{equation}
-    P(b+c=m)
-    =
-    \frac{n!}{m!\,(n-m)!}
-    (p_a+p_d)^{n-m}(p_b+p_c)^m.
-\end{equation}
-Dividing, the factors $(p_a+p_d)^{n-m}$, $n!$ and $(n-m)!$ all cancel:
-\begin{align}
-P(b=k\mid b+c=m)
-&=
-\frac{
-\frac{n!}{k!\,(m-k)!\,(n-m)!}
-(p_a+p_d)^{n-m}p_b^k p_c^{m-k}
-}{
-\frac{n!}{m!\,(n-m)!}
-(p_a+p_d)^{n-m}(p_b+p_c)^m
-} \\
-&=
-\binom{m}{k}
-\left(\frac{p_b}{p_b+p_c}\right)^k
-\left(\frac{p_c}{p_b+p_c}\right)^{m-k}.
-\end{align}
-This is a binomial mass function, so
-\begin{equation}
-    b\mid (b+c=m)\sim \mathrm{Binomial}(m,\eta),
-    \qquad
-    \eta=\frac{p_b}{p_b+p_c}=\frac{p_b}{\rho}.
-    \label{eq:app-conditional-binomial}
-\end{equation}
-The concordant cells $a$ and $d$ have dropped out entirely: conditioning on $m$ removes all dependence on how many items were stable.
+Automatic prompt optimisation (APO) treats a hard prompt as a discrete object that can be searched rather than edited manually. Starting from a seed prompt, an optimiser evaluates the model on labelled examples, identifies errors, proposes one or more rewritten prompts, scores the candidates, retains promising variants, and repeats until a call or cost budget is exhausted. The deployable result remains an ordinary prompt string; model weights and provider internals are not required.
 
-Writing $\rho=p_b+p_c$ and $\delta=p_b-p_c$ gives $p_b=(\rho+\delta)/2$ and $p_c=(\rho-\delta)/2$, hence
-\begin{equation}
-    \eta=\frac{1}{2}+\frac{\delta}{2\rho}.
-    \label{eq:app-eta}
-\end{equation}
-So $\eta$ depends on the directional imbalance only through the ratio $\delta/\rho$. Under the null hypothesis of no directional change, $H_0:p_b=p_c$, the imbalance $\delta$ is zero and therefore
-\begin{equation}
-    b\mid (b+c=m)\sim \mathrm{Binomial}(m,1/2):
-\end{equation}
-once the number of discordant items is fixed, each is equally likely to be a regression or an improvement. This is the basis of the exact conditional test. For one-sided degradation detection the alternative is $H_a:\eta>1/2$.
+The data should have three separate roles. Training examples and their errors may be exposed to the optimiser when it generates revisions. Validation examples select among the generated candidates. A sealed test set is used once after selection to estimate whether the chosen prompt generalises. Reusing test results to guide further search turns the resulting test accuracy into an exploratory rather than confirmatory quantity.
+
+\begin{figure}[htbp]
+\centering
+\begin{adjustbox}{max width=\linewidth,max totalheight=.62\textheight,center}
+\input{assets/fig_apo_taxonomy.tex}
+\end{adjustbox}
+\caption[Taxonomy of automatic prompt optimisation]{Black-box APO design space adapted from~\cite{ramnath2025survey}. Orange nodes show the path used in the exploratory GEPA runs: a manual hard-prompt seed, task-accuracy scoring with LLM feedback, metaprompt-guided mutation, Pareto-population retention, and budget-dependent iteration depth.}
+\label{fig:app-apo-taxonomy}
+\end{figure}
+
+\section{Exploratory GEPA runs}
+
+The trial used GEPA (Genetic--Pareto Evolutionary Prompt Optimisation)~\cite{agrawal2025gepa}. GEPA evaluates a parent prompt on a minibatch, constructs textual feedback from its errors, and asks a reflection model to generate an edited offspring. It retains a population of prompts that solve different validation examples well instead of immediately collapsing the search to one average-best prompt. This can preserve useful alternatives when one revision fixes some items but breaks others.
+
+Two runs used the same \(719/239/241\) train/validation/test split. Both validation-selected prompts improved validation accuracy, but their descriptive test outcomes differed:
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Exploratory prompt-search outcomes.}
+\label{tab:app-gepa-runs}
+\begin{tabular}{lrrrrr}
+\toprule
+Model & Seed val. & Best val. & Seed test & Best test & Test change \\
+\midrule
+\texttt{gpt-4.1-nano} & 0.766 & 0.795 & 0.784 & 0.768 & \(-1.7\)pp \\
+\texttt{gpt-5.4-nano} & 0.778 & 0.954 & 0.751 & 0.929 & \(+17.8\)pp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The \texttt{gpt-5.4-nano} result shows that automatic rewriting can produce a materially better model--prompt configuration. The \texttt{gpt-4.1-nano} result shows the opposite limitation: a prompt can look better on validation data yet generalise worse than its seed. APO therefore generates candidates; it does not guarantee improvement. In these experiments, test results were inspected while the wider experiment sequence was still being assessed, so the values above are descriptive and do not provide an unbiased confirmatory comparison.
+
+\section{Possible use after a provider-side model change}
+
+If monitoring detects that an API model's observable behaviour has changed, prompt optimisation could in principle be used to retune the controllable prompt for the new model state. The optimiser would generate revisions from a separate labelled adaptation set, select only on validation data, and return the selected prompt as a new deployment candidate. That candidate would still need comparison on a sealed evaluation set under the same predictive-error and inference-cost rules as a model-switch candidate.
+
+This is a possible extension, not a result established by the monitoring study. The GEPA runs were not triggered by the observed March alert and were not applied to the degraded model state. Demonstrating automatic recovery would require a sustained changed regime, a pre-specified search protocol, no test leakage, and prospective comparison among prompt adaptation, model switching, and retaining the current configuration.

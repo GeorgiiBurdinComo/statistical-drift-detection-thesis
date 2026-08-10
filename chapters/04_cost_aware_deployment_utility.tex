@@ -1,299 +1,666 @@
-\chapter{Cost-aware Deployment Utility}
+\chapter{Cost-Aware Deployment Decisions}
 \label{ch:cost-deployment-utility}
 
-This chapter formalises deployment selection by combining inference cost with asymmetric misclassification penalties. If business-error costs can be specified, the result is a per-request expected cost that gives a single scalar ranking of candidate models. If such costs cannot be stated reliably, the same framework can still be used as a parametric decision rule through break-even analysis and constraint-based selection. The chapter builds on the metrics and candidate-comparison setup in Chapter~\ref{ch:drift} (Sections~\ref{sec:classification-metrics} and~\ref{sec:model-comparison-manual}).
+\paragraph{Objective.}
+Chapter~\ref{ch:drift} decides whether monitoring evidence warrants escalation. The task here is different: given several deployment candidates, determine which candidate is preferred when inference charges, false positives, and false negatives have decision-specific consequences. The rule must compare candidates on identical benchmark items, expose how the answer changes with the declared costs, and remain usable when monetary error penalties cannot be defended. The required output is a finite-benchmark selection rule and its sensitivity boundaries, not an estimate of expected production utility. In this chapter, maximising utility is equivalent to minimising the loss defined below.
 
-\section{Cost components}
+\section{Common evaluation basis and cost components}
 
-Each request to model $m$ at evaluation time $t$ incurs two types of cost:
-\begin{enumerate}
-    \item Inference cost $C_t(m)$: the API charge in USD per request, observed from logged usage and pricing (in the same units as Section~\ref{sec:model-comparison-manual}).
-    \item Business error cost: a penalty determined by the prediction outcome. Correct predictions (TP, TN) add no further business cost. Misclassifications incur:
-    \begin{itemize}
-        \item $C_{\mathrm{FP}}$: cost of a false positive (for example, an irrelevant post marked as relevant and sent to unnecessary downstream processing),
-        \item $C_{\mathrm{FN}}$: cost of a false negative (for example, a relevant post missed by the system, creating a gap in campaign coverage).
-    \end{itemize}
-\end{enumerate}
+Candidate ranking is meaningful only when every loss difference refers to the same requests and every component has a declared interpretation. This section therefore fixes the common comparison set and identifies the three quantities that the decision rule must trade off.
 
-\section{Derivation of per-request expected cost}
+\paragraph{Candidate set and common complete cases.}
 
-\paragraph{Step 1: confusion-matrix decomposition.}
-On an evaluation batch $\mathcal{D}_n$ of $n$ labelled items, model $m$ at time $t$ produces confusion counts $\mathrm{TP}_t(m)$, $\mathrm{FP}_t(m)$, $\mathrm{TN}_t(m)$, and $\mathrm{FN}_t(m)$ satisfying
+Using the intersection of valid candidate outputs prevents item composition from becoming an unobserved fourth component of the ranking. Let
 \[
-\mathrm{TP}_t(m)+\mathrm{FP}_t(m)+\mathrm{TN}_t(m)+\mathrm{FN}_t(m)=n.
+\mathcal{M}_{\mathrm{cand}}
+=
+\{m_1,\ldots,m_J\}
 \]
+be the set of candidate model--prompt configurations considered at evaluation time \(t\). Each candidate must be judged on the same items.
 
-\paragraph{Step 2: total batch cost.}
-The total batch cost is the sum of inference cost and business error cost:
+Define the \emph{common complete-case benchmark set}
 \begin{equation}
-    \mathrm{TotalCost}_t(m)
-    = \underbrace{n \cdot C_t(m)}_{\text{inference}}
-    + \underbrace{C_{\mathrm{FP}}\cdot\mathrm{FP}_t(m)
-    + C_{\mathrm{FN}}\cdot\mathrm{FN}_t(m)}_{\text{business error cost}}.
+    \mathcal{B}_t
+    =
+    \left\{
+        (x_i,y_i)\in\mathcal{D}_N:
+        \begin{array}{l}
+        \text{the reference label is available, and}\\
+        \text{every candidate has a parsed prediction and usage record}
+        \end{array}
+    \right\}.
+    \label{eq:common-complete-case-set}
+\end{equation}
+Write
+\begin{equation}
+    n_t=|\mathcal{B}_t|,
+    \qquad
+    n_t>0.
+    \label{eq:common-complete-case-size}
 \end{equation}
 
-\paragraph{Step 3: per-request expected cost.}
-Dividing by $n$ gives the expected cost per request:
+The intersection is important. If one candidate were evaluated on easy items and another on difficult items, a loss difference could be caused by item composition rather than model behaviour. A common set removes this denominator mismatch. It does not remove informative missingness: if failures systematically occur on difficult items, the complete-case ranking can still be biased. Coverage and exclusion counts must therefore accompany the decision.
+
+\paragraph{Observed cost components.}
+
+The common set alone does not determine preference; predictive errors and API usage must be expressed as explicit inputs to the decision. For candidate \(m\), let \(r_{i,t}(m)\) be the observed API charge in USD for item \(i\). Its mean inference charge is
 \begin{equation}
-\label{eq:expected-cost}
-    E_t[\mathcal{C}](m)
-    = C_t(m)
-    + \frac{C_{\mathrm{FP}}\cdot\mathrm{FP}_t(m)
-          + C_{\mathrm{FN}}\cdot\mathrm{FN}_t(m)}{n}.
+    c_t(m)
+    =
+    \frac{1}{n_t}
+    \sum_{i\in\mathcal{B}_t}r_{i,t}(m)
+    \qquad
+    \text{USD per request}.
+    \label{eq:mean-inference-charge}
 \end{equation}
 
-\paragraph{Step 4: model selection rule under fixed costs.}
-When $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$ are available, the preferred deployment model is the one that minimises expected cost:
-\begin{equation}
-\label{eq:model-selection}
-    m_t^\star
-    \;\in\;
-    \arg\min_{m\in\mathcal{M}_{\mathrm{cand}}}\;
-    E_t[\mathcal{C}](m).
-\end{equation}
-
-\section{Rate form}
+Define the false-positive and false-negative indicators
+\begin{align}
+I^{\mathrm{FP}}_{i,t}(m)
+&=
+\mathbb{I}\{y_i=0,\hat y_{i,t}(m)=1\},\\
+I^{\mathrm{FN}}_{i,t}(m)
+&=
+\mathbb{I}\{y_i=1,\hat y_{i,t}(m)=0\}.
+\end{align}
+Their sums are the observed error counts:
+\begin{align}
+\mathrm{FP}_t(m)
+&=
+\sum_{i\in\mathcal{B}_t}I^{\mathrm{FP}}_{i,t}(m),\\
+\mathrm{FN}_t(m)
+&=
+\sum_{i\in\mathcal{B}_t}I^{\mathrm{FN}}_{i,t}(m).
+\end{align}
 
 Let
 \[
-\hat{\pi}_t=\frac{\mathrm{TP}_t(m)+\mathrm{FN}_t(m)}{n}
+C_{\mathrm{FP}}\ge0
+\qquad\text{and}\qquad
+C_{\mathrm{FN}}\ge0
 \]
-denote the empirical positive prevalence on the evaluation set at time $t$. Also define the empirical false-positive rate and false-negative rate of model $m$ at time $t$ by
+be decision parameters measured in USD per false positive and USD per false negative. They represent business consequences supplied by the decision maker; they are not estimated automatically from the benchmark. Correct predictions add no business-error penalty in this model.
+
+\section{Empirical loss and candidate selection}
+
+The separate components cannot rank candidates until they are placed on one additive scale. This section derives that scale, verifies its units and empirical scope, and then turns it into a minimisation rule.
+
+\paragraph{Loss derivation.}
+
+The purpose of the loss is to express the cost of one candidate over the common benchmark without giving any component an implicit weight. The observed total inference charge for candidate \(m\) is
 \[
-\widehat{\mathrm{FPR}}_t(m)
+\sum_{i\in\mathcal{B}_t}r_{i,t}(m)
 =
-\frac{\mathrm{FP}_t(m)}{\mathrm{FP}_t(m)+\mathrm{TN}_t(m)},
-\qquad
-\widehat{\mathrm{FNR}}_t(m)
-=
-\frac{\mathrm{FN}_t(m)}{\mathrm{FN}_t(m)+\mathrm{TP}_t(m)},
+n_t c_t(m).
 \]
-whenever the denominators are nonzero.
-
-Then
+The assigned total error penalty is
 \[
-    \frac{\mathrm{FP}_t(m)}{n}
-    = \widehat{\mathrm{FPR}}_t(m)\,(1-\hat{\pi}_t),
-    \qquad
-    \frac{\mathrm{FN}_t(m)}{n}
-    = \widehat{\mathrm{FNR}}_t(m)\,\hat{\pi}_t,
+C_{\mathrm{FP}}\mathrm{FP}_t(m)
++
+C_{\mathrm{FN}}\mathrm{FN}_t(m).
 \]
-so~\eqref{eq:expected-cost} can be written as
+Adding these components gives total assigned benchmark cost:
+\[
+n_t c_t(m)
++
+C_{\mathrm{FP}}\mathrm{FP}_t(m)
++
+C_{\mathrm{FN}}\mathrm{FN}_t(m).
+\]
+To compare candidates on a per-request scale, divide by the common \(n_t\):
 \begin{equation}
-\label{eq:expected-cost-rate}
-    E_t[\mathcal{C}](m)
-    = C_t(m)
-    + C_{\mathrm{FP}}\,\widehat{\mathrm{FPR}}_t(m)\,(1-\hat{\pi}_t)
-    + C_{\mathrm{FN}}\,\widehat{\mathrm{FNR}}_t(m)\,\hat{\pi}_t.
-\end{equation}
-
-This form makes the weighting explicit: the false-positive penalty is weighted by the empirical negative prevalence $1-\hat{\pi}_t$, and the false-negative penalty by the empirical positive prevalence $\hat{\pi}_t$.
-
-\section{Cost parameters under uncertainty}
-\label{sec:cost-parameters-uncertainty}
-
-In practice, it may be impossible to assign reliable monetary values to $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$. In that case, the expected-cost utility is treated not as a single point estimate but as a parametric decision rule. Reparameterise the cost pair as
-\[
-C_{\mathrm{FP}}=\lambda R,
-\qquad
-C_{\mathrm{FN}}=\lambda,
-\qquad
-R=\frac{C_{\mathrm{FP}}}{C_{\mathrm{FN}}},
-\qquad
-\lambda=C_{\mathrm{FN}}>0,
-\]
-so that $R$ carries the relative FP--FN trade-off and $\lambda$ the overall scale of business-error severity relative to inference cost. This is a change of variables only, not an additional assumption.
-
-Substituting into~\eqref{eq:expected-cost} gives
-\begin{equation}
-\label{eq:expected-cost-lambda-R}
-    E_t[\mathcal{C}](m)
-    = C_t(m)
-    + \lambda\cdot\frac{R\,\mathrm{FP}_t(m)+\mathrm{FN}_t(m)}{n}.
-\end{equation}
-Equivalently, in rate form,
-\begin{equation}
-\label{eq:expected-cost-rate-lambda-R}
-    E_t[\mathcal{C}](m)
-    = C_t(m)
-    + \lambda\Bigl(
-        R\,\widehat{\mathrm{FPR}}_t(m)\,(1-\hat{\pi}_t)
-        + \widehat{\mathrm{FNR}}_t(m)\,\hat{\pi}_t
-      \Bigr).
-\end{equation}
-
-\section{Pairwise break-even analysis}
-\label{sec:break-even-analysis}
-
-For two candidate models $m_i,m_j\in\mathcal{M}_{\mathrm{cand}}$, define
-\[
-\Delta C_t^{ij}=C_t(m_i)-C_t(m_j),\qquad
-\Delta \mathrm{FP}_t^{ij}=\mathrm{FP}_t(m_i)-\mathrm{FP}_t(m_j),\qquad
-\Delta \mathrm{FN}_t^{ij}=\mathrm{FN}_t(m_i)-\mathrm{FN}_t(m_j).
-\]
-Then $m_i$ is preferred to $m_j$ under~\eqref{eq:expected-cost} if and only if
-\[
-\Delta C_t^{ij}
+\begin{split}
+L_t(m)
+&=
+\frac{
+    n_t c_t(m)
+    +C_{\mathrm{FP}}\mathrm{FP}_t(m)
+    +C_{\mathrm{FN}}\mathrm{FN}_t(m)
+}{n_t}\\
+&=
+c_t(m)
 +
 \frac{
-C_{\mathrm{FP}}\Delta \mathrm{FP}_t^{ij}
+    C_{\mathrm{FP}}\mathrm{FP}_t(m)
+    +C_{\mathrm{FN}}\mathrm{FN}_t(m)
+}{n_t}.
+\end{split}
+\label{eq:expected-cost}
+\end{equation}
+
+Every term now has the same unit, USD per evaluated request:
+\[
+\underbrace{c_t(m)}_{\text{USD/request}}
 +
-C_{\mathrm{FN}}\Delta \mathrm{FN}_t^{ij}
-}{n}
-\le 0.
+\underbrace{
+C_{\mathrm{FP}}\frac{\mathrm{FP}_t(m)}{n_t}
+}_{\text{USD/error}\times\text{errors/request}}
++
+\underbrace{
+C_{\mathrm{FN}}\frac{\mathrm{FN}_t(m)}{n_t}
+}_{\text{USD/error}\times\text{errors/request}}.
 \]
+This unit check verifies that the addition in Equation~\eqref{eq:expected-cost} is meaningful.
 
-The break-even boundary between the two models is therefore
+\paragraph{Finite-benchmark interpretation.}
+
+Before minimising the expression, its scope must be fixed so that ``lowest loss'' is not misreported as lowest expected production cost. The notation \(L_t(m)\) denotes an empirical plug-in quantity. The counts and charges are observed on \(\mathcal{B}_t\), while \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) are supplied scenario values. Therefore:
+\begin{itemize}
+    \item \(L_t(m)\) is an average assigned loss on the common benchmark;
+    \item it is not \(E[\mathcal C]\) under an unknown production distribution;
+    \item it contains no uncertainty interval in the present analysis; and
+    \item changing the penalties changes the decision problem rather than correcting a statistical error.
+\end{itemize}
+
+\paragraph{Minimum-loss candidate.}
+
+Once the common set, components, and penalties are fixed, candidate selection requires no additional score. The deployment rule is
 \begin{equation}
-\label{eq:break-even-count}
-    \Delta C_t^{ij}
+    m_t^\star
+    \in
+    \arg\min_{m\in\mathcal{M}_{\mathrm{cand}}}
+    L_t(m).
+    \label{eq:model-selection}
+\end{equation}
+The notation \(\arg\min\) returns the candidate or set of candidates attaining the smallest value. The symbol \(\in\), rather than \(=\), allows ties. If two candidates have exactly equal loss, the mathematics does not choose between them; a separate tie-breaker such as lower inference charge, lower latency, or incumbent preference must be declared.
+
+\paragraph{Equivalent rate form.}
+
+The count form is safest for implementation, but a rate form is useful for explaining how class prevalence connects familiar error rates to average loss. Let
+\[
+n_t^+
+=
+\#\{i\in\mathcal{B}_t:y_i=1\},
+\qquad
+n_t^-
+=
+\#\{i\in\mathcal{B}_t:y_i=0\}.
+\]
+Then
+\[
+n_t=n_t^++n_t^-,
+\qquad
+    \pi_t=\frac{n_t^+}{n_t},
+\qquad
+    1-\pi_t=\frac{n_t^-}{n_t}.
+\]
+When both classes occur, define
+\[
+    \mathrm{FPR}_t(m)
+=
+\frac{\mathrm{FP}_t(m)}{n_t^-},
+\qquad
+    \mathrm{FNR}_t(m)
+=
+\frac{\mathrm{FN}_t(m)}{n_t^+}.
+\]
+Now decompose the false-positive proportion over all requests:
+\begin{align}
+\frac{\mathrm{FP}_t(m)}{n_t}
+&=
+\frac{n_t^-}{n_t}
+\frac{\mathrm{FP}_t(m)}{n_t^-}\\
+&=
+(1-\pi_t)\mathrm{FPR}_t(m).
+\end{align}
+Similarly,
+\begin{align}
+\frac{\mathrm{FN}_t(m)}{n_t}
+&=
+\frac{n_t^+}{n_t}
+\frac{\mathrm{FN}_t(m)}{n_t^+}\\
+&=
+\pi_t\mathrm{FNR}_t(m).
+\end{align}
+Substitution into Equation~\eqref{eq:expected-cost} gives
+\begin{equation}
+L_t(m)
+=
+c_t(m)
++C_{\mathrm{FP}}(1-\pi_t)\mathrm{FPR}_t(m)
++C_{\mathrm{FN}}\pi_t\mathrm{FNR}_t(m).
+\label{eq:expected-cost-rate}
+\end{equation}
+
+The prevalence factors are necessary because FPR and FNR use class-specific denominators, whereas the loss is averaged over all requests. Equation~\eqref{eq:expected-cost} is preferable in implementation: its count form remains defined when one class is absent, while FPR or FNR then has a zero denominator.
+
+\paragraph{Implementation check.}
+The analytical rule is only useful if the exported implementation computes the same quantity. For the canonical eight-candidate export used in Chapter~\ref{chap:experimental-results}, \(w=0.2\) and \(\lambda=0.186\) recover \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\). Recomputing Equation~\eqref{eq:expected-cost} from every row's raw FP count, FN count, \(n_t=1113\), and mean inference charge reproduces all exported loss values with maximum absolute discrepancy \(8.63\times10^{-17}\), which is floating-point roundoff. The recomputation also returns the reported minimiser, \texttt{gpt-5-mini}.
+
+\section{Encoding cost preferences}
+\label{sec:cost-parameters-uncertainty}
+
+One pair \((C_{\mathrm{FP}},C_{\mathrm{FN}})\) gives one ranking but obscures why that ranking changes. Reparameterising the penalties separates the relative importance of the two error types from their total importance relative to inference cost, making the business assumptions inspectable.
+
+\paragraph{Relative importance and total severity.}
+
+Choosing \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) directly mixes two questions:
+\begin{enumerate}
+    \item Which error type is more harmful?
+    \item How important are classification errors relative to API charges?
+\end{enumerate}
+For \(C_{\mathrm{FP}}>0\), define
+\begin{equation}
+    w
+    =
+    \frac{C_{\mathrm{FN}}}{C_{\mathrm{FP}}},
+    \qquad
+    \lambda
+    =
+    C_{\mathrm{FP}}+C_{\mathrm{FN}}.
+    \label{eq:R-lambda-definition}
+\end{equation}
+Here \(w\ge0\) is the relative false-negative penalty and \(\lambda>0\) is the total error-penalty scale.
+
+Interpretation of \(w\):
+\[
+\begin{array}{lll}
+w=0   &\Longrightarrow& \text{false negatives receive zero penalty},\\
+0<w<1 &\Longrightarrow& \text{false positives are more costly},\\
+w=1   &\Longrightarrow& \text{the two error types have equal penalties},\\
+w>1   &\Longrightarrow& \text{false negatives are more costly}.
+\end{array}
+\]
+For example, \(w=0.2\) means that one false negative receives one fifth of the penalty assigned to one false positive.
+
+The finite-\(w\) parameterisation assumes \(C_{\mathrm{FP}}>0\). The case \(C_{\mathrm{FP}}=0<C_{\mathrm{FN}}\) corresponds to the limit \(w\to\infty\) and is handled directly by Equation~\eqref{eq:expected-cost}.
+
+\paragraph{Recovering the original penalties.}
+
+The transformation must be invertible; otherwise \((w,\lambda)\) would describe a different loss rather than the same decision in more interpretable coordinates. From \(w=C_{\mathrm{FN}}/C_{\mathrm{FP}}\),
+\[
+C_{\mathrm{FN}}
+=
+w C_{\mathrm{FP}}.
+\]
+Insert this into \(\lambda=C_{\mathrm{FP}}+C_{\mathrm{FN}}\):
+\begin{align}
+\lambda
+&=
+C_{\mathrm{FP}}+w C_{\mathrm{FP}}\\
+&=
+C_{\mathrm{FP}}(1+w).
+\end{align}
+Therefore
+\begin{equation}
+    C_{\mathrm{FP}}
+    =
+    \frac{\lambda}{1+w},
+    \qquad
+    C_{\mathrm{FN}}
+    =
+    \frac{\lambda w}{1+w}.
+    \label{eq:penalties-from-R-lambda}
+\end{equation}
+Adding the two recovered values returns \(\lambda\), and dividing them returns \(w\), which verifies the transformation.
+
+\paragraph{Preference-parameterised loss.}
+
+Substituting the recovered penalties exposes directly how the ranking responds to each preference dimension. Insert Equation~\eqref{eq:penalties-from-R-lambda} into Equation~\eqref{eq:expected-cost}:
+\begin{align}
+L_t(m;w,\lambda)
+&=
+c_t(m)
++
+\frac{
+    \frac{\lambda}{1+w}\mathrm{FP}_t(m)
+    +\frac{\lambda w}{1+w}\mathrm{FN}_t(m)
+}{n_t}\\
+&=
+c_t(m)
++
+\frac{\lambda}{1+w}
+\frac{
+    \mathrm{FP}_t(m)+w\mathrm{FN}_t(m)
+}{n_t}.
+\label{eq:expected-cost-lambda-R}
+\end{align}
+The equivalent rate form is
+\begin{equation}
+L_t(m;w,\lambda)
+=
+c_t(m)
++
+\frac{\lambda}{1+w}
+\left[
+    (1-\pi_t)\mathrm{FPR}_t(m)
+    +w\pi_t\mathrm{FNR}_t(m)
+\right].
+\label{eq:expected-cost-rate-lambda-R}
+\end{equation}
+
+For fixed \(w\), increasing \(\lambda\) increases the importance of classification errors relative to inference charges. For fixed \(\lambda\), changing \(w\) redistributes the fixed total penalty between false positives and false negatives.
+
+\section{Sensitivity and break-even analysis}
+\label{sec:break-even-analysis}
+
+Because the penalties are scenario inputs rather than measured constants, reporting only one minimiser would conceal decision uncertainty. Pairwise break-even boundaries show where preference changes are large enough to reverse the ranking and where a candidate can never become optimal.
+
+\paragraph{Pairwise loss difference.}
+
+The absolute losses are not needed to locate a preference switch; subtracting them isolates the component trade-offs between two candidates. For candidates \(m_i\) and \(m_j\), let \(\Delta_{i,j}h_t:=h_t(m_i)-h_t(m_j)\). This gives the difference in the direction \(i-j\):
+\begin{align}
+\Delta_{i,j}c_t
+&=
+c_t(m_i)-c_t(m_j),\\
+\Delta_{i,j}\mathrm{FP}_t
+&=
+\mathrm{FP}_t(m_i)-\mathrm{FP}_t(m_j),\\
+\Delta_{i,j}\mathrm{FN}_t
+&=
+\mathrm{FN}_t(m_i)-\mathrm{FN}_t(m_j).
+\label{eq:candidate-differences}
+\end{align}
+A negative difference favours \(m_i\) for that component; a positive difference favours \(m_j\).
+
+Subtract the two losses:
+\begin{align}
+\Delta_{i,j}L_t
+&=
+L_t(m_i)-L_t(m_j)\\
+&=
+\Delta_{i,j}c_t
++
+\frac{
+    C_{\mathrm{FP}}\Delta_{i,j}\mathrm{FP}_t
+    +C_{\mathrm{FN}}\Delta_{i,j}\mathrm{FN}_t
+}{n_t}.
+\label{eq:pairwise-loss-difference}
+\end{align}
+The sign gives the decision:
+\[
+\begin{array}{lll}
+\Delta_{i,j}L_t<0
+&\Longrightarrow& m_i\text{ has lower loss},\\
+\Delta_{i,j}L_t=0
+&\Longrightarrow& \text{the candidates tie},\\
+\Delta_{i,j}L_t>0
+&\Longrightarrow& m_j\text{ has lower loss}.
+\end{array}
+\]
+Candidate \(m_i\) is therefore weakly preferred exactly when \(\Delta_{i,j}L_t\le0\).
+
+\paragraph{Direct break-even boundary.}
+
+A boundary is the set of assumptions at which neither candidate is preferred, so it is obtained by setting the pairwise difference to zero:
+\begin{equation}
+    \Delta_{i,j}c_t
     +
     \frac{
-    C_{\mathrm{FP}}\Delta \mathrm{FP}_t^{ij}
-    +
-    C_{\mathrm{FN}}\Delta \mathrm{FN}_t^{ij}
-    }{n}
+        C_{\mathrm{FP}}\Delta_{i,j}\mathrm{FP}_t
+        +C_{\mathrm{FN}}\Delta_{i,j}\mathrm{FN}_t
+    }{n_t}
     =0.
+    \label{eq:break-even-count}
 \end{equation}
-Under the parameterisation $C_{\mathrm{FP}}=\lambda R$ and $C_{\mathrm{FN}}=\lambda$, this becomes
+This equation states exactly how much inference-cost disadvantage can be offset by fewer weighted errors, or vice versa.
+
+\paragraph{Illustrative verification.}
+This numerical check demonstrates how the sign convention translates component differences into a decision before the general symbolic boundaries are solved.
+Suppose \(n_t=100\), \(m_i\) costs \(0.005\) USD more per request, and relative to \(m_j\) it has two fewer false positives and three fewer false negatives:
+\[
+\Delta c=0.005,
+\qquad
+\Delta\mathrm{FP}=-2,
+\qquad
+\Delta\mathrm{FN}=-3.
+\]
+With \(C_{\mathrm{FP}}=0.10\) and \(C_{\mathrm{FN}}=0.50\),
+\[
+\Delta L
+=
+0.005
++
+\frac{0.10(-2)+0.50(-3)}{100}
+=
+-0.012.
+\]
+The negative result means that the error savings exceed the extra API charge, so \(m_i\) has lower assigned loss in this scenario.
+
+\paragraph{Break-even severity for fixed \(w\).}
+
+If the relative importance of false negatives is agreed but the overall severity of errors is uncertain, solving for \(\lambda\) identifies how large that severity must become before the preferred candidate changes. Under the \((w,\lambda)\) parameterisation, Equation~\eqref{eq:break-even-count} becomes
 \begin{equation}
+\Delta_{i,j}c_t
++
+\frac{\lambda}{n_t(1+w)}
+\left(
+    \Delta_{i,j}\mathrm{FP}_t
+    +w\Delta_{i,j}\mathrm{FN}_t
+\right)
+=0.
 \label{eq:break-even-lambda-R}
-    \Delta C_t^{ij}
-    +
-    \lambda\cdot
-    \frac{
-    R\,\Delta \mathrm{FP}_t^{ij}
-    +
-    \Delta \mathrm{FN}_t^{ij}
-    }{n}
-    =0.
 \end{equation}
 
-For fixed $R$, the break-even severity level is
+For fixed \(w\), multiply by \(n_t(1+w)>0\):
+\[
+n_t(1+w)\Delta_{i,j}c_t
++
+\lambda
+\left(
+    \Delta_{i,j}\mathrm{FP}_t
+    +w\Delta_{i,j}\mathrm{FN}_t
+\right)
+=0.
+\]
+Move the inference term to the other side and divide:
 \begin{equation}
+\lambda_{i,j}^\star(w)
+=
+-\frac{
+    n_t(1+w)\Delta_{i,j}c_t
+}{
+    \Delta_{i,j}\mathrm{FP}_t
+    +w\Delta_{i,j}\mathrm{FN}_t
+}.
 \label{eq:lambda-breakpoint}
-    \lambda_{ij}^\star(R)
-    =
-    -\frac{n\,\Delta C_t^{ij}}
-    {R\,\Delta \mathrm{FP}_t^{ij}+\Delta \mathrm{FN}_t^{ij}},
 \end{equation}
-provided the denominator is nonzero. For fixed $\lambda$, the break-even trade-off ratio is
-\begin{equation}
-\label{eq:R-breakpoint}
-    R_{ij}^\star(\lambda)
-    =
-    -\frac{n\,\Delta C_t^{ij}/\lambda+\Delta \mathrm{FN}_t^{ij}}
-    {\Delta \mathrm{FP}_t^{ij}},
-\end{equation}
-provided $\Delta \mathrm{FP}_t^{ij}\neq 0$.
 
-These breakpoints identify parameter values at which deployment preference switches between the two candidates. Across all candidate pairs, the resulting boundaries partition the admissible $(R,\lambda)$ plane into regions within which the minimiser of~\eqref{eq:expected-cost-lambda-R} is constant; Figure~\ref{fig:cost-decision-map} draws that partition for the candidates of this study. When the relevant denominator is zero, there is no unique finite breakpoint in that one-dimensional slice. When the solution lies outside the admissible region $(R\ge 0,\lambda>0)$, no operational switch occurs under nonnegative cost assumptions.
+This value is a usable breakpoint only when:
+\begin{enumerate}
+    \item the denominator is nonzero; and
+    \item the result satisfies \(\lambda_{i,j}^\star(w)>0\).
+\end{enumerate}
+If the denominator is zero, changing \(\lambda\) cannot change the pairwise error difference at that \(w\). The candidates either never tie, or tie for every \(\lambda\) if \(\Delta_{i,j}c_t=0\) as well. A valid breakpoint gives the location of a tie; the preferred side must still be determined by checking the sign of Equation~\eqref{eq:pairwise-loss-difference}.
+
+\paragraph{Break-even relative penalty for fixed \(\lambda\).}
+
+Conversely, if total severity is fixed, solving for \(w\) reveals how strongly the organisation must value false negatives relative to false positives before the ranking reverses. Starting again from Equation~\eqref{eq:break-even-lambda-R}, multiply by \(n_t(1+w)\):
+\[
+n_t\Delta_{i,j}c_t
++n_tw\Delta_{i,j}c_t
++\lambda\Delta_{i,j}\mathrm{FP}_t
++\lambda w\Delta_{i,j}\mathrm{FN}_t
+=0.
+\]
+Group terms without \(w\) and terms with \(w\):
+\[
+\left(
+    n_t\Delta_{i,j}c_t
+    +\lambda\Delta_{i,j}\mathrm{FP}_t
+\right)
++
+w
+\left(
+    n_t\Delta_{i,j}c_t
+    +\lambda\Delta_{i,j}\mathrm{FN}_t
+\right)
+=0.
+\]
+Solving for \(w\) gives
+\begin{equation}
+w_{i,j}^\star(\lambda)
+=
+-\frac{
+    n_t\Delta_{i,j}c_t
+    +\lambda\Delta_{i,j}\mathrm{FP}_t
+}{
+    n_t\Delta_{i,j}c_t
+    +\lambda\Delta_{i,j}\mathrm{FN}_t
+}.
+\label{eq:R-breakpoint}
+\end{equation}
+Again, the denominator must be nonzero and the resulting \(w_{i,j}^\star\) must satisfy \(w_{i,j}^\star\ge0\). If the denominator and numerator are both zero, every finite \(w\) is a tie at that \(\lambda\); if only the denominator is zero, no finite \(w\) solves the equation.
+
+Across all candidate pairs, valid boundaries divide the \((w,\lambda)\) plane into regions. Within each open region, no pairwise tie boundary is crossed, so the identity of the minimum-loss candidate remains constant. Chapter~\ref{chap:experimental-results} reports one operating point; the decision map retains a grid of alternatives because the winner is conditional on the penalties.
+
+\paragraph{Worked verification with the two closest canonical candidates.}
+The closest canonical pair is used to verify that the symbolic boundary explains the reported empirical choice rather than merely describing a hypothetical trade-off. Let \(m_i=\texttt{gpt-5-mini}\) and \(m_j=\texttt{gpt-5-nano}\). On their common \(n_t=1113\) items, the observed differences are
+\[
+\begin{aligned}
+\Delta_{i,j}c_t
+  &=0.001274025157-0.000325751595
+    =0.000948273562,\\
+\Delta_{i,j}\mathrm{FP}_t
+  &=5-4=1,\\
+\Delta_{i,j}\mathrm{FN}_t
+  &=62-104=-42.
+\end{aligned}
+\]
+Thus mini costs more per request and produces one additional false positive, but avoids \(42\) false negatives. At \(w=0.2\), Equation~\eqref{eq:lambda-breakpoint} gives
+\[
+\lambda_{i,j}^{\star}
+=-\frac{1113(1+0.2)(0.000948273562)}
+        {1+0.2(-42)}
+=0.171151.
+\]
+The canonical value \(\lambda=0.186\) lies above this boundary. Direct substitution into Equation~\eqref{eq:break-even-lambda-R} gives
+\[
+\Delta_{i,j}L_t
+=0.000948273562
++\frac{0.186}{1113(1+0.2)}
+  \bigl(1+0.2(-42)\bigr)
+=-0.0000822745
+\quad\text{USD/request}.
+\]
+The negative sign proves that mini has the lower loss at the canonical operating point. Solving in the other direction with \(\lambda=0.186\) gives \(w_{i,j}^{\star}=0.183736\), only slightly below \(0.2\). The two nearby boundaries explain why this choice is reported as close and conditional rather than universal.
 
 \paragraph{Dominance.}
-If, for some pair $(m_i,m_j)$,
-\[
-C_t(m_i)\le C_t(m_j),\qquad
-\mathrm{FP}_t(m_i)\le \mathrm{FP}_t(m_j),\qquad
-\mathrm{FN}_t(m_i)\le \mathrm{FN}_t(m_j),
-\]
-with at least one strict inequality, then $m_i$ dominates $m_j$ for all $C_{\mathrm{FP}},C_{\mathrm{FN}}\ge 0$. Such dominated candidates can be removed before sensitivity analysis.
 
-\section{Constraint-based selection without monetary elicitation}
+Break-even analysis is unnecessary when one candidate is no worse in every component; identifying this case removes options that cannot become uniquely optimal under admissible penalties. Candidate \(m_i\) dominates \(m_j\) on the common set if
+\begin{equation}
+c_t(m_i)\le c_t(m_j),
+\qquad
+\mathrm{FP}_t(m_i)\le\mathrm{FP}_t(m_j),
+\qquad
+\mathrm{FN}_t(m_i)\le\mathrm{FN}_t(m_j),
+\label{eq:dominance-conditions}
+\end{equation}
+with at least one strict inequality.
+
+Under these conditions,
+\[
+\Delta_{i,j}c_t\le0,
+\qquad
+\Delta_{i,j}\mathrm{FP}_t\le0,
+\qquad
+\Delta_{i,j}\mathrm{FN}_t\le0.
+\]
+Because \(C_{\mathrm{FP}}\), \(C_{\mathrm{FN}}\), and \(1/n_t\) are nonnegative, every term in Equation~\eqref{eq:pairwise-loss-difference} is nonpositive. Hence
+\[
+\Delta_{i,j}L_t\le0.
+\]
+Thus \(m_j\) can never have lower loss than \(m_i\) for nonnegative penalties. If the strict inequality occurs only in a component assigned zero penalty, the total losses can tie; otherwise \(m_i\) has strictly lower loss. A dominated candidate can be removed without deleting a unique minimiser.
+
+\section{Constraint-based selection}
 \label{sec:constraint-based-selection}
 
-If reliable monetary values cannot be assigned to $C_{\mathrm{FP}}$ and $C_{\mathrm{FN}}$, model selection can instead be formulated as constrained optimisation over operational tolerances. Let $\mathcal{F}_t\subseteq\mathcal{M}_{\mathrm{cand}}$ denote the feasible set under stated feasibility constraints, and let $J_t(m)$ denote a secondary objective over feasible candidates. The deployment rule becomes
-\[
-m_t^\star\in\arg\min_{m\in\mathcal{F}_t} J_t(m),
-\]
-with the exact form determined by the operational requirement.
+Sometimes the organization can defend a service requirement more easily than a monetary value for one error. In that case, forcing a monetary loss would create false precision rather than improve the decision. A constrained rule instead defines which candidates are acceptable and then optimizes one quantity within that feasible set. Every rule below still uses the same \(\mathcal{B}_t\).
 
-For completeness, define the empirical recall and precision of model $m$ at time $t$ by
-\[
-\widehat{\mathrm{Recall}}_t(m)
-=
-\frac{\mathrm{TP}_t(m)}{\mathrm{TP}_t(m)+\mathrm{FN}_t(m)},
-\qquad
-\widehat{\mathrm{Precision}}_t(m)
-=
-\frac{\mathrm{TP}_t(m)}{\mathrm{TP}_t(m)+\mathrm{FP}_t(m)},
-\]
-whenever the denominators are nonzero.
-\[
-\widehat{\mathrm{FNR}}_t(m)
-=
-\frac{\mathrm{FN}_t(m)}{\mathrm{FN}_t(m)+\mathrm{TP}_t(m)}
-=
-1-\widehat{\mathrm{Recall}}_t(m).
-\]
+\paragraph{Minimum recall, then minimum API charge.}
 
-\paragraph{Recall-constrained cost minimisation.}
-If the business can specify a minimum acceptable recall $\tau_{\mathrm{rec}}$, define
+Let \(\tau_{\mathrm{rec}}\in[0,1]\) be the minimum acceptable recall. Define the feasible set
 \[
-\mathcal{F}_t^{\mathrm{rec}}(\tau_{\mathrm{rec}})
+\mathcal{F}_{\mathrm{rec}}
 =
 \left\{
-m\in\mathcal{M}_{\mathrm{cand}}:
-\widehat{\mathrm{Recall}}_t(m)\ge\tau_{\mathrm{rec}}
+    m\in\mathcal{M}_{\mathrm{cand}}:
+    \mathrm{Recall}_t(m)\ge\tau_{\mathrm{rec}}
 \right\}.
 \]
-Then select
+Among these candidates, choose the one with the lowest mean inference charge:
 \begin{equation}
+m_t^\star(\tau_{\mathrm{rec}})
+\in
+\arg\min_{\substack{m\in\mathcal{M}_{\mathrm{cand}}\\
+\mathrm{Recall}_t(m)\ge\tau_{\mathrm{rec}}}}
+c_t(m).
 \label{eq:recall-constrained-selection}
-    m_t^\star(\tau_{\mathrm{rec}})
-    \in
-    \arg\min_{m\in\mathcal{F}_t^{\mathrm{rec}}(\tau_{\mathrm{rec}})}
-    C_t(m).
 \end{equation}
-Equivalently,
-\[
-\widehat{\mathrm{FNR}}_t(m)\le 1-\tau_{\mathrm{rec}}.
-\]
+This rule is appropriate when missing relevant posts must be controlled first and API price is secondary.
 
-\paragraph{Budget-constrained miss-rate minimisation.}
-If the business can specify a per-request inference budget $B$, define
+\paragraph{Maximum API budget, then minimum miss rate.}
+
+Let \(B\ge0\) be the maximum acceptable mean inference charge in USD per request. The feasible set is
 \[
-\mathcal{F}_t^{\mathrm{bud}}(B)
+\mathcal{F}_{B}
 =
-\left\{
-m\in\mathcal{M}_{\mathrm{cand}}:
-C_t(m)\le B
-\right\}.
+\{m\in\mathcal{M}_{\mathrm{cand}}:c_t(m)\le B\}.
 \]
-Then select
+Among candidates within budget, choose the lowest false-negative rate:
 \begin{equation}
-\label{eq:budget-constrained-selection}
-    m_t^\star(B)
-    \in
-    \arg\min_{m\in\mathcal{F}_t^{\mathrm{bud}}(B)}
-    \widehat{\mathrm{FNR}}_t(m),
-\end{equation}
-or, equivalently,
-\[
 m_t^\star(B)
 \in
-\arg\max_{m\in\mathcal{F}_t^{\mathrm{bud}}(B)}
-\widehat{\mathrm{Recall}}_t(m).
-\]
-
-\paragraph{Precision-constrained recall maximisation.}
-If unnecessary downstream processing must be limited, let $\tau_{\mathrm{prec}}$ denote a minimum acceptable precision. Define
-\[
-\mathcal{F}_t^{\mathrm{prec}}(\tau_{\mathrm{prec}})
-=
-\left\{
-m\in\mathcal{M}_{\mathrm{cand}}:
-\widehat{\mathrm{Precision}}_t(m)\ge\tau_{\mathrm{prec}}
-\right\}.
-\]
-Then select
-\begin{equation}
-\label{eq:precision-constrained-selection}
-    m_t^\star(\tau_{\mathrm{prec}})
-    \in
-    \arg\max_{m\in\mathcal{F}_t^{\mathrm{prec}}(\tau_{\mathrm{prec}})}
-    \widehat{\mathrm{Recall}}_t(m).
+\arg\min_{\substack{m\in\mathcal{M}_{\mathrm{cand}}\\
+c_t(m)\le B}}
+\mathrm{FNR}_t(m).
+\label{eq:budget-constrained-selection}
 \end{equation}
+Because \(\mathrm{FNR}=1-\mathrm{Recall}\) when positives occur, this is equivalent to maximizing recall within the budget.
 
-\section{Remark on prevalence and evaluation scope}
+\paragraph{Minimum precision, then maximum recall.}
 
-Full-benchmark prevalence is $\hat{\pi}\approx0.569$ ($682$ positive of $1199$); on $\mathcal{D}_n$ it is $\hat{\pi}\approx0.833$ ($250$ of $300$). By Section~\ref{sec:selection-bias}, expected cost, break-even, and constrained selection therefore use $\mathcal{D}_N$ so that~\eqref{eq:expected-cost-rate} is weighted by operational prevalence. Rescaling panel FP/FN by $N/n$ does not fix this: $\hat{\pi}_t$ stays at the panel value. After a McNemar alert (Section~\ref{sec:mcnemar-section}), candidates are ranked by $E_t[\mathcal{C}]$ or by the constrained rules above.
+Let \(\tau_{\mathrm{prec}}\in[0,1]\) be the minimum acceptable precision. First remove candidates below that threshold; then maximize recall:
+\begin{equation}
+m_t^\star(\tau_{\mathrm{prec}})
+\in
+\arg\max_{\substack{m\in\mathcal{M}_{\mathrm{cand}}\\
+\widehat{\mathrm{Precision}}_t(m)\ge\tau_{\mathrm{prec}}}}
+\mathrm{Recall}_t(m).
+\label{eq:precision-constrained-selection}
+\end{equation}
+This rule limits the share of predicted positives that are irrelevant, then finds as many relevant items as possible among the acceptable candidates.
+
+\paragraph{Edge cases.}
+
+A constrained rule is incomplete unless it also specifies what happens when no unique feasible optimum exists. Three implementation cases must be explicit:
+\begin{itemize}
+    \item If the feasible set is empty, the rule returns no candidate. Silently relaxing the threshold would define a different decision problem.
+    \item If several candidates attain the optimum, they remain tied until a secondary rule is declared.
+    \item If the required rate is undefined because its class denominator is zero, that candidate cannot be declared feasible from the available set for that rate-based rule.
+\end{itemize}
+
+\section{Decision scope and monitoring handoff}
+
+The derivation ends by specifying when the rule may be used and how it connects to the monitoring alert. This boundary is necessary because the sentinel panel answers a change-detection question, whereas the loss rule answers a candidate-ranking question on a different evaluation set.
+
+The cost-aware calculation is conditional on:
+\begin{itemize}
+    \item the common complete-case benchmark \(\mathcal{B}_t\);
+    \item observed API usage charges at time \(t\);
+    \item the declared penalties or operational constraints; and
+    \item the candidate roster.
+\end{itemize}
+The penalties encode business preferences; they are not estimated from realised downstream losses in this thesis. The plug-in ranking also has no sampling-uncertainty analysis. Close loss values should therefore be interpreted with the sensitivity map and operational considerations, not as permanent universal rankings.
+
+Sentinel monitoring and deployment ranking use different data for different purposes. The disagreement-enriched panel \(\mathcal{D}_n\) exposes paired behavioural changes cheaply, but its class and difficulty mix are deliberately non-representative (Section~\ref{sec:selection-bias}). It must not supply the FP and FN counts used here.
+
+After an alert warrants escalation, candidates are evaluated on the full benchmark \(\mathcal{D}_N\), and \(\mathcal{B}_t\) is the common complete-case intersection of that candidate run. Equation~\eqref{eq:model-selection}, break-even analysis, or one pre-specified constrained rule can then support a deployment decision. An alert is evidence to investigate; it is neither a candidate ranking nor an automatic model switch.
+
+\paragraph{Established result.}
+The deployment question now has an explicit answer for any declared candidate roster and cost scenario. On the common complete-case set \(\mathcal{B}_t\), select
+\[
+m_t^\star
+\in
+\arg\min_{m\in\mathcal{M}_{\mathrm{cand}}}
+\left[
+c_t(m)
++
+\frac{
+C_{\mathrm{FP}}\mathrm{FP}_t(m)
++
+C_{\mathrm{FN}}\mathrm{FN}_t(m)
+}{n_t}
+\right].
+\]
+Pairwise break-even equations identify exactly where this minimiser changes as the relative error penalty \(w\) or total severity \(\lambda\) changes, and the dominance rule removes candidates that cannot be uniquely optimal under non-negative penalties. When the monetary parameters are not credible, the derived recall-, budget-, or precision-constrained rules provide explicit alternatives without silently inventing costs. Thus escalation has been converted into a conditional and auditable deployment decision, while ties, infeasible constraints, incomplete coverage, and the lack of a production-sampling model remain explicit limits rather than hidden assumptions.
