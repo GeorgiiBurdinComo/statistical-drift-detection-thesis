@@ -12,13 +12,13 @@ This thesis separates three decisions that are often conflated:
 Campaign-relevance classification by an external LLM API can be formalised as repeated evaluation of a non-stationary black-box binary classifier on fixed labelled items. The observable object is the binary output produced under a fixed client-controlled request contract, while the provider-side state remains hidden. This makes it possible to separate three roles clearly: the production task, the full benchmark used for broad comparison, and the frozen monitoring panel used for repeated paired checks. The same frozen items admit a newly released model into that comparison as soon as a first eligible run exists; that run is the model's baseline for later paired checks. Intentional prompt changes remain conceptually separate from passive behavioural drift.
 
 \paragraph{RQ2: How can a reduced monitoring subset be constructed and sized so that routine evaluation is substantially cheaper while retaining sensitivity to behavioural change?}
-The 300-item disagreement-enriched panel is a cheap fixed sensitivity set for routine monitoring. It is suitable for pairing the same posts across dates. Its construction concentrates evaluation effort on difficult cases, and the exact power analysis validates \(n=300\) as an adequate implemented size for the intended warning-panel role under the stated planning model, with \(\operatorname{Power}(300)\approx 0.80\). The panel is a low-cost warning instrument. Production-accuracy estimation is out of scope.
+The 300-item disagreement-enriched panel provides a low-cost sensitivity set for routine paired monitoring. Its construction concentrates evaluation effort on difficult cases, and the exact power analysis validates \(n=300\) as an adequate implemented size for the intended warning-panel role under the stated planning model, with \(\operatorname{Power}(300)\approx 0.80\). The panel is a low-cost warning instrument. Production-accuracy estimation is out of scope.
 
 \paragraph{RQ3: Which paired statistical test and multiplicity treatment provide an appropriate rule for detecting directional degradation across repeated runs?}
-The exact one-sided McNemar test is appropriate because the same labelled posts are observed in both runs. Its input is the imbalance between correct-to-wrong and wrong-to-correct transitions, not two independent accuracy estimates. Among 173 retrospective baseline-to-later comparisons, global Holm correction left one alert: \texttt{gpt-4.1-mini} declined by 12.5 percentage points from 15 to 22~March 2026 (\(n=296\), \(b=49\), \(c=12\), \(p_{\mathrm{Holm}}=1.704\times10^{-4}\)). It recovered in the next run. This is an observed temporary correctness change on the panel.
+The exact one-sided McNemar test is appropriate because the same labelled posts are observed in both runs. Its input is the imbalance between correct-to-wrong and wrong-to-correct transitions, not two independent accuracy estimates. The operational rule uses nominal paired signals and review on the fixed panel, while a stricter closed-window check can be reserved for later study summary. Over the recorded window, the panel produced three nominal monitoring signals. The strongest was \texttt{gpt-4.1-mini}, which declined by 12.5 percentage points from 15 to 22~March 2026 (\(n=296\), \(b=49\), \(c=12\)) and recovered in the next run. This is an observed temporary correctness change on the panel.
 
 \paragraph{RQ4: How should candidate models be compared and selected when predictive quality, inference cost, and campaign-specific false-positive and false-negative costs differ?}
-On 1,113 common full-benchmark cases, candidates can be compared by mean inference charge plus weighted false-positive and false-negative counts. At the illustrative penalty point \(C_{\mathrm{FP}}=0.155\) USD and \(C_{\mathrm{FN}}=0.031\) USD, \texttt{gpt-5-mini} has loss \(0.003697\), narrowly below \texttt{gpt-5-nano} at \(0.003779\). The ranking depends on both relative and absolute error costs, so a different business scenario can select a different model.
+On 1,112 common full-benchmark cases, candidates can be compared by mean inference charge plus weighted false-positive and false-negative counts. At the illustrative penalty point \(C_{\mathrm{FP}}=0.155\) USD and \(C_{\mathrm{FN}}=0.031\) USD, \texttt{gpt-5-mini} has loss \(0.003698\), narrowly below \texttt{gpt-5-nano} at \(0.003950\). The ranking depends on both relative and absolute error costs, so a different business scenario can select a different model.
 
 \section{Contribution and limits}
 
@@ -27,8 +27,8 @@ The contribution is a concrete decision pipeline:
     \item a fixed client-controlled request contract and stable item identifiers make repeated pairing possible;
     \item a disagreement-enriched panel reduces monitoring cost;
     \item the frozen labelled items admit a newly released model into the same comparison as existing candidates, with its first eligible run serving as the baseline for later paired checks;
-    \item exact paired testing with retrospective Holm correction controls the stated decision family;
-    \item manual review separates an alert from an action;
+    \item exact paired testing supplies nominal monitoring signals on the fixed panel;
+    \item manual review separates a signal from an action;
     \item the full benchmark supports scenario-specific candidate selection.
 \end{itemize}
 

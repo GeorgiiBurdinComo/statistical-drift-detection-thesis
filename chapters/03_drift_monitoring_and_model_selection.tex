@@ -1,7 +1,7 @@
 \chapter{Paired Drift Monitoring and Alerting}
 \label{ch:drift}
 
-\noindent The monitoring question is whether the same labelled posts changed from correct to wrong more often than they changed from wrong to correct. It is a paired question, so two independent accuracy proportions are the wrong input to the test.
+\noindent Monitoring tests whether regressions outnumber improvements on the same labelled posts between two runs. The appropriate input is paired correctness, not independent accuracy proportions.
 
 \section{Fixed-panel comparison design}
 \label{sec:formalisation-temporal}
@@ -156,7 +156,7 @@ It is convenient to express a positive degradation magnitude as
 \section{Exact directional McNemar test}
 \label{sec:mcnemar-section}
 
-The observed drop describes what happened on this panel but does not measure how much evidence its direction provides under a repeated-outcome model. This section derives an exact test from the paired table so that the alert can remain valid when the number of changed pairs is small.
+The panel drop \((b-c)/n\) is the observed effect size. This section derives an exact test from the paired table so that the alert remains valid when the number of changed pairs is small.
 
 \paragraph{Directional hypotheses.}
 
@@ -231,16 +231,16 @@ Rejection is evidence of directional degradation on the frozen panel under the w
 \begin{adjustbox}{max width=\linewidth}
 \input{assets/fig_paired_alert_rule.tex}
 \end{adjustbox}
-\caption[Paired study-alert rule]{The retrospective study rule. The raw p-value comes from paired correctness transitions; global Holm correction is applied only after the completed family is available.}
+\caption[Paired monitoring signal rule]{The operational monitoring rule. The raw p-value comes from paired correctness transitions; a nominal signal opens review and continued monitoring determines whether escalation is warranted.}
 \label{fig:paired-alert-rule}
 \end{figure}
 
-Repeated testing can make an isolated nominal p-value misleading. The study rule controls this family-wise error. The observed accuracy change is reported as an effect size; the alert itself is the Holm-adjusted test.
+The monitoring rule is a screening rule on the fixed panel. The observed accuracy change is reported as an effect size; review determines whether the signal warrants action.
 
 \paragraph{Repeated-testing problem.}
 \label{sec:baseline-multiplicity}
 
-Before correcting multiplicity, the comparison family and its reference point must be defined. Otherwise the error guarantee could be chosen after seeing which runs produce small p-values.
+Before interpreting repeated signals, the comparison family and its reference point must be defined. Otherwise the signal count could be reshaped after seeing which runs produce small p-values.
 
 \paragraph{Baseline convention.}
 
@@ -252,33 +252,14 @@ For each configuration \(q\), every later eligible run is compared with that con
     \item same-batch control evidence.
 \end{itemize}
 
-\paragraph{Family-wise error.}
+\paragraph{Repeated-signal problem.}
 
-Every new comparison creates another false-rejection opportunity. Repeating unadjusted \(0.05\) tests therefore does not control the family-wise error rate \(P(\text{at least one false rejection})\); correction applies to the decision family, not to the paired calculation within each test.
-
-\paragraph{Retrospective Holm rule.}
-
-For a completed family of \(K\) eligible comparisons, order the p-values as \(p_{(1)}\le\cdots\le p_{(K)}\). Holm rejects sequentially while
-\begin{equation}
-p_{(j)}\le\frac{0.05}{K-j+1},
-\label{eq:holm-step}
-\end{equation}
-stopping at the first failure~\cite{holm1979}. Chapter~\ref{chap:experimental-results} applies this retrospective rule to the pre-defined completed family.
-
-\paragraph{Retrospective decision.}
-
-For this completed study, a comparison is an alert when its one-sided exact McNemar p-value survives global Holm correction across the 173 baseline-to-later comparisons:
-\[
-\operatorname{Alert}_{\mathrm{study}}=1
-\quad\Longleftrightarrow\quad
-p_{\mathrm{Holm}}\leq0.05.
-\]
-Holm was applied after the observation window closed. A live system must pre-register a sequential rule, or treat its dashboard signal as a diagnostic indicator.
+Every new comparison creates another opportunity for a nominal signal. The monitoring rule therefore prioritises sensitivity on the fixed panel and routes any signal to review rather than treating the p-value alone as a deployment decision.
 
 \section{Diagnostics and escalation}
 \label{sec:classification-metrics}
 
-The alert rule deliberately compresses each item to correct or incorrect. Once an alert occurs, that compression is insufficient for diagnosis or action, so the workflow must restore class-specific information and define the handoff to full-benchmark evaluation.
+The signal rule deliberately compresses each item to correct or incorrect. After a signal, diagnosis and action require class-specific information and a handoff to full-benchmark evaluation.
 
 \paragraph{Class-specific diagnostics.}
 
@@ -318,10 +299,12 @@ For any eligible baseline--follow-up comparison, the discordant counts \(b\) and
 \[
 \Delta A_{\mathrm{paired}}=\frac{b-c}{n}.
 \]
-The retrospective study decision is
+\noindent The operational monitoring signal is
 \[
-\operatorname{Alert}_{\mathrm{study}}=1
+\operatorname{Signal}_{\mathrm{monitor}}=1
 \quad\Longleftrightarrow\quad
-p_{\mathrm{Holm}}\le0.05.
+b>c
+\quad\text{and}\quad
+p_{\mathrm{exact}}\le0.05.
 \]
-where \(p_{\mathrm{Holm}}\) is the global Holm-adjusted value of the one-sided exact McNemar p-value.
+where \(p_{\mathrm{exact}}\) is the one-sided exact McNemar p-value for directional degradation on the complete pairs. This signal flags a potential panel change. Escalation depends on trajectory, effective pair counts, same-batch controls, class-specific error composition, persistence in later runs, and deployment relevance.

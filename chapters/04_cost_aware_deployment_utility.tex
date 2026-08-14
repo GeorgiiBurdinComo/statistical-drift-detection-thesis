@@ -1,7 +1,7 @@
 \chapter{Cost-Aware Deployment Decisions}
 \label{ch:cost-deployment-utility}
 
-\noindent Monitoring flags a candidate for review. This chapter ranks replacements on common full-benchmark cases. The result is conditional on explicit error prices and observed inference charges. It applies cost-sensitive decision analysis after inference rather than training a cost-sensitive classifier~\cite{elkan2001cost,turney2000cost}.
+\noindent This chapter ranks candidate replacements on common full-benchmark cases using observed API charges and explicit false-positive and false-negative penalties. The result is conditional on declared error prices and observed inference charges. It applies cost-sensitive decision analysis after inference rather than training a cost-sensitive classifier~\cite{elkan2001cost,turney2000cost}.
 
 \section{Common evaluation basis and cost components}
 
@@ -151,7 +151,7 @@ This unit check verifies that the addition in Equation~\eqref{eq:expected-cost} 
 
 \paragraph{Finite-benchmark interpretation.}
 
-The counts and charges are observed on \(\mathcal{B}_t\), while the penalties are scenario inputs. Thus \(L_t(m)\) is assigned benchmark loss, not expected production cost; changing penalties changes the decision problem.
+The counts and charges are observed on \(\mathcal{B}_t\), while the penalties are scenario inputs. Thus \(L_t(m)\) is the expected cost of the declared penalty scenario on the common complete cases. Changing penalties changes the decision problem.
 
 \paragraph{Minimum-loss candidate.}
 
@@ -324,7 +324,7 @@ w_{i,j}^\star(\lambda)
 Require a nonzero denominator and \(w^\star\ge0\). Across pairs, these boundaries divide the \((w,\lambda)\) plane into regions with a constant minimiser.
 
 \paragraph{Worked comparison.}
-Against \texttt{gpt-5-nano}, \texttt{gpt-5-mini} has \((\Delta c,\Delta\mathrm{FP},\Delta\mathrm{FN})=(0.0009483,1,-42)\) on \(n_t=1113\). Mini costs more per call and makes one additional false positive, but avoids 42 false negatives. At \(w=0.2\), the break-even severity is \(\lambda^\star=0.1712\) USD; the illustrative point \((w,\lambda)=(0.2,0.186)\) narrowly favours mini.
+Against \texttt{gpt-5-nano}, \texttt{gpt-5-mini} has \((\Delta c,\Delta\mathrm{FP},\Delta\mathrm{FN})=(0.0009468,0,-43)\) on \(n_t=1112\). Mini costs more per call, matches nano on false positives, and avoids 43 false negatives. At \(w=0.2\), the break-even severity is \(\lambda^\star=0.1469\) USD; the illustrative point \((w,\lambda)=(0.2,0.186)\) therefore still favours mini.
 
 \paragraph{Dominance.}
 

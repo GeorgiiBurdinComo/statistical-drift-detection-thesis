@@ -1,7 +1,7 @@
 \chapter{Evaluation Design and Monitoring Panel}
 \label{ch:data}
 
-\noindent This chapter defines the two evaluation datasets used in the thesis and explains how they are linked. It first defines the large fixed labelled benchmark and then motivates a smaller monitoring panel for repeated checks. Panel design addresses two questions: how many posts the panel must contain for paired tests to remain informative, and which posts should be selected. The implemented panel is a disagreement-enriched sensitivity set: it concentrates on difficult, high-disagreement cases so that repeated evaluation is more sensitive to behavioural change in the monitored model.
+\noindent This chapter defines the fixed 1199-item benchmark and the 300-item monitoring panel. The panel is a disagreement-enriched sensitivity set that makes repeated paired checks cheaper and more sensitive to behavioural change. Panel design therefore has two parts: size and item selection.
 
 \section{Formal problem definition}
 
@@ -90,8 +90,6 @@ The next two sections address these decisions for the implemented monitoring des
 \section{Monitoring subset size}
 \label{sec:monitoring-sample-size}
 
-Panel membership and panel size are separate: size determines the amount of paired evidence available for repeated checks, while construction determines where in the benchmark that evidence is concentrated.
-
 Size planning refers to one paired comparison of the same panel between two evaluation times, say \(t_1\) and \(t_2\). For item \(i\), write
 \[
 E_{i,t}=\mathbb{I}\{\hat y_{i,t}(q)=y_i\}\in\{0,1\}
@@ -177,8 +175,27 @@ Under the boundary null of no directional degradation, regressions and improveme
 \[
 B\mid D=d,H_0\sim \mathrm{Binomial}(d,1/2).
 \]
-
-At significance level \(\alpha\), define the smallest regression count whose upper-tail probability under the null is at most \(\alpha\):
+Therefore, for each \(j\in\{0,\ldots,d\}\),
+\[
+P(B=j\mid D=d,H_0)
+=
+\binom{d}{j}
+\left(\frac12\right)^j
+\left(\frac12\right)^{d-j}
+=
+\binom{d}{j}2^{-d}.
+\]
+The one-sided alternative places evidence for degradation in large values of \(B\), since many regressions and few improvements imply net loss of accuracy. For a candidate cutoff \(k\), the exact null tail probability is therefore
+\[
+P(B\ge k\mid D=d,H_0)
+=
+\sum_{j=k}^{d}
+P(B=j\mid D=d,H_0)
+=
+\sum_{j=k}^{d}
+\binom{d}{j}2^{-d}.
+\]
+At significance level \(\alpha\), the critical value is chosen as the smallest integer cutoff whose null upper tail is at most \(\alpha\):
 \begin{equation}
 k_\alpha(d)
 =
@@ -193,19 +210,16 @@ k_\alpha(d)
 \end{equation}
 The one-sided exact McNemar rule rejects when \(B\ge k_\alpha(d)\). If no such \(k\) exists, set \(k_\alpha(d)=d+1\), so rejection is impossible for that \(d\).
 
-Because \(D\) is random at design time, power is obtained by averaging the conditional rejection probability over the distribution of \(D\):
-\begin{equation}
-\begin{split}
-\operatorname{Power}(n,\rho,g;\alpha)
-={}&
+At design time, the realised discordance count \(D\) has not yet been observed. Each possible value \(d\in\{0,\ldots,n\}\) therefore defines its own conditional rejection probability \(P(\text{reject}\mid D=d)\). Overall power is the unconditional rejection probability before the data are observed, so the law of total probability gives
+\[
+P(\text{reject})
+=
 \sum_{d=0}^{n}
-\binom{n}{d}\rho^d(1-\rho)^{n-d}\\
-&{}\times
-\sum_{j=k_\alpha(d)}^{d}
-\binom{d}{j}
-\left(\frac{\rho+g}{2\rho}\right)^j
-\left(\frac{\rho-g}{2\rho}\right)^{d-j}.
-\end{split}
+P(D=d)\,P(\text{reject}\mid D=d).
+\]
+Because \(D\sim \mathrm{Binomial}(n,\rho)\), substituting \(P(D=d)=\binom{n}{d}\rho^d(1-\rho)^{n-d}\) and the exact conditional rejection probability yields
+\begin{equation}
+\adjustbox{max width=\linewidth}{$\displaystyle \operatorname{Power}(n,\rho,g;\alpha)=\sum_{d=0}^{n}\binom{n}{d}\rho^d(1-\rho)^{n-d}\sum_{j=k_\alpha(d)}^{d}\binom{d}{j}\left(\frac{\rho+g}{2\rho}\right)^j\left(\frac{\rho-g}{2\rho}\right)^{d-j}$}
 \label{eq:planning-discordant-m}
 \end{equation}
 Equation~\eqref{eq:planning-discordant-m} is exact under Assumption~\ref{ass:chapter2-power-model}. For \(\rho=0\), admissibility forces \(g=0\), so power is zero.
@@ -224,20 +238,35 @@ For target power \(1-\beta\), define the minimum panel size by
 \end{equation}
 The threshold \(\alpha\) must match the alerting question being planned, whether nominal or multiplicity-adjusted.
 
-Historically, panel membership came from disagreement sampling, while panel size came from a pilot calculation with \(\rho=137/1199=0.1143\), \(g=0.05\), \(\alpha=0.05\), and target power \(0.80\). Exact recalculation gives
-\[
-\operatorname{Power}(273)=0.756,\qquad
-\operatorname{Power}(300)\approx 0.80,\qquad
-\operatorname{Power}(304)=0.801.
-\]
-Thus the historical rounding to \(n=300\) produced a panel size that is effectively on target for the intended McNemar warning task under the stated design assumptions: exact unconditional power rounds to \(0.80\) at \(n=300\), and the exact value first exceeds the nominal \(0.80\) threshold at \(n=304\).
+Here \(\rho\) is the probability that a benchmark item changes correctness state between two evaluation times. The historical pilot value \(\hat\rho=137/1199=0.1143\) is the observed discordance rate from a pilot paired comparison on the full 1199-item benchmark: 137 items changed correctness status between the baseline and follow-up runs under the same client-controlled request contract.
 
-For the implemented monitoring design, size answers only how many posts belong in the panel. The remaining question is which posts should occupy those 300 positions.
+Using this pilot discordance estimate, together with \(g=0.05\) and \(\alpha=0.05\), the conditional regression and improvement probabilities are
+\[
+\frac{\rho+g}{2\rho}=0.7188,
+\qquad
+\frac{\rho-g}{2\rho}=0.2812.
+\]
+For the implemented panel size \(n=300\), Equation~\eqref{eq:planning-discordant-m} therefore becomes
+\[
+\adjustbox{max width=\linewidth}{$\displaystyle \operatorname{Power}(300,0.1143,0.05;0.05)=\sum_{d=0}^{300}\binom{300}{d}(0.1143)^d(0.8857)^{300-d}\sum_{j=k_{0.05}(d)}^{d}\binom{d}{j}(0.7188)^j(0.2812)^{d-j}\approx 0.80$}
+\]
+Figure~\ref{fig:panel-size-vs-rho} shows how the exact minimum panel size depends on the assumed discordance probability \(\rho\) for 3-, 5-, and 8-percentage-point degradations at nominal \(\alpha=0.05\) and target power \(0.80\). Higher discordance requires larger panels because the same fixed degradation becomes less dominant among the discordant pairs. At the pilot value \(\hat\rho=137/1199\), the exact 80\%-power threshold for \(g=0.05\) is \(n_{\min}=304\). 
+
+The implemented choice \(n=300\) lies just below this cutoff and yields exact power \(0.7955\), which rounds to \(0.80\). The historical choice of 300 followed that rounded value, and the small gap to the formal 80\% threshold became visible only after the later exact post-processing pass.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.84\linewidth]{assets/evidence/fig_panel_size_vs_rho.pdf}
+    \caption[Exact minimum panel size versus discordance]{Exact \(n_{\min}\) for 80\% power as a function of discordance \(\rho\), shown for target degradations of 3, 5, and 8 percentage points. The guide marks the pilot estimate \(\hat\rho=137/1199\); on the 5-percentage-point curve, the filled marker is the exact threshold \(n_{\min}=304\) and the open marker is the implemented size \(n=300\).}
+    \label{fig:panel-size-vs-rho}
+\end{figure}
+
+The implemented monitoring design therefore fixes the panel size at \(n=300\). The remaining question addresses which posts should occupy those 300 positions.
 
 \section{Disagreement-based subset construction}
 \label{sec:informative-sampling-disagreement}
 
-With target size fixed at \(n=300\), construction chooses the identities in \(\mathcal{I}_n\). The objective is not to reproduce the marginal composition of \(\mathcal{D}_N\), but to allocate repeated evaluations to posts that are more likely to reveal subtle behavioural changes. This is close in spirit to query-by-committee sampling~\cite{seung1992query,settles2009active}: when several models disagree on the same item, that item is a plausible candidate for a hard or boundary-near case.
+With target size fixed at \(n=300\), construction chooses the identities in \(\mathcal{I}_n\). The panel favours posts where models disagree, because those posts are more likely to expose subtle behavioural change. This is close in spirit to query-by-committee sampling~\cite{seung1992query,settles2009active}: when several models disagree on the same item, that item is a plausible candidate for a hard or boundary-near case.
 
 The ensemble contained ten OpenAI and six Gemini models. Coverage was sparse, so the vote summary for post \(i\) uses:
 \begin{description}
@@ -255,42 +284,41 @@ It is defined by
 \end{equation}
 If \(\hat p_i=0\) or \(\hat p_i=1\), the available models agree unanimously. Values near \(0.5\) indicate stronger disagreement.
 
-The historical sampler used the score
-\begin{equation}
-    s_i
-    =
-    \sqrt{\hat p_i(1-\hat p_i)}
-    \left[
-        -\hat p_i\log\hat p_i-(1-\hat p_i)\log(1-\hat p_i)
-    \right],
-    \label{eq:historical-disagreement-score}
-\end{equation}
-with the convention \(0\log 0=0\). For binary votes, \(\hat p_i(1-\hat p_i)\) is the population variance of the vote indicators, so the longer variance expression collapses to the Bernoulli form above. The entropy term was kept because it was part of the historical implementation.
+Figure~\ref{fig:vote-share-distribution} shows the realised distribution of \(\hat p_i\) over the 1197 benchmark posts with at least one observed prediction in the eight-run matrix. The mass at \(\hat p_i=0\) and \(\hat p_i=1\) comes from unanimous rows. The interior bars are the mixed-vote rows, and the central bars near \(0.5\) are the most evenly split cases.
 
-Both factors are zero under unanimity and attain their maximum at a balanced split. The score therefore ranks posts by the degree of ensemble disagreement. For example, a \(10\!:\!0\) vote gives \(s_i=0\), a \(9\!:\!1\) vote gives a small positive value, and a \(5\!:\!5\) vote gives the maximum score. The score is a historical ranking heuristic on \(\hat p_i\); items with the same vote share get the same score regardless of \(K_i\).
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\linewidth]{assets/evidence/fig_vote_share_distribution.pdf}
+    \caption[Realised distribution of benchmark vote shares]{Realised distribution of benchmark posts by relevant-vote share \(\hat p_i\) in the eight-run disagreement matrix. Bars at \(0\) and \(1\) are unanimous rows; the central bars near \(0.5\) correspond to the most even vote splits.}
+    \label{fig:vote-share-distribution}
+\end{figure}
 
-The realised disagreement structure is shown in Figure~\ref{fig:sensitivity-panel-intuition}. Rows are benchmark posts ordered by the share of relevant votes across eight high-coverage model runs, and columns are the models. The boxed middle band contains posts with mixed model votes, whereas the upper and lower blocks contain unanimous decisions. This empirical pattern supports the panel-construction intuition directly: disagreement concentrates in a middle region between easy negative and easy positive cases, so a disagreement-enriched subset acts as a sensitivity set for behavioural change.
+The realised disagreement structure is shown in Figure~\ref{fig:sensitivity-panel-intuition}. Rows are benchmark posts ordered by \(\hat p_i\) across eight high-coverage model runs, and columns are the models. The narrow strips at left show the reference label, \(\hat p_i\), and the frozen 300-post panel membership. Green rows in the panel strip are selected panel posts. The solid box contains the full 518-post mixed-vote band; outside that band, 679 posts are unanimous on the available predictions and 2 are fully missing.
 
 \begin{figure}[htbp]
 \centering
 \begin{adjustbox}{max width=\linewidth}
 \includegraphics{assets/evidence/fig_canonical_disagreement_matrix}
 \end{adjustbox}
-\caption[Empirical disagreement structure for the monitoring intuition]{Empirical disagreement matrix on the frozen 1199-item benchmark. Rows are ordered by the share of relevant votes across eight high-coverage model runs. Blue cells are predicted non-relevant, red cells are predicted relevant, and grey cells mark missing predictions. The narrow strip at left shows the reference label. The boxed middle band contains posts with mixed model votes and marks the disagreement-rich region from which a sensitivity-oriented monitoring subset can be drawn.}
+\caption[Empirical disagreement structure for the monitoring intuition]{Empirical disagreement matrix on the frozen 1199-item benchmark. Rows are ordered by the relevant-vote share \(\hat p_i\) across eight high-coverage model runs. Blue cells are predicted non-relevant, red cells are predicted relevant, and grey cells mark missing predictions. The narrow strips at left show the reference label, \(\hat p_i\), and the frozen panel membership; green rows in the panel strip mark selected panel posts. The solid box marks the full mixed-vote band.}
 \label{fig:sensitivity-panel-intuition}
 \end{figure}
 
-The recorded procedure then converted this intuition into one fixed panel of \(n=300\) posts. Using score percentiles \(p_{50}\) and \(p_{80}\), the sampler planned \(201\) high-score, \(69\) middle-score, and \(30\) low-score items, drawn without replacement. The draw used \texttt{numpy.random.default\_rng(42)}. In the recorded execution, \(p_{50}=0\) and \(p_{80}=0.3000557\); the empty low-score pool was filled from the remaining scored items. The recorded execution is a seeded disagreement-weighted sample with planned stratum sizes \(201/69/30\).
+The fixed 300-post panel was then obtained by seeded random sampling from two construction-time buckets. In the recorded execution, the high-disagreement bucket contained \(349\) covered rows and the remaining bucket contained \(850\). The sampler drew \(201\) posts without replacement from the high-disagreement bucket and \(99\) from the remaining covered rows, using \texttt{numpy.random.default\_rng(42)} and a final shuffle. This split keeps disagreement enrichment as the dominant signal without treating one observed comparison pass as a perfect oracle of item difficulty: posts outside the high-disagreement bucket may still be hard or boundary-near, but they did not surface as maximally split in that one realised run. Figures~\ref{fig:vote-share-distribution} and~\ref{fig:sensitivity-panel-intuition} visualise the corresponding disagreement structure in the canonical eight-run matrix, where disagreement is densest around \(\hat p_i=0.5\).
 
-The full-benchmark identifier is
-\[
-\texttt{campaign\_relevance\_02e1a68ccb0f},
-\]
-and the monitoring-subset identifier is
-\[
-\texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}.
-\]
-Recording both identifiers makes every reported value traceable to one fixed dataset.
+\begin{table}[htbp]
+    \centering
+    \caption[Construction-time sampling buckets]{Construction-time sampling buckets for the frozen 300-post panel.}
+    \label{tab:panel-sampling-buckets}
+    \begin{tabular}{lcc}
+        \toprule
+        Bucket & Covered rows & Drawn posts \\
+        \midrule
+        Disagreement bucket & 349 & 201 \\
+        Remaining covered & 850 & 99 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 Table~\ref{tab:dataset-summary} compares the composition of the benchmark and the implemented monitoring panel.
 
@@ -313,14 +341,10 @@ Table~\ref{tab:dataset-summary} compares the composition of the benchmark and th
     \end{tabular}
 \end{table}
 
-The table shows the composition shift produced by disagreement enrichment. Positive items account for \(83.3\%\) of the panel but \(56.9\%\) of the benchmark. The modality mix also differs. This difference is part of the design: the panel is constructed as a sensitivity set rather than as a miniature representative benchmark.
-
-The provenance export records the ensemble roster, coverage, score rule, thresholds, selected identifiers, and their hash, together with any provider-specific request settings that were available at run time. The original ordered prediction matrix is unavailable. Because seed and temperature are model-dependent~\cite{openai2026chatcompletions}, bit-for-bit request replay was not uniformly enforceable. In this thesis, reproducibility therefore means verifying and reusing the committed 300 identifiers and their stored evaluation outputs rather than reproducing every request bit-for-bit.
-
 \section{Selection bias and monitoring objective}
 \label{sec:selection-bias}
 
-This design entails an explicit trade-off. Because the monitoring subset was created by disagreement enrichment rather than by probability sampling from \(\mathcal{D}_N\) or from production, its class balance, modality mix, and difficulty profile differ from the full benchmark. The gain is sensitivity: hard boundary-near posts are overrepresented, so local behavioural changes are more likely to appear on repeated paired checks. The cost is that the accuracy level and temporal changes measured on \(\mathcal{D}_n\) describe that subset itself rather than benchmark-wide or production-wide frequencies.
+This design creates a direct trade-off. Because the monitoring subset was created by disagreement enrichment rather than by probability sampling from \(\mathcal{D}_N\) or from production, its class balance, modality mix, and difficulty profile differ from the full benchmark. The gain is sensitivity: hard boundary-near posts are overrepresented, so local behavioural changes are more likely to appear on repeated paired checks. The cost is that the accuracy level and temporal changes measured on \(\mathcal{D}_n\) describe the panel itself rather than benchmark-wide or production-wide frequencies.
 
 The roles of the two evaluation datasets are therefore distinct:
 \begin{enumerate}
@@ -328,6 +352,6 @@ The roles of the two evaluation datasets are therefore distinct:
     \item \(\mathcal{D}_n\) supports repeated paired monitoring on 300 frozen, disagreement-enriched items.
 \end{enumerate}
 
-The thesis therefore keeps two jobs separate. First, paired drift detection describes and tests change on the frozen monitoring subset. Second, deployment ranking and cost-aware selection are performed on the full benchmark or another deployment-relevant evaluation set. An alert on \(\mathcal{D}_n\) triggers a broader evaluation on \(\mathcal{D}_N\).
+The two datasets serve different roles. The panel supports paired drift detection, and the full benchmark supports deployment ranking and cost-aware selection. An alert on \(\mathcal{D}_n\) triggers a broader evaluation on \(\mathcal{D}_N\).
 
 Under the historical nominal design scenario \((\rho,g,\alpha)=(137/1199,0.05,0.05)\), the exact unconditional power of the implemented 300-item panel rounds to \(0.80\). This validates the implemented panel as an adequate fixed sensitivity set for repeated paired McNemar monitoring on the frozen subset, not as a representative miniature of the full benchmark.

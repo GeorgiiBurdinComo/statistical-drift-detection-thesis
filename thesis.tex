@@ -17,11 +17,7 @@
 \examiner[Prof.\ Dr.\ rer.\ nat.\ Dr.-Ing.\ habil.]{Florian Zaussinger}
 \addexaminer[M.Sc.]{Marin Ivankovic}[Co-Founder \& CEO of GOCOMO GmbH]
 \abstract{%
-This thesis develops a monitoring pipeline for closed Large Language Models used to classify social-media posts by campaign relevance. The practical problem is that API models may change their observable behaviour over time even when the client-side prompt and integration stay fixed.
-
-Monitoring is formulated as repeated comparison of current outputs with a fixed baseline on the same labelled data. To reduce evaluation cost while keeping sensitivity to behavioural changes, the thesis constructs a smaller drift-sensitive control subset from posts that are difficult for at least one candidate model.
-
-Changes relative to the baseline are tested with the exact McNemar test on paired correctness outcomes. When several models are monitored at the same time, p-values are adjusted with Holm's procedure. The thesis also develops a cost-aware rule for model selection that combines inference cost with false-positive and false-negative error costs.
+Closed LLM APIs are used in this thesis to classify social-media posts as relevant or not relevant to a marketing campaign. Because provider-side updates may alter model behaviour over time, the same task is evaluated repeatedly on a fixed labelled dataset. A reduced monitoring subset is used to lower evaluation cost, and changes are tested with the exact McNemar test on paired correctness outcomes. Candidate models are additionally compared with a cost-aware decision rule.
 
 }
 \email{\href{mailto:gburdin@hs-mittweida.de}{gburdin@hs-mittweida.de}}
@@ -34,7 +30,6 @@ Changes relative to the baseline are tested with the exact McNemar test on paire
 \usepackage[bibstyle=ieee,citestyle=numeric-comp,natbib=true,sorting=none,dashed=false]{biblatex}
 \usepackage{xcolor}
 \usepackage{bm}
-\usepackage{listings}
 \usepackage{graphicx}
 \usepackage{xurl}
 \usepackage{tikz}

@@ -1,18 +1,18 @@
 \chapter{Introduction}
 
 \section{Context and motivation}
-Industrial classification pipelines increasingly rely on Large Language Model providers that expose their systems through application programming interfaces. In such settings, the deployed model can be viewed as a non-stationary black-box classifier whose internal parameters and update schedule are controlled by the provider rather than by the user. As a result, the behaviour of the same API-accessible model may change over time even when the task, prompt, and evaluation procedure remain fixed~\cite{chen2023chatgpt,openai2026modelguidance,anthropic2026modelversioning}.
+Industrial classification pipelines often rely on LLM APIs. In that setting, the deployed model is a provider-controlled black-box classifier whose behaviour may change over time even when the task, prompt, and evaluation procedure stay fixed~\cite{chen2023chatgpt}.
 
-The practical motivation for this thesis arises from the author's work at GOCOMO GmbH. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, or event. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, automated classification becomes a necessary operational component.
+The practical motivation for this thesis arises from the author's work at GOCOMO GmbH. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a social media content post is relevant to a specified campaign, brand, or event. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, automated classification becomes a necessary operational component.
 
-However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade after a provider-side change~\cite{chen2023chatgpt,openai2026modelguidance,anthropic2026modelversioning}. In a business-critical pipeline, such changes should be detected early. At the same time, repeated full-benchmark evaluation on a labelled dataset is costly. This creates the need for a monitoring procedure that is statistically informative, operationally feasible, and economically justified.
+However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade after a provider-side change~\cite{chen2023chatgpt}. In a business-critical pipeline, such changes should be detected early. At the same time, repeated full-benchmark evaluation on a labelled dataset is costly. This creates the need for a monitoring procedure that is statistically informative, operationally feasible, and economically justified.
 
 \section{Task definition and request contract}
 GOCOMO uses closed LLM APIs to classify social-media posts as relevant or not relevant to a marketing campaign. These predictions are used to filter content before downstream analytics. Because the incoming volume is large, the decision has to be made automatically and then checked through offline evaluation rather than routine manual review.
 
-The task is semantic rather than a keyword lookup. A post can refer to a campaign through its text, visuals, or context without repeating a campaign name or hashtag. The main difficulty is that many posts are topically similar to campaign content while still lacking a direct connection to the campaign itself.
+The task is semantic. A post can refer to a campaign through its text, visuals, or context without repeating a campaign name or hashtag. Many posts are topically similar to campaign content while still lacking a direct connection to the campaign itself.
 
-Figure~\ref{fig:campaign-relevance-examples} shows the intended distinction. The relevant post is linked to the GOCOMO Effie event through the submission materials and the workspace context. The non-relevant post shows branded merchandise only, without an event connection.
+Figure~\ref{fig:campaign-relevance-examples} shows the intended distinction. The relevant post is linked to the GOCOMO reporting on the Effie event through the submission materials and the workspace context. The non-relevant post shows branded merchandise only, without an event connection.
 
 \begin{figure}[htbp]
 \centering
@@ -125,7 +125,7 @@ For every post, the request combines a campaign brief with caption, transcript, 
 \label{fig:payload-unified}
 \end{figure}
 
-These task and request definitions fix the observable object used throughout the thesis: a repeated black-box binary decision on the same labelled items under a fixed client-controlled request contract. If the prompt or another exposed request component is intentionally changed, that is treated as a new configuration rather than passive drift of the old one.
+Throughout the thesis, the monitored object is the repeated black-box binary decision on the same labelled items under a fixed client-controlled request contract. An intentional prompt or parser change defines a new configuration.
 
 \section{Problem statement and research questions}
 The central problem is to evaluate and monitor API-based LLM classifiers in a production environment where model behaviour may change over time. The user does not control the underlying model updates, yet still has to make reliable decisions from observed task performance.

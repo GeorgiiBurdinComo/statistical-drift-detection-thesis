@@ -95,11 +95,11 @@ The same scored outputs feed a read-only Streamlit reporting layer used with pro
 \begin{itemize}
     \item an overview of accuracy traces by model and run;
     \item paired McNemar evidence;
-    \item expected-cost ranking.
+    \item expected-cost ranking on common benchmark cases.
 \end{itemize}
 An external email notification informs the responsible engineer about an alert, after which review and escalation continue in the same evidence store.
 
-The third view implements the assigned-loss ranking of Chapter~\ref{ch:cost-deployment-utility}. For each candidate it displays
+The third view implements the expected-cost ranking of Chapter~\ref{ch:cost-deployment-utility} on the common benchmark cases. For each candidate it displays
 \begin{equation}
 L_t(m)
 =
@@ -112,7 +112,7 @@ C_{\mathrm{FN}}\,\mathrm{FN}_t(m)
 }{n_t},
 \label{eq:dashboard-expected-cost}
 \end{equation}
-which is Equation~\eqref{eq:expected-cost}. Inference charges \(c_t(m)\) and error counts come from scored traces. The penalties \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) are scenario inputs. A reviewer can change them, or the ratio \(C_{\mathrm{FN}}/C_{\mathrm{FP}}\), and the ranking updates immediately. The highlighted minimiser of \(L_t(m)\) is the currently preferred model under those prices. Changing the penalties can change which model wins. The dashboard reports that comparison for human review. Any deployment change stays a separate manual decision.
+which is Equation~\eqref{eq:expected-cost}. Inference charges \(c_t(m)\) and error counts come from scored traces. The penalties \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) are scenario inputs. A reviewer can change them, or the ratio \(C_{\mathrm{FN}}/C_{\mathrm{FP}}\), and the ranking updates immediately. The highlighted minimiser of \(L_t(m)\) is the current minimum-expected-cost candidate under those prices. Changing the penalties can change which model wins. The dashboard reports that comparison for human review. Any deployment change stays a separate manual decision.
 
 \clearpage
 \begin{figure}[!p]
@@ -132,7 +132,7 @@ which is Equation~\eqref{eq:expected-cost}. Inference charges \(c_t(m)\) and err
     \begin{adjustbox}{max width=\linewidth, max height=0.84\textheight, keepaspectratio}
     \includegraphics{assets/evidence/fig_dashboard_expected_cost_shot.png}
     \end{adjustbox}
-    \caption[]{Continued: expected-cost view~(c). A reviewer sets \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\); the highlighted bar is the current minimiser of \(L_t(m)\). The dashboard reports this ranking for review; deployment stays a separate manual decision.}
+    \caption[]{Continued: expected-cost view~(c) on the common benchmark cases. A reviewer sets \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\); the highlighted bar is the current minimiser of \(L_t(m)\). The dashboard reports this ranking for review; deployment stays a separate manual decision.}
 \end{figure}
 \clearpage
 
@@ -165,6 +165,8 @@ Dashboard snapshots and exports & Present trajectories, paired evidence, and can
 \end{table}
 
 These records keep predictions from different executions separate and pair the same benchmark item across runs. Saved provider responses allow scoring and statistical analysis to be repeated without calling the model again. Stronger replay guarantees would additionally require immutable hashes for the dataset, request template, prompt, parser, and model configuration.
+
+For the fixed datasets used in this thesis, the persisted benchmark identifier is \texttt{campaign\_relevance\_02e1a68ccb0f} and the persisted monitoring-panel identifier is \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}. Langfuse-backed traces, scores, and their export layer preserve these dataset keys so every reported value remains traceable to one fixed benchmark or panel definition.
 
 \section{Post-run decision logic}
 \label{sec:decision-logic}
