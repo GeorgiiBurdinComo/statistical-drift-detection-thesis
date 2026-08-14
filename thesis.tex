@@ -17,7 +17,12 @@
 \examiner[Prof.\ Dr.\ rer.\ nat.\ Dr.-Ing.\ habil.]{Florian Zaussinger}
 \addexaminer[M.Sc.]{Marin Ivankovic}[Co-Founder \& CEO of GOCOMO GmbH]
 \abstract{%
-This thesis investigates how black-box Large Language Model classifiers used for campaign-relevance detection can be monitored over time and evaluated for deployment when their behaviour may change without notice. It combines repeated evaluation on a fixed sentinel panel with exact paired statistical testing, multiplicity control, and a separate cost-aware comparison of deployment candidates. The approach is implemented as a reproducible batch workflow that preserves item-level outputs and run identity for later analysis. The empirical study shows that the framework can identify a meaningful change in observed model behaviour, while distinguishing such an alert from evidence about its cause or production impact. It further demonstrates that model selection depends on both classification errors and inference cost rather than accuracy alone. Overall, the thesis provides an auditable decision process connecting monitoring, statistical escalation, and deployment selection.
+This thesis develops a monitoring pipeline for closed Large Language Models used to classify social-media posts by campaign relevance. The practical problem is that API models may change their observable behaviour over time even when the client-side prompt and integration stay fixed.
+
+Monitoring is formulated as repeated comparison of current outputs with a fixed baseline on the same labelled data. To reduce evaluation cost while keeping sensitivity to behavioural changes, the thesis constructs a smaller drift-sensitive control subset from posts that are difficult for at least one candidate model.
+
+Changes relative to the baseline are tested with the exact McNemar test on paired correctness outcomes. When several models are monitored at the same time, p-values are adjusted with Holm's procedure. The thesis also develops a cost-aware rule for model selection that combines inference cost with false-positive and false-negative error costs.
+
 }
 \email{\href{mailto:gburdin@hs-mittweida.de}{gburdin@hs-mittweida.de}}
 \location{Mittweida}
@@ -33,7 +38,7 @@ This thesis investigates how black-box Large Language Model classifiers used for
 \usepackage{graphicx}
 \usepackage{xurl}
 \usepackage{tikz}
-\usetikzlibrary{positioning,arrows.meta,calc,fit,shapes.geometric,backgrounds}
+\usetikzlibrary{positioning,arrows.meta,calc,fit,shapes.geometric,backgrounds,decorations.pathreplacing}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 
@@ -112,6 +117,13 @@ This thesis investigates how black-box Large Language Model classifiers used for
 % Keep the main contents at thesis-outline level; derivation signposts remain in the body.
 \setcounter{tocdepth}{1}
 \RedeclareSectionCommand[tocbeforeskip=0pt]{chapter}
+% Display paragraph titles on their own line (class default is run-in).
+\RedeclareSectionCommand[
+  beforeskip=0.35\baselineskip plus 0.1\baselineskip minus 0.05\baselineskip,
+  afterskip=0.12\baselineskip,
+  runin=false,
+  afterindent=false
+]{paragraph}
 \BeforeStartingTOC[toc]{\small}
 
 \input{assets/metrics_export/metrics_macros.tex}

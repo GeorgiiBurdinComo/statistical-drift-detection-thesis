@@ -1,8 +1,7 @@
 \chapter{Paired Drift Monitoring and Alerting}
 \label{ch:drift}
 
-\paragraph{Objective.}
-Chapter~\ref{ch:data} supplied a fixed monitoring object; the task here is to derive a decision rule for whether one API configuration has degraded on that object. The rule must use the pairing of identical items, distinguish statistical evidence from operational magnitude, remain valid for the declared family of repeated comparisons, and state what action follows an alert. The required output is a reproducible mapping from two eligible runs to either ``no alert'' or ``escalate'', not an explanation of the cause, an estimate of production risk, or a replacement-model choice.
+\noindent The monitoring question is whether the same labelled posts changed from correct to wrong more often than they changed from wrong to correct. It is a paired question, so two independent accuracy proportions are the wrong input to the test.
 
 \section{Fixed-panel comparison design}
 \label{sec:formalisation-temporal}
@@ -11,15 +10,13 @@ An observed accuracy difference is interpretable only if both runs refer to the 
 
 \paragraph{Correctness representation.}
 
-Let \(q\) denote one complete API configuration: provider model, prompt, parsing rule, and the other fixed client-side settings described in Chapter~\ref{ch:data}. Let \(t=0,1,\ldots\) index evaluation batches. For panel item \(i\),
-\[
-y_i\in\{0,1\}
-\]
-is the manually assigned reference label, and
-\[
-\hat y_{i,t}(q)\in\{0,1\}
-\]
-is the prediction returned by configuration \(q\) at time \(t\).
+The paired comparison uses the following objects:
+\begin{description}
+    \item[\(q\)] one fixed client-controlled request contract: provider endpoint, prompt, request schema, parser, and the exposed inference settings that are actually available for that model;
+    \item[\(y_i\)] manually assigned reference label for panel item \(i\), where \(y_i\in\{0,1\}\);
+    \item[\(\hat y_{i,t}(q)\)] prediction returned by configuration \(q\) for item \(i\) at time \(t\), where \(\hat y_{i,t}(q)\in\{0,1\}\).
+\end{description}
+As discussed in Chapter~\ref{ch:data}, the hidden provider-side state is not observed directly and may vary across evaluation times \(t=0,1,\ldots\).
 
 The alert concerns net classification performance rather than a particular predicted class, so each output is reduced to the common correct/incorrect scale needed for pairing. Define the correctness indicator
 \begin{equation}
@@ -53,17 +50,17 @@ Between the two runs being compared, the panel identifiers, reference labels, pr
 \label{ass:fixed-evaluation-contract}
 \end{assumption}
 
-This condition removes item resampling as an explanation for an accuracy difference. It does not freeze provider-controlled model weights, routing, nondeterministic inference, service failures, or other hidden execution state. Those components are part of the black-box behaviour being observed. Therefore, a detected change means that outputs changed; it does not by itself identify which hidden component caused the change.
+The fixed-contract assumption rules out item resampling. Detected change means the outputs changed under that contract; hidden weights, routing, and service failures remain part of the observed black-box behaviour.
 
 \paragraph{Complete pairs and effective denominator.}
 
-The stored panel contains 300 items, but an API run can have missing outputs. A valid paired comparison may use only items observed and scored at both times. For baseline \(t_1\) and follow-up \(t_2\), define
+The stored panel contains 300 items, but an API run can have missing outputs. A valid paired comparison may use only items observed and scored at both times. For baseline \(t_1\) and follow-up \(t_2\), define the complete-pair set
 \[
 \mathcal{C}(q,t_1,t_2)
 =
 \{i:\text{item \(i\) has a valid scored result at both \(t_1\) and \(t_2\)}\}
 \]
-and let
+and the corresponding effective denominator
 \[
 n_{12}=|\mathcal{C}(q,t_1,t_2)|\le 300.
 \]
@@ -165,15 +162,12 @@ The observed drop describes what happened on this panel but does not measure how
 
 The observed counts \(b\) and \(c\) describe this comparison exactly. Statistical testing adds a working probability model to judge how surprising their imbalance would be under repeated comparable evaluations.
 
-Let
-\[
-p_b=P\{(E_{i,t_1},E_{i,t_2})=(1,0)\}
-\]
-be the probability of regression and let
-\[
-p_c=P\{(E_{i,t_1},E_{i,t_2})=(0,1)\}
-\]
-be the probability of improvement in that model. The monitoring question is directional: is regression more likely than improvement? The hypotheses are therefore
+The working probability model uses:
+\begin{description}
+    \item[\(p_b\)] probability of regression, \(P\{(E_{i,t_1},E_{i,t_2})=(1,0)\}\);
+    \item[\(p_c\)] probability of improvement, \(P\{(E_{i,t_1},E_{i,t_2})=(0,1)\}\).
+\end{description}
+The monitoring question is directional: is regression more likely than improvement? The hypotheses are therefore
 \begin{equation}
 H_0:p_b\le p_c
 \qquad\text{against}\qquad
@@ -187,7 +181,7 @@ For the exact test calculation, item pairs are treated as independent draws from
 \label{ass:paired-outcome-model}
 \end{assumption}
 
-This is an inferential model, not a claim that the sentinel panel was randomly sampled from production. Strong dependence among near-duplicate or clustered items can invalidate the nominal test level. The frozen-panel conclusion is therefore narrower than a production-population conclusion.
+Assumption~\ref{ass:paired-outcome-model} is an inferential model for the exact test. Strong dependence among near-duplicate or clustered items can invalidate the nominal test level. The frozen-panel conclusion is therefore narrower than a production-population conclusion.
 
 \paragraph{Conditional law for discordant pairs.}
 
@@ -224,27 +218,24 @@ At per-comparison level \(\alpha\), reject when
     p_{\mathrm{exact}}\le\alpha.
     \label{eq:nominal-rejection-rule}
 \end{equation}
-Set \(p_{\mathrm{exact}}=1\) when \(D=0\). The exact rule remains valid for small \(D\), where asymptotic approximations are unreliable~\cite{fagerland2013mcnemar}.
+Set \(p_{\mathrm{exact}}=1\) when \(D=0\). The exact conditional rule is transparent for small discordant counts. It can be conservative; asymptotic and mid-\(p\) variants are alternatives when their approximation properties are preferred~\cite{mcnemar1947,fagerland2013mcnemar}.
 
 \paragraph{Scope of rejection.}
 
-Rejection supports directional degradation on the frozen panel under the working model. It does not identify a cause, estimate production-risk change, establish representativeness, or select a replacement model.
+Rejection is evidence of directional degradation on the frozen panel under the working model. Cause, production-risk change, and replacement choice are later, separate decisions.
 
 \section{Alert decision and multiplicity control}
 
-Statistical rejection alone is not yet an operational alert: a detectable change can be too small to matter, and repeated testing can make an isolated nominal p-value misleading. This section combines evidence, magnitude, and the time structure of the monitoring programme into one decision rule.
+\begin{figure}[htbp]
+\centering
+\begin{adjustbox}{max width=\linewidth}
+\input{assets/fig_paired_alert_rule.tex}
+\end{adjustbox}
+\caption[Paired study-alert rule]{The retrospective study rule. The raw p-value comes from paired correctness transitions; global Holm correction is applied only after the completed family is available.}
+\label{fig:paired-alert-rule}
+\end{figure}
 
-\paragraph{Operational degradation floor.}
-
-The p-value measures evidence; the observed drop measures operational magnitude. Alongside nominal \(\alpha=0.05\), the workflow requires
-\begin{equation}
-    \Delta A_{\mathrm{paired}}
-    =
-    \frac{b-c}{n}
-    \ge0.03.
-    \label{eq:operational-drop-floor}
-\end{equation}
-The \(3\)pp floor is an operational choice, not an error-control device; both conditions must hold.
+Repeated testing can make an isolated nominal p-value misleading. The study rule controls this family-wise error. The observed accuracy change is reported as an effect size; the alert itself is the Holm-adjusted test.
 
 \paragraph{Repeated-testing problem.}
 \label{sec:baseline-multiplicity}
@@ -253,7 +244,13 @@ Before correcting multiplicity, the comparison family and its reference point mu
 
 \paragraph{Baseline convention.}
 
-For each configuration \(q\), every later eligible run is compared with that configuration's earliest eligible panel run \(t_0\). A fixed baseline has a clear interpretation: it is the accepted reference state. It also creates a limitation. If \(t_0\) was unusually favourable or unfavourable, every later comparison inherits that baseline noise. The trajectory, repeated comparisons, effective pair counts, and same-batch controls must therefore accompany an isolated trigger.
+For each configuration \(q\), every later eligible run is compared with that configuration's earliest eligible panel run \(t_0\). A fixed baseline has a clear interpretation: it is the accepted reference state. It also creates a limitation. If \(t_0\) was unusually favourable or unfavourable, every later comparison inherits that baseline noise. An isolated trigger must therefore be read together with:
+\begin{itemize}
+    \item the trajectory across runs;
+    \item the full set of repeated comparisons;
+    \item the effective pair counts used in each comparison;
+    \item same-batch control evidence.
+\end{itemize}
 
 \paragraph{Family-wise error.}
 
@@ -268,27 +265,15 @@ p_{(j)}\le\frac{0.05}{K-j+1},
 \end{equation}
 stopping at the first failure~\cite{holm1979}. Chapter~\ref{chap:experimental-results} applies this retrospective rule to the pre-defined completed family.
 
-\paragraph{Prospective alpha spending.}
+\paragraph{Retrospective decision.}
 
-An open-ended monitor needs thresholds before future results exist. For \(M\) pre-specified configurations and comparison index \(k\), one valid schedule is
-\begin{equation}
-    \alpha_{r,k}
-    =
-    \frac{0.05}{M\,k(k+1)},
-    \qquad
-    r=1,\ldots,M.
-    \label{eq:online-alpha-spending}
-\end{equation}
-Since \(\sum_{k\ge1}1/[k(k+1)]=1\), the total allocation is \(0.05\); the union bound gives conservative FWER control. The roster must be fixed or assigned reserved weights, and these smaller thresholds reduce power.
-
-\paragraph{Retrospective and prospective decisions.}
-
-The two multiplicity settings produce two distinct decision rules:
-\begin{itemize}
-    \item A \emph{retrospective study alert} occurs when a comparison is rejected by global Holm within the completed study family and its observed drop is at least \(3\)pp.
-    \item A \emph{prospective operational alert} occurs when the current exact p-value passes the threshold allocated before that result was observed, such as \(\alpha_{r,k}\) in Equation~\eqref{eq:online-alpha-spending}, and its observed drop is at least \(3\)pp.
-\end{itemize}
-Chapter~\ref{chap:experimental-results} reports the first rule because the canonical evidence is a completed retrospective study. It does not claim that final-family Holm correction was executed online. A deployed monitor must use the second rule or another prospectively specified sequential procedure.
+For this completed study, a comparison is an alert when its one-sided exact McNemar p-value survives global Holm correction across the 173 baseline-to-later comparisons:
+\[
+\operatorname{Alert}_{\mathrm{study}}=1
+\quad\Longleftrightarrow\quad
+p_{\mathrm{Holm}}\leq0.05.
+\]
+Holm was applied after the observation window closed. A live system must pre-register a sequential rule, or treat its dashboard signal as a diagnostic indicator.
 
 \section{Diagnostics and escalation}
 \label{sec:classification-metrics}
@@ -326,19 +311,17 @@ F_1
 &=\frac{\mathrm{Rec}+\mathrm{Spec}}{2}.
 \label{eq:derived-classification-metrics}
 \end{align}
-Undefined metrics are reported as unavailable, never zero. These quantities diagnose the form of deterioration but do not add rejection criteria. An alert initiates investigation and full-benchmark candidate evaluation; it does not identify a cause or mandate a switch.
+Undefined metrics are reported as unavailable, never zero. These quantities diagnose the form of deterioration but do not add rejection criteria.
 
-\paragraph{Established result.}
-For any eligible baseline--follow-up comparison, the chapter has reduced observed degradation to the discordant counts \(b\) and \(c\), with magnitude
+\paragraph{Decision scope.}
+For any eligible baseline--follow-up comparison, the discordant counts \(b\) and \(c\) give the observed change
 \[
 \Delta A_{\mathrm{paired}}=\frac{b-c}{n}.
 \]
-The retrospective study decision is now fully specified:
+The retrospective study decision is
 \[
 \operatorname{Alert}_{\mathrm{study}}=1
 \quad\Longleftrightarrow\quad
-p_{\mathrm{Holm}}\le0.05
-\ \text{and}\
-\Delta A_{\mathrm{paired}}\ge0.03,
+p_{\mathrm{Holm}}\le0.05.
 \]
-where \(p_{\mathrm{Holm}}\) is the Holm-adjusted value of the underlying one-sided exact McNemar p-value, computed from \(B\mid D\sim\mathrm{Binomial}(D,1/2)\), \(D=b+c\), and all quantities use the same complete-pair denominator \(n\). A live monitor replaces final-family Holm adjustment by a threshold allocated before the result is observed. Hence the monitoring question has been answered with an exact, directional, multiplicity-aware escalation rule; the resulting alert establishes evidence of panel degradation only and passes the separate deployment question to Chapter~\ref{ch:cost-deployment-utility}.
+where \(p_{\mathrm{Holm}}\) is the global Holm-adjusted value of the one-sided exact McNemar p-value.

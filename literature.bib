@@ -9,16 +9,31 @@
 }
 
 
-@misc{echterhoff2024muscle,
-  author       = {Echterhoff, Jessica and Faghri, Fartash and Vemulapalli, Raviteja
-                  and Hu, Ting-Yao and Li, Chun-Liang and Tuzel, Oncel
-                  and Pouransari, Hadi},
-  title        = {{MUSCLE}: A Model Update Strategy for Compatible {LLM} Evolution},
-  year         = {2024},
-  eprint       = {2407.09435},
-  archivePrefix= {arXiv},
-  primaryClass = {cs.CL},
-  doi          = {10.48550/arXiv.2407.09435}
+@online{openai2026modelguidance,
+  author  = {{OpenAI}},
+  title   = {Model Guidance},
+  year    = {2026},
+  url     = {https://developers.openai.com/api/docs/guides/latest-model},
+  urldate = {2026-08-11},
+  note    = {Documents that model aliases route requests to specific current model targets}
+}
+
+@online{openai2026chatcompletions,
+  author  = {{OpenAI}},
+  title   = {Create Chat Completion},
+  year    = {2026},
+  url     = {https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create},
+  urldate = {2026-08-13},
+  note    = {States that parameter support differs by model, particularly for reasoning models, and that seed is a Beta, best-effort sampling control}
+}
+
+@online{anthropic2026modelversioning,
+  author  = {{Anthropic}},
+  title   = {Model IDs and Versioning},
+  year    = {2026},
+  url     = {https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions},
+  urldate = {2026-08-11},
+  note    = {Documents alias behaviour for earlier models and infrastructure changes that can affect observable behaviour}
 }
 
 
@@ -31,12 +46,28 @@
   year        = {2009}
 }
 
+@inproceedings{seung1992query,
+  author    = {Seung, H. Sebastian and Opper, Manfred and Sompolinsky, Haim},
+  title     = {Query by Committee},
+  booktitle = {Proceedings of the Fifth Annual Workshop on Computational Learning Theory},
+  pages     = {287--294},
+  year      = {1992},
+  doi       = {10.1145/130385.130417}
+}
 
-@inproceedings{kiela2021dynabench,
-  author    = {Kiela, Douwe and Bartolo, Max and Nie, Yixin and others},
-  title     = {Dynabench: Rethinking Benchmarking in {NLP}},
-  booktitle = {Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies},
-  year      = {2021}
+@inproceedings{elkan2001cost,
+  author    = {Elkan, Charles},
+  title     = {The Foundations of Cost-Sensitive Learning},
+  booktitle = {Proceedings of the Seventeenth International Joint Conference on Artificial Intelligence},
+  pages     = {973--978},
+  year      = {2001}
+}
+
+@inproceedings{turney2000cost,
+  author    = {Turney, Peter D.},
+  title     = {Types of Cost in Inductive Concept Learning},
+  booktitle = {Proceedings of the {ICML} 2000 Workshop on Cost-Sensitive Learning},
+  year      = {2000}
 }
 
 
@@ -81,16 +112,6 @@
   archivePrefix= {arXiv},
   primaryClass = {cs.CL},
   doi          = {10.48550/arXiv.2502.16923}
-}
-
-
-@inproceedings{opsahlong2024mipro,
-  author    = {Opsahl-Ong, Krista and Ryan, Michael J. and Purtell, Josh and Broman, David and Potts, Christopher and Zaharia, Matei and Khattab, Omar},
-  title     = {Optimizing Instructions and Demonstrations for Multi-Stage Language Model Programs},
-  booktitle = {Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing},
-  pages     = {9340--9366},
-  year      = {2024},
-  doi       = {10.18653/v1/2024.emnlp-main.525}
 }
 
 

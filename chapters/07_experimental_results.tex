@@ -1,14 +1,16 @@
 \chapter{Experimental Results}
 \label{chap:experimental-results}
 
-This chapter evaluates the complete operational chain studied in the main thesis: repeated panel monitoring, exact paired testing with multiplicity control, and cost-aware candidate ranking after escalation. The evidence window is 15~March--6~July~2026.
+This chapter reports the recorded monitoring window from 15~March to 6~July~2026 and a later full-benchmark candidate comparison.
 
 \section{Monitoring results}
 \label{sec:drift-results}
 
-The canonical monitoring set contains 187 eligible scheduled panel runs from 12 models. A model's first eligible run is its baseline; all later eligible runs for that model yield 173 baseline-to-later paired comparisons. Missing outputs are removed pairwise, so the effective sample size can be below the nominal panel size of 300.
+The timeline contains 187 eligible runs. Twelve recurring model labels contribute 185 runs and 173 baseline-to-later paired comparisons. Missing outputs are removed pairwise, so the effective sample size can be below 300.
 
-At the one-sided nominal level \(\alpha=.05\), three comparisons had \(p_{\mathrm{exact}}<.05\). Applying Holm correction globally across all 173 comparisons left one rejection. That rejection also exceeded the declared operational degradation floor of 3 percentage points, and was therefore the only operational alert. The distinction is important: a small unadjusted \(p_{\mathrm{exact}}\)-value alone did not constitute an alert.
+The two singleton labels, \texttt{gemini-2.0-flash} and \texttt{gpt-5.4-2026-03-05}, each appear once. A model's first eligible run is its baseline, so these two runs remain recorded baselines until a later comparison exists. The frozen labelled sets make that admission routine: a newly released model is scored on the same posts as the existing candidates, compared immediately with contemporaneous series, and then paired against its own first-run baseline as soon as later runs exist.
+
+At the one-sided nominal level \(\alpha=.05\), three comparisons had \(p_{\mathrm{exact}}<.05\). Global Holm correction across all 173 comparisons left one rejection. This is the study alert; no effect-size floor was applied.
 
 \begin{table}[htbp]
     \centering
@@ -21,13 +23,26 @@ At the one-sided nominal level \(\alpha=.05\), three comparisons had \(p_{\mathr
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\linewidth]{assets/evidence/fig_canonical_monitoring_trajectory.pdf}
-    \caption[Canonical panel-accuracy trajectories]{Panel accuracy for the 12 canonical monitoring series. The highlighted \texttt{gpt-4.1-mini} point is the only comparison that survived global Holm correction and the operational magnitude floor. Grey trajectories provide same-period context but are not formal controls for every model-specific failure mode.}
+    \caption[Canonical panel-accuracy trajectories]{Panel accuracy for the 12 recurring monitoring series. The red diamond is the Holm-controlled alert on \texttt{gpt-4.1-mini}. Open markers are the two remaining comparisons with nominal one-sided \(p_{\mathrm{exact}}<.05\), both on \texttt{claude-haiku-4-5}. Grey series provide same-period context.}
     \label{fig:canonical-monitoring-trajectory}
 \end{figure}
 \FloatBarrier
 
-\paragraph{The operational alert.}
-The alert compared \texttt{gpt-4.1-mini} on 15~March with its 22~March run. There were \(n_{\mathrm{paired}}=296\) complete pairs: \(b=49\) items degraded from correct to incorrect and \(c=12\) improved. Accuracy fell from \(0.7872\) to \(0.6622\), a change of \(-12.5\) percentage points. The one-sided exact McNemar p-value was \(p_{\mathrm{exact}}=9.849\times10^{-7}\); the global Holm-adjusted value was \(p_{\mathrm{Holm}}=1.704\times10^{-4}\). Thus both the statistical and operational conditions were met. The paired evidence identifies a change in this model's observed correctness on the panel. Provider state and other causal mechanisms remain unobserved.
+Table~\ref{tab:nominal-mcnemar} reports the paired correctness counts for those three comparisons. McNemar's test uses the discordant cells: \(b\) counts items that changed from correct to wrong, and \(c\) counts items that changed from wrong to correct. \texttt{gpt-4.1-mini} has \(b=49\) against \(c=12\) (\(n=296\)). The two \texttt{claude-haiku-4-5} comparisons have the same directional imbalance on much smaller discordant sets: \(b=9\) against \(c=2\) for 22~March--22~June, and \(b=7\) against \(c=1\) for 22~March--6~July (\(n=265\) in both). The study rule applies Holm after the window closed, over all 173 comparisons. A contemporaneous correction uses only the models scored on that follow-up date: \(K_{\mathrm{week}}=8\) on 22~March, \(12\) on 22~June, and \(11\) on 6~July. Under that week-wise Holm adjustment, the mini comparison remains a rejection (\(p_{\mathrm{Holm}}^{\mathrm{week}}=7.880\times10^{-6}\)); the two Haiku comparisons remain above \(0.05\) (\(0.3926\) and \(0.3867\)).
+
+\begin{table}[htbp]
+    \centering
+    \small
+    \caption[Nominal McNemar tables]{Paired correctness counts for the three comparisons with one-sided \(p_{\mathrm{exact}}<.05\). Week-wise Holm uses the \(K_{\mathrm{week}}\) models scored on that follow-up date.}
+    \label{tab:nominal-mcnemar}
+    \input{assets/metrics_export/canonical_nominal_comparisons.tex}
+\end{table}
+\FloatBarrier
+
+\paragraph{The alert and rebound.}
+The alert compared \texttt{gpt-4.1-mini} on 15~March with its 22~March run. There were \(n_{\mathrm{paired}}=296\) complete pairs: \(b=49\) items changed from correct to incorrect and \(c=12\) changed from incorrect to correct. Accuracy fell from \(0.7872\) to \(0.6622\), a change of \(-12.5\) percentage points. The one-sided exact p-value was \(9.849\times10^{-7}\); the global Holm-adjusted value was \(1.704\times10^{-4}\).
+
+The next run, 22--28~March, reversed the movement: on 297 complete pairs accuracy rose from \(0.6633\) to \(0.7946\), with 11 regressions and 50 improvements. From 15 to 28~March the net change was \(+0.67\) percentage points, so the episode did not persist. Same-period models had no comparable drop, which weakens a shared local-failure explanation. \texttt{gpt-4.1-mini} was a monitored candidate; no production deployment was changed.
 
 \begin{figure}[htbp]
     \centering
@@ -42,9 +57,9 @@ The alert compared \texttt{gpt-4.1-mini} on 15~March with its 22~March run. Ther
 
 Across the 173 comparisons, median observed discordance was \(0.02685\), where discordance is \((b+c)/n_{\mathrm{paired}}\). This historical value describes how much paired movement occurred in these runs. Future failures may generate much larger discordance, as the alert itself did (\(61/296=0.2061\)); low historical discordance therefore says little about a model's intrinsic stability or the magnitude of future changes.
 
-The historical size calculation used pilot discordance \(\rho_{\mathrm{pilot}}=137/1199=0.1143\), a target degradation of 5 percentage points, and nominal one-sided \(\alpha=.05\). The construction-time approximation suggested \(n_{\mathrm{planned}}=273\), which was rounded upward to \(n_{\mathrm{panel}}=300\). Under the exact unconditional calculation, that rounding raises power from \(0.756\) to \(0.795\); \(n_{\mathrm{planned}}=304\), rather than 273, is the smallest size reaching \(0.80\) under the stated assumptions. The implemented panel therefore came close to its intended nominal sensitivity.
+The historical size calculation used pilot discordance \(\rho_{\mathrm{pilot}}=137/1199=0.1143\), a target degradation of 5 percentage points, and nominal one-sided \(\alpha=.05\). The construction-time approximation suggested \(n_{\mathrm{planned}}=273\), which was rounded upward to \(n_{\mathrm{panel}}=300\). At this implemented size, exact unconditional power rounds to \(0.80\).
 
-Exact unconditional power calculations also clarify what a 300-item panel can establish outside that single sizing point. At the nearby design discordance \(\rho_{\mathrm{design}}=.12\), the 80\%-power minimum detectable degradation is \(5.15\) percentage points at nominal \(\alpha=.05\), but \(8.32\) percentage points at the family-conservative level \(\alpha=.05/173\). For a 3-percentage-point degradation, exact power is only \(0.387\) nominally and \(0.017\) under the family-conservative level.
+Exact unconditional power calculations also clarify what a 300-item panel can establish outside that single sizing point. At the nearby design discordance \(\rho_{\mathrm{design}}=.12\), the 80\%-power minimum detectable degradation is \(5.15\) percentage points at nominal \(\alpha=.05\), but \(8.32\) percentage points at the family-conservative level \(\alpha=.05/173\). For a 5-percentage-point degradation, exact power is \(0.776\) nominally and \(0.137\) under the family-conservative level; for an 8-percentage-point degradation, it rises to \(0.994\) and \(0.736\), respectively. As a practical orientation band, 5--8 percentage points spans small-to-moderate change on this panel: differences inside that range remain comparable to plausible human judgement fluctuation on borderline posts, whereas larger shifts are materially easier to separate from routine variation.
 
 \begin{table}[htbp]
     \centering
@@ -57,11 +72,11 @@ Exact unconditional power calculations also clarify what a 300-item panel can es
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\linewidth]{assets/evidence/fig_canonical_power_heatmap.pdf}
-    \caption[Exact power over discordance and degradation]{Exact unconditional power of the one-sided McNemar test for \(n_{\mathrm{panel}}=300\). The white contour marks 80\% power; the cross marks design discordance \(\rho_{\mathrm{design}}=0.12\) and planned degradation \(g=3\text{pp}\). Multiplicity control moves the detectable region upward, making moderate degradation much harder to identify. The blank upper-left region is inadmissible because \(g>\rho_{\mathrm{design}}\).}
+    \caption[Exact power over discordance and degradation]{Exact unconditional power of the one-sided McNemar test for \(n_{\mathrm{panel}}=300\). The white contour marks 80\% power; the cross marks design discordance \(\rho_{\mathrm{design}}=0.12\) and planned degradation \(g=5\text{pp}\). The dashed horizontal guides at 5 and 8 percentage points provide practical orientation markers for small-to-moderate change on the fixed panel. Multiplicity control moves the detectable region upward, making moderate degradation much harder to identify. The blank upper-left region is inadmissible because \(g>\rho_{\mathrm{design}}\).}
     \label{fig:canonical-power-heatmap}
 \end{figure}
 
-The recorded API charges provide a monetary comparison in addition to the item-count reduction. For the eight models with both measurements, the 22~May full-benchmark sweep cost \(\$43.10\). The mean panel sweep over 18 and 25~May cost \(\$12.26\), a reduction of \(\$30.84\), or \(71.6\%\). The ratio is \(3.51\), slightly below the \(1199/300=4.00\) item ratio because request lengths, outputs, and model prices differ.
+Taken together, the nominal and conservative panels visualise the cost of multiplicity control directly. The nominal threshold retains a visibly wider region of adequate power, whereas the family-conservative threshold contracts that region sharply. The comparison therefore exposes the central trade-off of the monitoring design: stronger control of repeated-testing false alarms is purchased with lower sensitivity to moderate degradation.
 
 \begin{table}[htbp]
     \centering
@@ -73,7 +88,7 @@ The recorded API charges provide a monetary comparison in addition to the item-c
 
 For the three production models---\texttt{gpt-5-mini}, \texttt{gpt-5-nano}, and \texttt{gpt-5}---one panel sweep cost \(\$2.74\), compared with \(\$9.53\) for a full-benchmark sweep. Weekly panel monitoring therefore costs approximately \(\$142.42\) per year in API charges.
 
-The error cost of an undetected episode can be estimated conditionally on the penalties used in Section~\ref{sec:cost-aware-comparison}. On the 296 items shared by the \texttt{gpt-4.1-mini} baseline and alert runs, the confusion counts changed from \((\mathrm{FP},\mathrm{FN})=(2,61)\) to \((0,100)\). Holding inference price fixed, the incremental error loss per affected classification is
+The error cost of an undetected episode can be estimated conditionally on the penalties used in Section~\ref{sec:cost-aware-comparison}. On the 296 items shared by the \texttt{gpt-4.1-mini} baseline and alert runs, the confusion counts changed from \((\mathrm{FP},\mathrm{FN})=(2,61)\) to \((0,100)\). Holding inference price fixed, the resulting incremental error loss per affected classification is
 \[
     \Delta L_{\mathrm{err}}
     =\frac{0.155(0-2)+0.031(100-61)}{296}
@@ -88,11 +103,7 @@ The error cost of an undetected episode can be estimated conditionally on the pe
     \input{assets/metrics_export/production_monitoring_scenarios.tex}
 \end{table}
 
-The first three rows represent separate failure scenarios in which exactly one production model develops an error shift of the observed severity. If \texttt{gpt-5-nano} degrades, its own weekly panel cost breaks even after approximately 37 affected posts; the corresponding thresholds are 142 posts for \texttt{gpt-5-mini} and 723 for \texttt{gpt-5}. If monitoring is treated as one indivisible portfolio covering all three models, the relevant weekly cost is \(\$2.74\) and the break-even volume is 902 affected classifications, regardless of which single model fails. The annual portfolio cost of \(\$142.42\) corresponds to approximately \(46{,}891\) affected classifications.
-
-These calculations are scenarios rather than universal incident costs: another degradation may change FP and FN counts differently, and simultaneous failures would require adding their affected volumes. They nevertheless show why all three models should remain monitored. Each model is a separate failure point, while the total weekly insurance cost remains lower than the estimated loss from one similarly severe undetected episode once approximately 902 posts pass through the failed model.
-
-This qualifies RQ2. The panel demonstrates a substantial measured reduction in API expenditure while retaining sensitivity to large changes such as the observed episode. Useful sensitivity still depends jointly on effect size, discordance, and multiplicity control. Disagreement determined which items entered the panel, whereas the pilot power calculation determined how many were retained. Its relative statistical efficiency and representativeness remain open because no equal-size random-panel comparison was run.
+For the three-model portfolio, one weekly panel sweep costs \(\$2.74\) and breaks even at 902 affected classifications under this scenario. Other failure patterns imply different thresholds; disagreement sampling's efficiency remains untested against an equal-size random panel.
 
 \section{Cost-aware comparison}
 \label{sec:cost-aware-comparison}
@@ -103,7 +114,7 @@ The deployment comparison uses the 22~May common complete-case intersection: 111
     \qquad
     \lambda=C_{\mathrm{FP}}+C_{\mathrm{FN}}=0.186,
 \]
-equivalently \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\) USD, in addition to mean inference cost. Thus a false positive is assigned five times the cost of a false negative, reflecting the operational burden of sending irrelevant posts into downstream processing.
+which is equivalent to \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\) USD, in addition to mean inference cost. At this operating point, a false positive is assigned five times the cost of a false negative. This reflects the operational burden of sending irrelevant posts into downstream processing.
 
 \begin{table}[htbp]
     \centering
@@ -124,13 +135,7 @@ equivalently \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\) USD, in add
 
 The penalties encode the intended business preference, but they are not estimated from realised downstream losses. The choice is also close: the loss advantage of \texttt{gpt-5-mini} over \texttt{gpt-5-nano} is about \(8.2\times10^{-5}\) USD per request. The decision map therefore matters as much as the point ranking: a modest change in the assumed penalties can change the winner. Sampling uncertainty in the plug-in ranking is not quantified here.
 
-\section{What these results establish}
+\section{Scope of the result}
 \label{sec:what-established}
 
-The results show that the monitoring procedure performed its intended task. Across 173 scheduled comparisons, it detected the one severe episode: a \(12.5\)-percentage-point decrease with 49 regressions against 12 improvements, significant after global Holm correction and above the pre-declared magnitude floor. None of the other 172 comparisons met both alert conditions. This does not prove that their underlying effects were exactly zero, but it does show that none supplied corrected evidence of a degradation large enough to trigger operational escalation. The procedure therefore separated a material change from ordinary week-to-week variation without relying on unadjusted significance alone.
-
-The exact provider-side cause of the alert is not identifiable from a black-box API. Model weights, routing, serving configuration, and execution state are not exposed by the provider, so no external evaluation can determine which internal mechanism changed. What the observations can establish is narrower and operationally sufficient: the failure was model-specific, was not accompanied by a comparable same-period decline in the other monitored models, and disappeared in subsequent runs without a local prompt, parser, dataset, or pipeline change. These controls make a shared failure in the evaluation pipeline unlikely; they do not justify inventing an unavailable provider-internal explanation.
-
-The research questions are answered at the level supported by the experiment. For RQ2, the reduced panel lowered the observed sweep cost by \(71.6\%\) and retained sufficient sensitivity to detect the observed large degradation; the power analysis states explicitly which smaller effects cannot be guaranteed under multiplicity control. For RQ3, an alert requires the pre-specified conjunction of directional exact McNemar evidence, family-wise Holm control, and the three-percentage-point operational floor, and the experiment demonstrates that rule end to end. For RQ4, ranking by the declared empirical loss selects \texttt{gpt-5-mini} rather than the most accurate or the cheapest model, while the decision map shows how that choice changes with the cost assumptions.
-
-Taken together, the results validate the complete detection-and-selection pipeline: material degradation was detected, non-alerting variation was not over-interpreted, and the alert was translated into an explicit cost-aware deployment decision. Causal diagnosis inside a closed provider model is outside the observable scope of this pipeline, not a missing statistical conclusion.
+Across 173 comparisons, one \texttt{gpt-4.1-mini} episode survived global Holm correction and recovered in the next run. Adjacent-week fluctuations for \texttt{gpt-5-nano} did not satisfy the corrected rule and are not reported as detected degradation. The panel reduced measured sweep cost by \(71.6\%\). The May complete-case comparison selected \texttt{gpt-5-mini} only under its declared loss scenario. None of these observations proves a provider-side model update, a production-risk shift, or universal superiority of the panel sampler.

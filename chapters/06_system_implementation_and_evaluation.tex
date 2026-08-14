@@ -1,11 +1,26 @@
 \chapter{System Implementation}
 \label{chap:system-architecture}
 
-This chapter maps the statistical workflow to an auditable batch system. The implementation is intentionally narrower than a general MLOps platform: it preserves the fixed inputs needed for temporal comparison, records the identity and completeness of each run, and produces artifacts from which monitoring and ranking can be repeated.
+This chapter maps the statistical workflow to a batch system. The implementation keeps item-level outputs, scores, and run identity so that completed runs can be rescored, paired, and audited without calling a model again. Inference is delegated to external providers, while the client side fixes datasets, request construction, scoring, and reporting.
 
 \section{Pipeline boundary}
 \label{sec:evaluation-pipeline-overview}
-The implementation has five stages: load \(\mathcal{D}_n\) or \(\mathcal{D}_N\) from Langfuse; construct one canonical multimodal request; serialize it through a provider adapter; retrieve and score the asynchronous results; and export trace snapshots for analysis. Routine monitoring uses the frozen \(n=300\) panel. The full benchmark is reserved for baseline construction and explicit ranking or escalation. The changing model roster and token prices are configuration data in \texttt{config/models.yaml}, not part of the analytical design.
+The implemented system has five layers:
+\begin{enumerate}
+    \item fixed labelled datasets in Langfuse;
+    \item request normalization and orchestration;
+    \item provider-specific batch adapters;
+    \item retrieval, ingestion, and scoring;
+    \item a read-only dashboard for review.
+\end{enumerate}
+The same structure supports three operational run types:
+\begin{itemize}
+    \item a routine monitoring run evaluates the frozen \(n=300\) panel;
+    \item a full-benchmark run evaluates \(\mathcal{D}_N\) during baseline construction or candidate comparison;
+    \item an escalation run is a full-benchmark run requested after a panel signal and diagnostic review.
+\end{itemize}
+
+This separation keeps the low-cost warning stage distinct from the higher-cost decision stage. The panel answers whether a paired change appeared on a fixed sensitivity set. The full benchmark is used only when the broader candidate comparison matters.
 
 Figure~\ref{fig:ga-weekly-pipelines} shows the three scheduled workflows. Submission and retrieval are separate because provider batch APIs are asynchronous; the dashboard export begins only after retrieval and ingestion.
 
@@ -24,7 +39,13 @@ Each dataset row is normalized to
 \[
 \{\texttt{custom\_id},\ \texttt{body},\ \texttt{campaign\_relevant}\}.
 \]
-The stable \texttt{custom\_id} is the join key across dates, providers, and ground truth. The request \texttt{body} combines the fixed template in \texttt{config/request\_template.json} with the item's multimodal input. Holding the template, prompt, dataset, output schema, and parser fixed prevents changes in request construction from being mistaken for changes in model output.
+The normalized row has three fields:
+\begin{description}
+    \item[\texttt{custom\_id}] stable join key across dates, providers, and ground truth;
+    \item[\texttt{body}] request body obtained by combining the fixed template in \texttt{config/request\_template.json} with the item's multimodal input;
+    \item[\texttt{campaign\_relevant}] local ground-truth label used during scoring.
+\end{description}
+Holding the template, prompt, dataset, output schema, and parser fixed keeps request construction stable across repeated runs.
 
 The merge performed by \texttt{load\_dataset.py} is explicit:
 \[
@@ -32,11 +53,11 @@ The merge performed by \texttt{load\_dataset.py} is explicit:
 =
 \{\texttt{**request\_template},\ \texttt{"input"}:\texttt{item.input}\}.
 \]
-Here \texttt{item.input} is a Responses-style message array. A system item contains the campaign instruction; user content contains \texttt{input\_text} and zero or more \texttt{input\_image} parts with image URLs. The ground-truth \texttt{campaign\_relevant} value remains beside \texttt{body} and is not transmitted to the model.
+Here \texttt{item.input} is a Responses-style message array. A system item contains the campaign instruction; user content contains \texttt{input\_text} and zero or more \texttt{input\_image} parts with image URLs. The ground-truth \texttt{campaign\_relevant} value remains beside \texttt{body} and stays local to scoring.
 
-The current template sets \texttt{store=true} and requests a strict JSON object named \texttt{CampaignRelevanceMinimal}. Its properties are \texttt{campaign\_relevant:boolean} and \texttt{relevancy\_reasoning:string}; both are required and \texttt{additionalProperties=false}. The reasoning string is therefore required by the current request schema, but it is auxiliary: ingestion stores it while all binary metrics use only \texttt{campaign\_relevant}.
+The current template sets \texttt{store=true} and requests a strict JSON object named \texttt{CampaignRelevanceMinimal}. Its properties are \texttt{campaign\_relevant:boolean} and \texttt{relevancy\_reasoning:string}; both are required and \texttt{additionalProperties=false}. The reasoning string is stored for audit, while all binary metrics use only \texttt{campaign\_relevant}.
 
-\texttt{run\_eval.py} inserts the selected model and dispatches the canonical body to a provider adapter. Table~\ref{tab:provider-adapters} records the transformations implemented in the three adapters rather than treating them as interchangeable wire formats.
+\texttt{run\_eval.py} inserts the selected model and dispatches the canonical body to a provider adapter. Table~\ref{tab:provider-adapters} records the transformations implemented in the three adapters.
 
 \begin{table}[htbp]
 \centering
@@ -60,44 +81,60 @@ Sanitize the ID reversibly; map input to \texttt{system} and \texttt{messages}, 
 \end{tabularx}
 \end{table}
 
-Every invocation receives a UTC \texttt{run\_id}. Submission writes \texttt{data/batch\_ids.json}, containing that identifier, the requested subset size, and each model's provider and batch identifier. A failed submission is retained in the manifest with a null batch identifier and an error message. Thus a run is identified by its manifest, not inferred later from timestamps.
+Every invocation receives a UTC \texttt{run\_id}. Submission writes \texttt{data/batch\_ids.json}, containing that identifier, the requested subset size, and each model's provider and batch identifier. A failed submission is retained in the manifest with a null batch identifier and an error message. Thus a run is identified by its manifest.
 
 \section{Retrieval, completeness, and scoring}
 \label{sec:metrics-dashboard}
-\texttt{poll\_and\_ingest.py} restores the manifest, polls each submitted batch, and writes completed JSONL files to \texttt{data/results/}. Failed, cancelled, expired, and timed-out jobs are reported separately. A missing result file is listed in the retrieval summary and is not replaced by synthetic predictions; the corresponding model--run is incomplete and must not be used as a complete panel observation. The retrieval code reports this state but does not enforce an \(n\)-row completeness gate in the dashboard, so completeness must be checked before a paired test is interpreted.
+\texttt{poll\_and\_ingest.py} restores the manifest, polls each submitted batch, and writes completed JSONL files to \texttt{data/results/}. Failed, cancelled, expired, and timed-out jobs are reported separately. A missing result file is listed in the retrieval summary and leaves the corresponding model--run incomplete. Completeness is therefore part of the review step before a paired panel comparison is interpreted.
 
 For downloaded rows, \texttt{ingest.py} joins the response to its label by \texttt{custom\_id}, records \texttt{model}, \texttt{provider}, and \texttt{run\_id} in trace metadata, and writes three downstream quantities: binary correctness, the TP/FP/TN/FN error type, and token-derived inference cost. Precision, recall, and F1 are then computed as defined in Section~\ref{sec:classification-metrics}. Results without a matching label receive no accuracy or error-type score.
 
-The implementation distinguishes an absent provider result from a malformed returned result. Absence leaves no scored row. By contrast, the current parser maps a missing or invalid structured boolean in a returned row to \texttt{false}; this deterministic fallback avoids silently dropping the row but makes format failure observationally indistinguishable from a valid negative prediction. Schema-constrained responses reduce this risk, but completeness counts and provider error summaries remain necessary when interpreting a run.
+The implementation distinguishes an absent provider result from a malformed returned result. Absence leaves no scored row. By contrast, the current parser maps a missing or invalid structured boolean in a returned row to \texttt{false}; this deterministic fallback keeps the row, so format failures remain visible through retrieval summaries and trace inspection.
 
-The same scored outputs feed a read-only Streamlit reporting layer used with product stakeholders. Offline Langfuse score and trace snapshots drive three views: Overview (filterable metric trajectories by model and date), McNemar Test (paired alert evidence), and Expected Cost (deployment ranking under declared FP/FN penalties). Figures~\ref{fig:dashboard-overview}--\ref{fig:dashboard-cost} show the implemented tabs. The dashboard does not execute alert or deployment actions; those decisions remain outside the UI.
+The same scored outputs feed a read-only Streamlit reporting layer used with product stakeholders. Offline Langfuse score and trace snapshots drive:
+\begin{itemize}
+    \item an overview of accuracy traces by model and run;
+    \item paired McNemar evidence;
+    \item expected-cost ranking.
+\end{itemize}
+An external email notification informs the responsible engineer about an alert, after which review and escalation continue in the same evidence store.
 
-\begin{figure}[htbp]
+The third view implements the assigned-loss ranking of Chapter~\ref{ch:cost-deployment-utility}. For each candidate it displays
+\begin{equation}
+L_t(m)
+=
+c_t(m)
++
+\frac{
+C_{\mathrm{FP}}\,\mathrm{FP}_t(m)
++
+C_{\mathrm{FN}}\,\mathrm{FN}_t(m)
+}{n_t},
+\label{eq:dashboard-expected-cost}
+\end{equation}
+which is Equation~\eqref{eq:expected-cost}. Inference charges \(c_t(m)\) and error counts come from scored traces. The penalties \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) are scenario inputs. A reviewer can change them, or the ratio \(C_{\mathrm{FN}}/C_{\mathrm{FP}}\), and the ranking updates immediately. The highlighted minimiser of \(L_t(m)\) is the currently preferred model under those prices. Changing the penalties can change which model wins. The dashboard reports that comparison for human review. Any deployment change stays a separate manual decision.
+
+\clearpage
+\begin{figure}[!p]
     \centering
-    \begin{adjustbox}{max width=\linewidth,max totalheight=.72\textheight,center}
-    \includegraphics{assets/evidence/fig_dashboard_overview.png}
-    \end{adjustbox}
-    \caption[Dashboard Overview tab]{Implemented Streamlit Overview tab over offline Langfuse score and trace snapshots. It supports model, metric, and date selection and displays the resulting accuracy trajectories.}
-    \label{fig:dashboard-overview}
+    {\small\bfseries (a)}~{\small Overview --- accuracy traces by model}\\[0.35em]
+    \includegraphics[width=\linewidth]{assets/evidence/fig_dashboard_overview_shot.png}\\[1.1em]
+    {\small\bfseries (b)}~{\small McNemar --- paired run comparison}\\[0.35em]
+    \includegraphics[width=\linewidth]{assets/evidence/fig_dashboard_mcnemar_shot.png}
+    \caption[Dashboard reporting views]{Streamlit reporting layer: per-model accuracy traces across scheduled runs~(a) and paired McNemar evidence between run dates~(b).}
+    \label{fig:dashboard-canonical}
 \end{figure}
-
-\begin{figure}[htbp]
+\clearpage
+\begin{figure}[!p]
+    \ContinuedFloat
     \centering
-    \begin{adjustbox}{max width=\linewidth,max totalheight=.72\textheight,center}
-    \includegraphics{assets/evidence/fig_dashboard_mcnemar.png}
+    {\small\bfseries (c)}~{\small Expected cost --- tunable ranking}\\[0.4em]
+    \begin{adjustbox}{max width=\linewidth, max height=0.84\textheight, keepaspectratio}
+    \includegraphics{assets/evidence/fig_dashboard_expected_cost_shot.png}
     \end{adjustbox}
-    \caption[Dashboard McNemar Test tab]{Implemented Streamlit McNemar Test tab. For each model, the tab displays a paired contingency table, discordant counts, and the exact binomial p-value for the selected dates.}
-    \label{fig:dashboard-mcnemar}
+    \caption[]{Continued: expected-cost view~(c). A reviewer sets \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\); the highlighted bar is the current minimiser of \(L_t(m)\). The dashboard reports this ranking for review; deployment stays a separate manual decision.}
 \end{figure}
-
-\begin{figure}[htbp]
-    \centering
-    \begin{adjustbox}{max width=\linewidth,max totalheight=.72\textheight,center}
-    \includegraphics{assets/evidence/fig_dashboard_expected_cost.png}
-    \end{adjustbox}
-    \caption[Dashboard Expected Cost tab]{Implemented Streamlit Expected Cost tab. It exposes the cost function and the false-positive/false-negative penalty inputs used for deployment ranking.}
-    \label{fig:dashboard-cost}
-\end{figure}
+\clearpage
 
 \section{Run identity and stored artifacts}
 \label{sec:artifacts-data-flow}
@@ -107,50 +144,31 @@ Here, a \emph{run} means one submission event covering one dataset subset and on
 \]
 The first three fields identify the execution and model; \texttt{custom\_id} identifies the benchmark item and permits an exact join to its baseline prediction and label.
 
-The persisted records have the following schemas (question marks denote optional fields and \texttt{|} alternatives):
-\begin{lstlisting}[basicstyle=\ttfamily\scriptsize,columns=fullflexible]
-batch_ids.json = {
-  "run_id": string,
-  "subset_size": integer,
-  "batches": [{
-    "model": string,
-    "provider": string,
-    "batch_id": string | null,
-    "error"?: string,
-    "claude_id_map"?: object
-  }]
-}
+Table~\ref{tab:stored-artifacts} summarizes the main persisted artifacts and their roles in the workflow.
 
-result JSONL row = {
-  ("custom_id" | "key"): string,
-  "response": provider_response
-}
+\begin{table}[htbp]
+\centering
+\small
+\caption[Core persisted artifacts]{Core persisted artifacts used to connect asynchronous inference, rescoring, and review.}
+\label{tab:stored-artifacts}
+\begin{tabularx}{\linewidth}{lYY}
+\toprule
+Artifact & Purpose & Downstream use \\
+\midrule
+Batch manifest & Records \texttt{run\_id}, dataset choice, provider, model, and submitted batch identifiers. & Connects submission, retrieval, and audit of incomplete or failed jobs. \\
+Raw provider outputs & Retain item-level responses keyed by \texttt{custom\_id}. & Support rescoring, parser review, and repeated export without new inference. \\
+Langfuse traces & Store run metadata, model identity, benchmark item, and parsed prediction. & Provide the canonical item-level record for review and dashboard export. \\
+Langfuse scores & Store correctness, TP/FP/TN/FN type, and token-derived cost. & Feed paired monitoring, benchmark comparison, and cost-aware ranking. \\
+Dashboard snapshots and exports & Present trajectories, paired evidence, and candidate comparisons. & Support human review, reporting, and deployment discussion. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-Langfuse trace = {
-  "id": string,
-  "timestamp": datetime,
-  "metadata": {
-    "run_id": string, "provider": string, "model": string,
-    "custom_id": string, "batch_eval": boolean
-  },
-  "output": {"campaign_relevant": boolean}
-}
-
-Langfuse score = {
-  "traceId": string,
-  "name": string,
-  ("value": number | "stringValue": string)
-}
-\end{lstlisting}
-The manifest connects a local run to each provider batch. Each downloaded JSONL row retains the provider response and item identifier. Ingestion converts that row into a trace and attaches accuracy, error type, and cost as scores; \texttt{traceId} joins the score records back to the trace. The analysis export then selects the trace identity fields and score values into CSV snapshots.
-
-These records serve two purposes. First, \texttt{run\_id} keeps predictions from different weekly executions separate, while \texttt{custom\_id} pairs the same benchmark item across runs. Second, the saved provider responses allow scoring and statistical analysis to be repeated without calling the model again. This reproduces the processing of existing outputs, not the original model inference. Repeating the inference exactly would additionally require immutable copies or hashes of the dataset, request template, prompt, parser, and model configuration; the current manifest records only the subset size and provider batch identifiers.
+These records keep predictions from different executions separate and pair the same benchmark item across runs. Saved provider responses allow scoring and statistical analysis to be repeated without calling the model again. Stronger replay guarantees would additionally require immutable hashes for the dataset, request template, prompt, parser, and model configuration.
 
 \section{Post-run decision logic}
 \label{sec:decision-logic}
-The implementation keeps monitoring and ranking as separate transitions (Figure~\ref{fig:run-decision-logic}). An eligible panel run is compared with the model's baseline on \(\mathcal{D}_n\). The alert rule combines paired statistical evidence with the operational magnitude floor. If it passes, three diagnostics determine whether escalation is justified. First, the run manifest, matched identifiers, missing pairs, provider errors, and malformed structured outputs are audited; this matters because the parser maps an invalid returned boolean to \texttt{false}. Second, the next scheduled observation is checked to distinguish persistence from a rebound. Third, models evaluated in the same batch are inspected for a shared failure pattern. These other models provide context, not formal controls for every model-specific mechanism. Only a credible, operationally actionable episode opens full-benchmark candidate comparison. The dashboard reports this evidence but does not execute a configuration change automatically.
-
-Because provider weights are inaccessible, an observed behavioural change leaves two controllable candidate-generation actions: switch to another available model, or revise the hard prompt while retaining the model. The dotted branch in Figure~\ref{fig:run-decision-logic} denotes the second, optional action. Appendix~\ref{app:prompt-optimisation} describes automatic prompt optimisation and the exploratory GEPA runs. A revised prompt is not accepted because its optimisation score improved; it enters the same evaluation on \(\mathcal{D}_N\) and the same acceptance rule as a model-switch candidate.
+Figure~\ref{fig:run-decision-logic} keeps monitoring and ranking separate. An alert triggers an audit of completeness and parser errors, comparison with same-batch models, and a manual decision on escalation. A later run can reveal persistence or rebound. If escalation is justified, the next step is full-benchmark evaluation of another model or an optional revised prompt.
 
 \begin{figure}[htbp]
     \centering
@@ -208,7 +226,7 @@ Because provider weights are inaccessible, an observed behavioural change leaves
     \draw[figarrow] (decision) -- node[midway, right, font=\scriptsize]{yes} (switch);
     \end{tikzpicture}
     \end{adjustbox}
-    \caption[Post-run decision logic]{A panel alert opens diagnostic review rather than automatic deployment. For a sustained, actionable episode, the solid path considers an alternative model and the dotted optional path generates a revised prompt. Either candidate must pass full-benchmark evaluation and the same declared acceptance rule.}
+    \caption[Post-run decision logic]{A panel alert opens diagnostic review. Deployment stays manual. For a sustained, actionable episode, the solid path considers an alternative model and the dotted optional path generates a revised prompt. Either candidate must pass full-benchmark evaluation and the same declared acceptance rule.}
     \label{fig:run-decision-logic}
 \end{figure}
 \FloatBarrier

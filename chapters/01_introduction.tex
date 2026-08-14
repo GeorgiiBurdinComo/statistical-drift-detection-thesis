@@ -1,108 +1,151 @@
 \chapter{Introduction}
 
 \section{Context and motivation}
-This thesis studies a small applied-mathematics problem with a direct operational consequence: how to make decisions from repeated, costly observations of a black-box classifier whose behaviour is not assumed to be stationary. The application is campaign-relevance detection at GOCOMO GmbH, where batches of social-media posts are classified as relevant or not relevant to a campaign. Manual review does not scale to the incoming volume, while an erroneous automatic decision creates a campaign-dependent cost.
+Industrial classification pipelines increasingly rely on Large Language Model providers that expose their systems through application programming interfaces. In such settings, the deployed model can be viewed as a non-stationary black-box classifier whose internal parameters and update schedule are controlled by the provider rather than by the user. As a result, the behaviour of the same API-accessible model may change over time even when the task, prompt, and evaluation procedure remain fixed~\cite{chen2023chatgpt,openai2026modelguidance,anthropic2026modelversioning}.
 
-At time \(t\), an API configuration is therefore treated as a function \(q_t\) observed only through its inputs and outputs. Repeating a fixed benchmark reveals changes in those outputs. Provider-side model state, nondeterminism, request handling, and the surrounding evaluation pipeline are observationally equivalent possible sources of such changes. Behavioural variation of API models has also been documented in prior work~\cite{chen2023chatgpt,echterhoff2024muscle}.
+The practical motivation for this thesis arises from the author's work at GOCOMO GmbH. In the company's social-media analytics workflow, LLMs are used in batch mode to determine whether a post is relevant to a specified campaign, brand, or event. This is naturally formulated as a binary classification task. Because the volume of incoming content is large, automated classification becomes a necessary operational component.
 
-The resulting design problem has two constraints. First, evaluating every model repeatedly on the full labelled benchmark is expensive. Second, a statistically significant change is not yet a deployment decision: the importance of false positives and false negatives, together with inference price, determines which candidate is useful. The methodology must consequently connect statistical detection to decision cost without confusing their roles.
+However, the use of external LLM APIs creates a reliability problem. A model that performs well during an initial benchmark may later degrade after a provider-side change~\cite{chen2023chatgpt,openai2026modelguidance,anthropic2026modelversioning}. In a business-critical pipeline, such changes should be detected early. At the same time, repeated full-benchmark evaluation on a labelled dataset is costly. This creates the need for a monitoring procedure that is statistically informative, operationally feasible, and economically justified.
 
-\section{Problem statement and analytical decomposition}
-Let \(x_i\) denote multimodal post \(i\), \(y_i\in\{0,1\}\) its reference label, and \(\hat y_{i,t}(q)=q_t(x_i)\) the API output from configuration \(q\). The objective is to obtain reproducible evidence about changes in the observable mapping and to turn that evidence into an operational action.
+\section{Task definition and request contract}
+GOCOMO uses closed LLM APIs to classify social-media posts as relevant or not relevant to a marketing campaign. These predictions are used to filter content before downstream analytics. Because the incoming volume is large, the decision has to be made automatically and then checked through offline evaluation rather than routine manual review.
 
-Three functions are kept separate throughout:
-\begin{enumerate}
-    \item \textbf{Inference} fixes the task, prompt, request schema, parsing rule, and labelled benchmark used to obtain \(\hat y_{i,t}(q)\).
-    \item \textbf{Monitoring} compares paired correctness outcomes over time on a fixed, economical panel and raises an alert; it does not select a replacement model.
-    \item \textbf{Ranking} evaluates deployment candidates on the full benchmark under predictive error costs and inference cost; it does not reuse the deliberately non-representative monitoring panel as a leaderboard.
-\end{enumerate}
-This separation is central: detection and selection answer different mathematical questions and require different data.
+The task is semantic rather than a keyword lookup. A post can refer to a campaign through its text, visuals, or context without repeating a campaign name or hashtag. The main difficulty is that many posts are topically similar to campaign content while still lacking a direct connection to the campaign itself.
 
-\section{Scope and contributions}
-The scope is binary, multimodal campaign-relevance classification through black-box batch APIs. The empirical evidence comprises one existing labelled benchmark, a fixed monitoring panel, and repeated observations over a finite monitoring window.
+Figure~\ref{fig:campaign-relevance-examples} shows the intended distinction. The relevant post is linked to the GOCOMO Effie event through the submission materials and the workspace context. The non-relevant post shows branded merchandise only, without an event connection.
 
-Within that scope, the thesis contributes:
-\begin{itemize}
-    \item a formal evaluation target for a time-indexed black-box classifier and a disagreement-based monitoring panel with an explicit power calculation;
-    \item a paired alerting rule based on exact McNemar tests, multiplicity control, and an operational effect-size condition;
-    \item a cost-aware ranking rule that combines false-positive, false-negative, and inference costs on the full benchmark; and
-    \item a reproducible weekly implementation with explicit run identity and replayable artifacts.
-\end{itemize}
+\begin{figure}[htbp]
+\centering
+\begin{adjustbox}{max width=\linewidth}
+\input{assets/fig_campaign_relevance_examples.tex}
+\end{adjustbox}
+\caption[Representative campaign-relevance examples]{Representative examples of the binary decision. Relevance requires an explicit link to the Effie event.}
+\label{fig:campaign-relevance-examples}
+\end{figure}
 
-\section{Research questions}
-\label{sec:research-questions}
-The four questions follow the operational sequence and permit negative or qualified answers:
-\begin{enumerate}
-    \item[RQ1:] How can campaign relevance be represented as binary classification by a time-indexed black-box API while keeping the empirical evaluation target distinct from population risk?
-    \item[RQ2:] How much cost can a reduced monitoring panel save, and for which levels of output discordance does it retain useful power to detect degradation?
-    \item[RQ3:] Which paired statistical and operational conditions should trigger an alert, and how should repeated comparisons be controlled?
-    \item[RQ4:] How should deployment candidates be ranked when false positives, false negatives, and inference calls have different costs?
-\end{enumerate}
+In the formal chapters, the observed output for post \(x_i\) at time \(t\) is written as
+\[
+\hat y_{i,t}(q)=Q(x_i;c_t,h_t)=q_t(x_i).
+\]
+This notation separates the client-controlled request contract \(c_t\) from the hidden provider-side state \(h_t\). The contract includes the prompt, request schema, parser, and any exposed inference settings that are available for the chosen model. The hidden state includes inaccessible weights, routing, and the remaining server-side execution behaviour. The classifier is therefore observed only through its outputs over time.
 
-\section{Task definition}
-For each post, the request combines a campaign definition with textual context---caption, transcription, hashtags, mentions, and metadata---and selected images or video frames. The current strict response schema requires the boolean field \texttt{campaign\_relevant} and an auxiliary string \texttt{relevancy\_reasoning}; only the boolean is scored. Figure~\ref{fig:payload-unified} shows the actual canonical request shape; Table~\ref{tab:provider-adapters} gives the three provider-specific batch envelopes derived from it.
+For every post, the request combines a campaign brief with caption, transcript, hashtags, mentions, metadata, and selected images or video frames. The strict output schema requires \texttt{campaign\_relevant:boolean} and \texttt{relevancy\_reasoning:string}; only the boolean enters the metrics. Figure~\ref{fig:payload-unified} shows the canonical contract before provider-specific adaptation.
 
 \begin{figure}[H]
 \centering
+\begin{adjustbox}{max width=\linewidth}
 \begin{tikzpicture}[
     >=Latex,
-    node distance=3mm,
-    request/.style={draw=vizaxis, rounded corners=1.5pt, align=left,
-                   fill=vizgrid!25, text width=5.35cm, minimum height=9mm,
-                   inner sep=3pt, font=\scriptsize},
-    process/.style={draw=vizaxis, rounded corners=1.5pt, align=center,
-                    fill=vizgrid!40, minimum height=18mm, text width=2.15cm,
-                    inner sep=4pt, font=\footnotesize},
-    response/.style={draw=vizaxis, rounded corners=1.5pt, align=left,
-                     text width=3.5cm, inner sep=5pt, font=\scriptsize},
-    flow/.style={->, line width=0.6pt, draw=vizink}
+    msgbox/.style={draw=vizaxis, rounded corners=1.5pt, align=left,
+        text width=5.35cm, inner sep=3.5pt, fill=white},
+    groupframe/.style={draw=vizaxis, dashed, rounded corners=1.5pt, inner sep=5pt},
+    groupbox/.style={draw=vizaxis, rounded corners=1.5pt, align=center,
+        text width=3.35cm, minimum height=16mm, inner sep=5pt, fill=white},
+    modelbox/.style={draw=vizaxis, rounded corners=1.5pt, align=center,
+        text width=3.55cm, minimum height=20mm, inner sep=5pt, fill=white},
+    outputbox/.style={draw=vizaxis, rounded corners=1.5pt, align=center,
+        text width=2.9cm, minimum height=16mm, inner sep=5pt, fill=vizblue!10},
+    tag/.style={draw=vizaxis, rounded corners=1pt, fill=white, inner sep=2pt, font=\scriptsize\bfseries},
+    flow/.style={->, line width=0.55pt, draw=vizink}
 ]
-\node[request] (system) {%
-  \textbf{System instruction}\quad\texttt{body.input[0]}\\
-  Campaign definition and fixed decision rules
-};
-\node[request, below=of system] (text) {%
-  \textbf{Textual context}\quad\texttt{input\_text}\\
-  Caption, transcript, hashtags, mentions, metadata
-};
-\node[request, below=of text] (media) {%
-  \textbf{Visual context}\quad\texttt{input\_image}\\
-  Post image URL and selected video-frame URLs
-};
-\node[request, below=of media, fill=vizgrid!45] (schema) {%
-  \textbf{Strict response contract}\quad\texttt{body.text.format}\\
-  Required fields: decision (boolean);\\
-  rationale (string); no additional fields
-};
-\node[font=\scriptsize\bfseries, anchor=south west]
-  at ($(system.north west)+(0,1.5mm)$) {Canonical batch item \texttt{custom\_id: post-042}};
-\node[font=\scriptsize\itshape, anchor=north west]
-  at ($(schema.south west)+(0,-1.5mm)$) {Ground-truth label remains local and is not sent.};
-\coordinate (busTop) at ($(system.east)+(6mm,0)$);
-\coordinate (busBottom) at ($(schema.east)+(6mm,0)$);
-\coordinate (join) at ($(busTop)!0.5!(busBottom)$);
-\node[process, anchor=west] (model) at ($(join)+(8mm,0)$)
-  {Provider\\adapter\\[2pt]\(+\)\\[2pt]batch API\\configuration \(q_t\)};
-\node[response, right=of model] (output) {%
-  \textbf{Structured response}\\[3pt]
-  \texttt{\{campaign\_relevant:}\\
-  \texttt{\quad true,}\\
-  \texttt{\ relevancy\_reasoning:}\\
-  \texttt{\quad ``Douglas event''\}}\\[3pt]
-  Scored prediction: \(\hat y_{i,t}(q)=1\)
-};
-\draw[draw=vizink, line width=0.5pt] (system.east) -- (busTop);
-\draw[draw=vizink, line width=0.5pt] (text.east) -- (text.east-|busTop);
-\draw[draw=vizink, line width=0.5pt] (media.east) -- (media.east-|busTop);
-\draw[draw=vizink, line width=0.5pt] (schema.east) -- (busBottom);
-\draw[draw=vizink, line width=0.5pt] (busTop) -- (busBottom);
-\draw[flow] (join) -- (model.west);
+% Three payload slices, stacked then mirrored by the three abstract groups
+\node[msgbox] (msgcamp) {%
+\ttfamily\fontsize{7}{8.2}\selectfont
+\begin{tabular}{@{}l@{}}
+\{ \\
+\ \ "role": "system", \\
+\ \ "content": "Classify whether the post is \\
+\ \ relevant to the campaign \\
+\ \ `Beauty Day'. Return TRUE or \\
+\ \ FALSE" \\
+\}
+\end{tabular}};
+\node[msgbox, below=3mm of msgcamp] (msgctx) {%
+\ttfamily\fontsize{7}{8.2}\selectfont
+\begin{tabular}{@{}l@{}}
+\{ \\
+\ \ "role": "user", \\
+\ \ "content": "Hashtags: []" \\
+\}, \\
+\{ \\
+\ \ "role": "user", \\
+\ \ "content": "Transcription: ..." \\
+\}
+\end{tabular}};
+\node[msgbox, below=3mm of msgctx] (msgvis) {%
+\ttfamily\fontsize{7}{8.2}\selectfont
+\begin{tabular}{@{}l@{}}
+\{ \\
+\ \ "role": "user", \\
+\ \ "content": [ \\
+\ \ \ \{"type": "input\_text", \\
+\ \ \ \ "text": "Video frames extracted from \\
+\ \ \ \ the post"\}, \\
+\ \ \ \{"type": "input\_image", \\
+\ \ \ \ "image\_url": "https://.../frame1.jpg"\}, \\
+\ \ \ \{"type": "input\_image", \\
+\ \ \ \ "image\_url": "https://.../frame2.jpg"\} \\
+\ \ ] \\
+\}
+\end{tabular}};
+\node[groupframe, fit=(msgcamp)(msgctx)(msgvis), inner sep=6pt] (requestframe) {};
+\node[tag, anchor=south] at ($(requestframe.north)+(0,1.5mm)$) {ILLUSTRATIVE API REQUEST};
+
+\node[groupbox] (campaign) at (8.95,0 |- msgcamp) {%
+  \textbf{\normalsize Campaign definition}\\[4pt]
+  \footnotesize System prompt with brands, slogans, products, and relevance criteria};
+\node[groupbox] (context) at (8.95,0 |- msgctx) {%
+  \textbf{\normalsize Post context}\\[4pt]
+  \footnotesize Caption, transcription, hashtags, mentions, metadata};
+\node[groupbox] (visual) at (8.95,0 |- msgvis) {%
+  \textbf{\normalsize Visual content}\\[4pt]
+  \footnotesize Selected video frames or attached images};
+\node[groupframe, fit=(campaign)(context)(visual), inner sep=6pt] (groupframe) {};
+\node[tag, anchor=south] at ($(groupframe.north)+(0,1.5mm)$) {ABSTRACT INPUT GROUPS};
+
+\node[modelbox] (model) at (13.55,0 |- msgctx) {%
+  \textbf{\normalsize LLM classifier}\\[4pt]
+  \footnotesize Multimodal mapping\\[2pt]
+  \footnotesize\texttt{f(prompt, context, media) -> y}\\[1pt]
+  \footnotesize\texttt{y in \{0,1\}}};
+\node[outputbox] (output) at (17.45,0 |- msgctx) {%
+  \textbf{\normalsize OUTPUT}\\[4pt]
+  \footnotesize Binary decision\\[2pt]
+  \footnotesize $y=1$: relevant\\$y=0$: not relevant};
+
+% Left: three parallel horizontals. Right: one trunk, no fan-in.
+\draw[flow] (msgcamp.east -| requestframe.east) -- (campaign.west);
+\draw[flow] (msgctx.east -| requestframe.east) -- (context.west);
+\draw[flow] (msgvis.east -| requestframe.east) -- (visual.west);
+\draw[flow] (groupframe.east |- model.west) -- (model.west);
 \draw[flow] (model.east) -- (output.west);
 \end{tikzpicture}
-\caption[Canonical multimodal batch request]{Canonical body before provider adaptation. The strict schema requires a boolean decision and a string rationale, forbids additional properties, and exposes only the boolean decision to the evaluation metrics. Table~\ref{tab:provider-adapters} gives the exact JSONL envelopes.}
+\end{adjustbox}
+\caption[Unified representation of the multimodal classification request]{Unified representation of the multimodal classification request. The left side shows an illustrative provider-facing API payload. The right side abstracts the same request into three conceptual input groups: campaign definition, post context, and visual content. The arrows indicate how payload components map to the inputs of the classifier, which returns a binary relevance decision.}
 \label{fig:payload-unified}
 \end{figure}
 
-\section{Structure of the thesis}
-\label{sec:thesis-structure}
-Chapter~\ref{ch:data} defines the benchmark, sentinel panel, and evaluation quantities. Chapter~\ref{ch:drift} develops paired monitoring, and Chapter~\ref{ch:cost-deployment-utility} separates an alert from the later deployment decision. Chapter~\ref{chap:system-architecture} maps these components to a reproducible implementation, and Chapter~\ref{chap:experimental-results} reports the monitoring and cost evidence. The conclusion answers the research questions and states the limits of the available evidence.
+These task and request definitions fix the observable object used throughout the thesis: a repeated black-box binary decision on the same labelled items under a fixed client-controlled request contract. If the prompt or another exposed request component is intentionally changed, that is treated as a new configuration rather than passive drift of the old one.
+
+\section{Problem statement and research questions}
+The central problem is to evaluate and monitor API-based LLM classifiers in a production environment where model behaviour may change over time. The user does not control the underlying model updates, yet still has to make reliable decisions from observed task performance.
+
+The thesis addresses this problem through four research questions:
+\begin{enumerate}
+    \item[RQ1:] How can campaign-relevance classification by an external LLM API be formalised as repeated evaluation of a non-stationary black-box binary classifier?
+    \item[RQ2:] How can a reduced monitoring subset be constructed and sized so that routine evaluation is substantially cheaper while retaining sensitivity to behavioural change?
+    \item[RQ3:] Which paired statistical test and multiplicity treatment provide an appropriate rule for detecting directional degradation across repeated runs?
+    \item[RQ4:] How should candidate models be compared and selected when predictive quality, inference cost, and campaign-specific false-positive and false-negative costs differ?
+\end{enumerate}
+
+\section{Structure}
+The thesis is organised as follows:
+\begin{itemize}
+    \item Chapter~\ref{ch:data} defines the benchmark and sensitivity panel.
+    \item Chapter~\ref{ch:drift} derives the paired monitoring test and its scope.
+    \item Chapter~\ref{ch:cost-deployment-utility} defines a separate cost-aware decision rule.
+    \item Chapter~\ref{chap:system-architecture} describes the implementation.
+    \item Chapter~\ref{chap:experimental-results} reports the recorded episode and candidate comparison.
+    \item Chapter~\ref{chap:conclusion} summarises the main findings and limitations.
+\end{itemize}
+The appendix presents automatic prompt optimisation as an exploratory drift-mitigation extension: prompt repair can provide a practical recovery path alongside model switching when drift is detected, although its effect remains episode-dependent and requires the same full re-evaluation protocol.

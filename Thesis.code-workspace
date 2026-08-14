@@ -2,13 +2,10 @@
 	"folders": [
 		{
 			"path": "."
-		},
-		{
-			"path": "../benchmark_eval"
 		}
 	],
 	"settings": {
-		"latex-workshop.latex.outDir": "%WORKSPACE_FOLDER%/build",
+		"latex-workshop.latex.outDir": "%DIR%/build",
 		"latex-workshop.latex.autoBuild.run": "onSave",
 		"latex-workshop.latex.clean.subfolder.enabled": true,
 		"latex-workshop.latex.clean.fileTypes": [
