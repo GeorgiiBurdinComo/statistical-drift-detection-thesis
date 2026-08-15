@@ -150,7 +150,7 @@ If \(D\) is the number of discordant pairs on a panel of size \(n\), then
 \end{equation}
 Let \(B\) denote the number of regressions among these \(D\) discordant pairs.
 Conditional on discordance, the probability that the changed item is specifically a regression is
-\[
+\begin{equation}
 P(\text{regression}\mid\text{discordant})
 =
 \frac{p_b}{p_b+p_c}
@@ -158,7 +158,8 @@ P(\text{regression}\mid\text{discordant})
 \frac{p_b}{\rho}
 =
 \frac{\rho+g}{2\rho}.
-\]
+\label{eq:design-conditional-regression-probability}
+\end{equation}
 Therefore, once \(d\) discordant items have been observed, the number of regressions among them is binomial with \(d\) trials and conditional regression probability \((\rho+g)/(2\rho)\):
 
 Conditional on \(D=d\), the number of regressions among discordant items satisfies
@@ -172,9 +173,10 @@ Conditional on \(D=d\), the number of regressions among discordant items satisfi
     \label{eq:conditional-binomial}
 \end{equation}
 Under the boundary null of no directional degradation, regressions and improvements are equally likely among discordant pairs, so
-\[
+\begin{equation}
 B\mid D=d,H_0\sim \mathrm{Binomial}(d,1/2).
-\]
+\label{eq:design-boundary-null-binomial}
+\end{equation}
 Therefore, for each \(j\in\{0,\ldots,d\}\),
 \[
 P(B=j\mid D=d,H_0)
@@ -186,7 +188,7 @@ P(B=j\mid D=d,H_0)
 \binom{d}{j}2^{-d}.
 \]
 The one-sided alternative places evidence for degradation in large values of \(B\), since many regressions and few improvements imply net loss of accuracy. For a candidate cutoff \(k\), the exact null tail probability is therefore
-\[
+\begin{equation}
 P(B\ge k\mid D=d,H_0)
 =
 \sum_{j=k}^{d}
@@ -194,7 +196,8 @@ P(B=j\mid D=d,H_0)
 =
 \sum_{j=k}^{d}
 \binom{d}{j}2^{-d}.
-\]
+\label{eq:design-boundary-null-tail}
+\end{equation}
 At significance level \(\alpha\), the critical value is chosen as the smallest integer cutoff whose null upper tail is at most \(\alpha\):
 \begin{equation}
 k_\alpha(d)

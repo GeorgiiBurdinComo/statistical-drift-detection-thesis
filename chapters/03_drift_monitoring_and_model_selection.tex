@@ -1,60 +1,41 @@
 \chapter{Paired Drift Monitoring and Alerting}
 \label{ch:drift}
 
-\noindent Monitoring tests whether regressions outnumber improvements on the same labelled posts between two runs. The appropriate input is paired correctness, not independent accuracy proportions.
+\noindent Monitoring tests whether regressions outnumber improvements on the same labelled posts between two runs. The chapter therefore uses a one-sided exact McNemar test on paired correctness transitions.
 
 \section{Fixed-panel comparison design}
 \label{sec:formalisation-temporal}
 
-An observed accuracy difference is interpretable only if both runs refer to the same task and the same items. This section fixes that comparison contract, defines the common item-level outcome, and handles missing outputs before any effect size or p-value is calculated.
+This section states the paired monitoring setup used by the alert: the correctness representation from Chapter~\ref{ch:data}, the fixed-contract comparison condition, and the effective denominator induced by complete pairs.
 
-\paragraph{Correctness representation.}
+\paragraph{Recall of the monitoring representation.}
 
-The paired comparison uses the following objects:
-\begin{description}
-    \item[\(q\)] one fixed client-controlled request contract: provider endpoint, prompt, request schema, parser, and the exposed inference settings that are actually available for that model;
-    \item[\(y_i\)] manually assigned reference label for panel item \(i\), where \(y_i\in\{0,1\}\);
-    \item[\(\hat y_{i,t}(q)\)] prediction returned by configuration \(q\) for item \(i\) at time \(t\), where \(\hat y_{i,t}(q)\in\{0,1\}\).
-\end{description}
-As discussed in Chapter~\ref{ch:data}, the hidden provider-side state is not observed directly and may vary across evaluation times \(t=0,1,\ldots\).
-
-The alert concerns net classification performance rather than a particular predicted class, so each output is reduced to the common correct/incorrect scale needed for pairing. Define the correctness indicator
+Chapter~\ref{ch:data} defines the binary correctness indicator
 \begin{equation}
-    E_{i,t}(q)
-    =
-    \mathbb{I}\{\hat y_{i,t}(q)=y_i\}
-    =
-    \begin{cases}
-        1,&\text{if the prediction is correct},\\
-        0,&\text{if the prediction is incorrect}.
-    \end{cases}
+    E_{i,t}(q)=\mathbb{I}\{\hat y_{i,t}(q)=y_i\}
     \label{eq:correctness-indicator}
 \end{equation}
-The symbol \(\mathbb{I}\{\cdot\}\) is an indicator: it returns \(1\) when the statement inside braces is true and \(0\) otherwise.
-
-If a run contains \(n\) scored items, its finite-panel accuracy is the average of these zeros and ones:
+and the corresponding finite-panel accuracy
 \begin{equation}
     A_n(q,t)
     =
     \frac{1}{n}\sum_{i=1}^{n}E_{i,t}(q).
     \label{eq:chapter3-panel-accuracy}
 \end{equation}
-For example, if 240 of 300 indicators equal \(1\), then \(A_{300}=240/300=0.80\). No probability theorem is needed for this calculation: it is simply the observed proportion correct on these items.
+for a fixed client-controlled request contract \(q\). This chapter applies that representation to paired monitoring across two evaluation times. As discussed in Chapter~\ref{ch:data}, provider-side hidden state can still change across evaluation times \(t=0,1,\ldots\).
 
 \paragraph{Fixed evaluation contract.}
 
-The monitoring comparison relies on the following design condition.
+The monitoring comparison relies on the following design condition:
 
 \begin{assumption}[Fixed evaluation contract]
 Between the two runs being compared, the panel identifiers, reference labels, prompt, parsing rule, and intended API configuration are unchanged. Each retained record is aligned by item identifier.
 \label{ass:fixed-evaluation-contract}
 \end{assumption}
 
-The fixed-contract assumption rules out item resampling. Detected change means the outputs changed under that contract; hidden weights, routing, and service failures remain part of the observed black-box behaviour.
-
 \paragraph{Complete pairs and effective denominator.}
 
-The stored panel contains 300 items, but an API run can have missing outputs. A valid paired comparison may use only items observed and scored at both times. For baseline \(t_1\) and follow-up \(t_2\), define the complete-pair set
+The stored panel contains 300 items, but an API run can have missing outputs. A valid paired comparison uses only items observed and scored at both times. For baseline \(t_1\) and follow-up \(t_2\), define the complete-pair set
 \[
 \mathcal{C}(q,t_1,t_2)
 =
@@ -64,36 +45,19 @@ and the corresponding effective denominator
 \[
 n_{12}=|\mathcal{C}(q,t_1,t_2)|\le 300.
 \]
-All counts and both accuracy values in one paired comparison must use this same complete-pair set. To keep the formulas readable, the rest of the derivation writes \(n=n_{12}\) and sums over the retained items. This is why an empirical comparison can legitimately report, for example, \(n=296\) rather than 300.
+All counts and both accuracy values in one paired comparison use this same complete-pair set. To keep the formulas readable, the rest of the derivation writes \(n=n_{12}\) and sums over the retained items. This is why an empirical comparison can legitimately report, for example, \(n=296\) rather than 300.
 
-This complete-pair rule prevents mismatched denominators, but it cannot remove informative missingness. If failures are more likely on items the configuration would classify incorrectly, the retained pairs can make performance look too favourable. Every result must therefore report the effective \(n\) and provider or parsing failures alongside the test.
+This rule keeps the denominator matched across the two runs. It does not solve selective failures: if missing outputs happen more often on hard items, the retained pairs can make performance look too favourable. Every result must therefore report the effective \(n\) and the provider or parsing failures alongside the test.
 
 \section{Paired correctness and observed degradation}
 
-The purpose of pairing is to isolate within-item changes that an aggregate comparison of two accuracies would hide. For the fixed configuration \(q\), which is suppressed below, the same item appears at the baseline and follow-up. Its two correctness values therefore form a pair,
+Pairing shows which same posts regressed and which improved between the two runs. For the fixed configuration \(q\), which is suppressed below, the same item appears at the baseline and follow-up, so its two correctness values form a pair,
 \[
 \bigl(E_{i,t_1},E_{i,t_2}\bigr).
 \]
-Treating the two runs as unrelated samples would discard useful information. A change from \(1\) to \(0\) is direct evidence of regression on one item; a pair \((1,1)\) shows no temporal change even though it contributes to both accuracy levels.
+Treating the two runs as unrelated samples would discard useful information. A change from \(1\) to \(0\) is direct evidence of regression on one item, whereas a pair \((1,1)\) contributes to both accuracy levels without showing temporal change.
 
-There are exactly four possible paired outcomes. Table~\ref{tab:mcnemar_contingency} assigns a count to each one.
-
-\begin{table}[H]
-    \centering
-    \caption[Paired correctness table]{The four possible correctness transitions for one fixed-panel comparison.}
-    \label{tab:mcnemar_contingency}
-    \begin{tabular}{c|cc}
-        & Follow-up correct: \(E_{i,t_2}=1\)
-        & Follow-up wrong: \(E_{i,t_2}=0\) \\
-        \hline
-        Baseline correct: \(E_{i,t_1}=1\)
-        & \(a\): stayed correct
-        & \(b\): regressed \((1\to0)\) \\
-        Baseline wrong: \(E_{i,t_1}=0\)
-        & \(c\): improved \((0\to1)\)
-        & \(d\): stayed wrong
-    \end{tabular}
-\end{table}
+There are exactly four possible paired outcomes, shown in Table~\ref{tab:mcnemar_contingency_design} in Chapter~\ref{ch:data}. Write \(a\) for stayed correct \((1,1)\), \(b\) for regressed \((1,0)\), \(c\) for improved \((0,1)\), and \(d\) for stayed wrong \((0,0)\).
 
 The four cells partition the complete pairs, so
 \begin{equation}
@@ -117,7 +81,7 @@ Thus \(b\) always means ``correct to wrong'', whereas \(c\) always means ``wrong
 
 \paragraph{Observed accuracy change.}
 
-The four-cell table must now be converted into an effect size that has an operational interpretation. At baseline, the correct items are those in cells \(a\) and \(b\). Therefore
+The paired effect size is the follow-up accuracy minus the baseline accuracy on the same retained items. At baseline, the correct items are those in cells \(a\) and \(b\). Therefore
 \[
 A_n(q,t_1)=\frac{a+b}{n}.
 \]
@@ -133,7 +97,11 @@ A_n(q,t_2)-A_n(q,t_1)
 &=\frac{c-b}{n}.
 \label{eq:paired-accuracy-change}
 \end{align}
-The count \(a\) cancels. The count \(d\) appears in neither accuracy numerator. Consequently, only the two \emph{discordant} cells \(b\) and \(c\) determine the change.
+The count \(a\) cancels. The count \(d\) appears in neither accuracy numerator. Consequently, only the two \emph{discordant} cells \(b\) and \(c\) determine the change. For example, \(18\) regressions and \(5\) improvements among \(296\) complete pairs give
+\[
+\Delta A_{\mathrm{paired}}=\frac{18-5}{296}=0.0439,
+\]
+that is, a paired degradation of \(4.4\) percentage points.
 
 Equation~\eqref{eq:paired-accuracy-change} immediately gives the direction:
 \[
@@ -156,61 +124,39 @@ It is convenient to express a positive degradation magnitude as
 \section{Exact directional McNemar test}
 \label{sec:mcnemar-section}
 
-The panel drop \((b-c)/n\) is the observed effect size. This section derives an exact test from the paired table so that the alert remains valid when the number of changed pairs is small.
+The panel drop \((b-c)/n\) is the observed effect size. McNemar's test is the standard test for paired binary outcomes on the same items, so it matches the fixed-panel before-and-after comparison in this chapter. In the paired correctness table, only the discordant cells \(b\) and \(c\) carry evidence about change, since the concordant cells \(a\) and \(d\) contribute equally to both runs. A standard large-sample variant summarizes the discordant imbalance by
+\[
+\chi^2=\frac{(b-c)^2}{b+c},
+\]
+but the operational rule in this thesis uses the exact one-sided form because the monitoring question is directional and the discordant count can be small~\cite{mcnemar1947,fagerland2013mcnemar}.
 
 \paragraph{Directional hypotheses.}
 
-The observed counts \(b\) and \(c\) describe this comparison exactly. Statistical testing adds a working probability model to judge how surprising their imbalance would be under repeated comparable evaluations.
-
-The working probability model uses:
-\begin{description}
-    \item[\(p_b\)] probability of regression, \(P\{(E_{i,t_1},E_{i,t_2})=(1,0)\}\);
-    \item[\(p_c\)] probability of improvement, \(P\{(E_{i,t_1},E_{i,t_2})=(0,1)\}\).
-\end{description}
-The monitoring question is directional: is regression more likely than improvement? The hypotheses are therefore
+For monitoring, the relevant alternative is directional degradation. Write \(p_b\) for the probability of regression and \(p_c\) for the probability of improvement on one paired item. The hypotheses are
 \begin{equation}
 H_0:p_b\le p_c
 \qquad\text{against}\qquad
 H_a:p_b>p_c.
 \label{eq:mcnemar-hypotheses}
 \end{equation}
-The null hypothesis \(H_0\) includes equal probabilities and situations in which improvement is more likely. The alternative \(H_a\) represents degradation.
-
-\begin{assumption}[Working paired-outcome model]
-For the exact test calculation, item pairs are treated as independent draws from a common four-outcome distribution with probabilities \(p_a,p_b,p_c,p_d\), where \(p_a+p_b+p_c+p_d=1\).
-\label{ass:paired-outcome-model}
-\end{assumption}
-
-Assumption~\ref{ass:paired-outcome-model} is an inferential model for the exact test. Strong dependence among near-duplicate or clustered items can invalidate the nominal test level. The frozen-panel conclusion is therefore narrower than a production-population conclusion.
-
-\paragraph{Conditional law for discordant pairs.}
-
-Concordant pairs contain no directional information. Let \(D\) be the number of discordant pairs and \(B\) the number of regressions among them. Conditional on discordance,
-\begin{equation}
-P(\text{regression}\mid\text{discordant})
-=
-\frac{p_b}{p_b+p_c}.
-\label{eq:conditional-regression-probability}
-\end{equation}
-At the boundary \(p_b=p_c\), this probability is \(1/2\); cases with \(p_b<p_c\) make a large regression count still less likely.
-
-\begin{proposition}[Exact conditional McNemar law]
-Under Assumption~\ref{ass:paired-outcome-model} and the boundary null \(p_b=p_c\), conditional on observing \(D\) discordant pairs, the random number \(B\) of regressions satisfies
-\begin{equation}
-    B\mid D\sim\mathrm{Binomial}(D,1/2).
-    \label{eq:exact-mcnemar-law}
-\end{equation}
-\end{proposition}
+In words:
+\begin{description}
+    \item[\(H_0\)] regression is no more likely than improvement on the fixed panel, including equal probabilities and situations in which improvement is more likely;
+    \item[\(H_a\)] regression is more likely than improvement, which is the directional degradation signal of interest.
+\end{description}
 
 \paragraph{One-sided exact p-value.}
 
-For \(b_{\mathrm{obs}}\) regressions among \(D\) discordant pairs, the exact upper-tail p-value is
-\begin{equation}
+Let \(D=b+c\) be the discordant count and let \(b_{\mathrm{obs}}\) be the observed number of regressions. If \(B\) denotes the random number of regressions among these \(D\) discordant pairs, then under \(H_0\),
+\[
+    B\mid D\sim\mathrm{Binomial}(D,1/2).
+\]
+The exact one-sided McNemar p-value is therefore the upper-tail probability
+\[
 p_{\mathrm{exact}}
 =
 \sum_{j=b_{\mathrm{obs}}}^{D}\binom{D}{j}2^{-D}.
-\label{eq:exact-mcnemar-p}
-\end{equation}
+\]
 At per-comparison level \(\alpha\), reject when
 \begin{equation}
     b>c
@@ -218,13 +164,16 @@ At per-comparison level \(\alpha\), reject when
     p_{\mathrm{exact}}\le\alpha.
     \label{eq:nominal-rejection-rule}
 \end{equation}
-Set \(p_{\mathrm{exact}}=1\) when \(D=0\). The exact conditional rule is transparent for small discordant counts. It can be conservative; asymptotic and mid-\(p\) variants are alternatives when their approximation properties are preferred~\cite{mcnemar1947,fagerland2013mcnemar}.
+Equation~\eqref{eq:nominal-rejection-rule} is the thesis-specific reject-or-do-not-reject rule: when both conditions hold, the test rejects \(H_0\); otherwise it does not reject \(H_0\). 
 
 \paragraph{Scope of rejection.}
 
-Rejection is evidence of directional degradation on the frozen panel under the working model. Cause, production-risk change, and replacement choice are later, separate decisions.
+Rejection is evidence of directional degradation on the frozen panel under the working model. It does not by itself identify the cause, quantify production impact, or choose a replacement.
 
-\section{Alert decision and multiplicity control}
+\section{Diagnostics and escalation}
+\label{sec:classification-metrics}
+
+For each configuration \(q\), every later eligible run is compared with that configuration's earliest eligible panel run \(t_0\).
 
 \begin{figure}[htbp]
 \centering
@@ -235,76 +184,4 @@ Rejection is evidence of directional degradation on the frozen panel under the w
 \label{fig:paired-alert-rule}
 \end{figure}
 
-The monitoring rule is a screening rule on the fixed panel. The observed accuracy change is reported as an effect size; review determines whether the signal warrants action.
-
-\paragraph{Repeated-testing problem.}
-\label{sec:baseline-multiplicity}
-
-Before interpreting repeated signals, the comparison family and its reference point must be defined. Otherwise the signal count could be reshaped after seeing which runs produce small p-values.
-
-\paragraph{Baseline convention.}
-
-For each configuration \(q\), every later eligible run is compared with that configuration's earliest eligible panel run \(t_0\). A fixed baseline has a clear interpretation: it is the accepted reference state. It also creates a limitation. If \(t_0\) was unusually favourable or unfavourable, every later comparison inherits that baseline noise. An isolated trigger must therefore be read together with:
-\begin{itemize}
-    \item the trajectory across runs;
-    \item the full set of repeated comparisons;
-    \item the effective pair counts used in each comparison;
-    \item same-batch control evidence.
-\end{itemize}
-
-\paragraph{Repeated-signal problem.}
-
-Every new comparison creates another opportunity for a nominal signal. The monitoring rule therefore prioritises sensitivity on the fixed panel and routes any signal to review rather than treating the p-value alone as a deployment decision.
-
-\section{Diagnostics and escalation}
-\label{sec:classification-metrics}
-
-The signal rule deliberately compresses each item to correct or incorrect. After a signal, diagnosis and action require class-specific information and a handoff to full-benchmark evaluation.
-
-\paragraph{Class-specific diagnostics.}
-
-Correctness transitions reveal whether net accuracy changed, but not which class of error caused the change. For one batch, define:
-\begin{itemize}
-    \item \(\mathrm{TP}\): positive items predicted positive;
-    \item \(\mathrm{TN}\): negative items predicted negative;
-    \item \(\mathrm{FP}\): negative items incorrectly predicted positive;
-    \item \(\mathrm{FN}\): positive items incorrectly predicted negative.
-\end{itemize}
-These four counts sum to the number of scored items. The dashboard derives:
-\begin{align}
-\mathrm{Acc}
-&=\frac{\mathrm{TP}+\mathrm{TN}}{n},
-&
-\mathrm{Prec}
-&=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}},
-&
-\mathrm{Rec}
-&=\frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}},
-\label{eq:basic-classification-metrics}\\
-\mathrm{Spec}
-&=\frac{\mathrm{TN}}{\mathrm{TN}+\mathrm{FP}},
-&
-F_1
-&=\frac{2\mathrm{Prec}\,\mathrm{Rec}}
-{\mathrm{Prec}+\mathrm{Rec}},
-&
-\mathrm{BA}
-&=\frac{\mathrm{Rec}+\mathrm{Spec}}{2}.
-\label{eq:derived-classification-metrics}
-\end{align}
-Undefined metrics are reported as unavailable, never zero. These quantities diagnose the form of deterioration but do not add rejection criteria.
-
-\paragraph{Decision scope.}
-For any eligible baseline--follow-up comparison, the discordant counts \(b\) and \(c\) give the observed change
-\[
-\Delta A_{\mathrm{paired}}=\frac{b-c}{n}.
-\]
-\noindent The operational monitoring signal is
-\[
-\operatorname{Signal}_{\mathrm{monitor}}=1
-\quad\Longleftrightarrow\quad
-b>c
-\quad\text{and}\quad
-p_{\mathrm{exact}}\le0.05.
-\]
-where \(p_{\mathrm{exact}}\) is the one-sided exact McNemar p-value for directional degradation on the complete pairs. This signal flags a potential panel change. Escalation depends on trajectory, effective pair counts, same-batch controls, class-specific error composition, persistence in later runs, and deployment relevance.
+The monitoring rule opens review on the fixed panel. Review then checks the trajectory across runs, the effective pair counts, the same-batch controls, and the class-specific error composition, especially the balance between false positives and false negatives. These diagnostics explain the source and operational relevance of the change, but they do not modify the McNemar rejection rule.

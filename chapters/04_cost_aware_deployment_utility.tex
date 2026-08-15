@@ -5,11 +5,11 @@
 
 \section{Common evaluation basis and cost components}
 
-Candidate ranking is meaningful only when every loss difference refers to the same requests and every component has a declared interpretation. This section therefore fixes the common comparison set and identifies the three quantities that the decision rule must trade off.
+Candidate ranking is meaningful only when every candidate is scored on the same requests and every cost term has a declared meaning. This section fixes the common evaluation subset and defines the three inputs to loss: mean API charge, false positives, and false negatives.
 
 \paragraph{Candidate set and common complete cases.}
 
-Using the intersection of valid candidate outputs prevents item composition from becoming an unobserved fourth component of the ranking. Let
+Every candidate must be scored on the same items. Otherwise a loss difference could come from different item sets rather than different model behaviour. Let
 \[
 \mathcal{M}_{\mathrm{cand}}
 =
@@ -90,7 +90,7 @@ They are not estimated from the benchmark. They may represent analyst correction
 
 \section{Empirical loss and candidate selection}
 
-The separate components cannot rank candidates until they are placed on one additive scale. This section derives that scale, verifies its units and empirical scope, and then turns it into a minimisation rule.
+The three components become comparable only after they are placed on one additive scale. This section converts API cost and error penalties into one USD-per-request loss and then selects the candidate with the smallest value.
 
 \paragraph{Loss derivation.}
 
@@ -151,7 +151,7 @@ This unit check verifies that the addition in Equation~\eqref{eq:expected-cost} 
 
 \paragraph{Finite-benchmark interpretation.}
 
-The counts and charges are observed on \(\mathcal{B}_t\), while the penalties are scenario inputs. Thus \(L_t(m)\) is the expected cost of the declared penalty scenario on the common complete cases. Changing penalties changes the decision problem.
+The counts and charges are observed on \(\mathcal{B}_t\), while the penalties are scenario inputs. Thus \(L_t(m)\) is the observed per-request loss on the common complete cases under the chosen false-positive and false-negative penalty scenario. Changing the penalties changes the decision problem.
 
 \paragraph{Minimum-loss candidate.}
 
@@ -171,7 +171,7 @@ At \(C_{\mathrm{FP}}=0.155\) USD and \(C_{\mathrm{FN}}=0.031\) USD, the canonica
 \section{Encoding cost preferences}
 \label{sec:cost-parameters-uncertainty}
 
-One pair \((C_{\mathrm{FP}},C_{\mathrm{FN}})\) gives one ranking but obscures why that ranking changes. Reparameterising the penalties separates the relative importance of the two error types from their total importance relative to inference cost, making the business assumptions inspectable.
+One pair \((C_{\mathrm{FP}},C_{\mathrm{FN}})\) gives one ranking, but it hides why the ranking changes. The reparameterisation below separates two questions: how much more costly is a false negative than a false positive, and how important are business errors relative to API price.
 
 \paragraph{Relative importance and total severity.}
 
@@ -221,7 +221,7 @@ c_t(m)
 }{n_t}.
 \label{eq:expected-cost-lambda-R}
 \end{align}
-Increasing \(\lambda\) raises error importance relative to API cost; changing \(w\) redistributes that penalty between error types. Figure~\ref{fig:cost-penalty-map} shows the same decision geometry in the raw penalty coordinates \(C_{\mathrm{FN}}\) and \(C_{\mathrm{FP}}\). Panel~(a) uses linear axes from \(0\) to \(10\) USD; panel~(b) uses logarithmic axes over \(10^{-2}\) to \(10\) USD so that the near-origin transitions remain visible.
+Increasing \(\lambda\) makes business errors matter more relative to API cost; changing \(w\) makes false negatives more or less expensive relative to false positives. Figure~\ref{fig:cost-penalty-map} shows the same ranking in the raw penalty coordinates \(C_{\mathrm{FN}}\) and \(C_{\mathrm{FP}}\): pick one penalty pair, read the region label at that point, and crossing a boundary changes the preferred candidate. Panel~(a) uses linear axes from \(0\) to \(10\) USD; panel~(b) uses logarithmic axes over \(10^{-2}\) to \(10\) USD so that the near-origin transitions remain visible.
 
 \begin{figure}[htbp]
     \centering
@@ -233,7 +233,7 @@ Increasing \(\lambda\) raises error importance relative to API cost; changing \(
 \section{Sensitivity and break-even analysis}
 \label{sec:break-even-analysis}
 
-Because the penalties are scenario inputs rather than measured constants, reporting only one minimiser would conceal decision uncertainty. Pairwise break-even boundaries show where preference changes are large enough to reverse the ranking and where a candidate can never become optimal.
+Because the penalties are scenario inputs rather than measured constants, reporting only one minimiser would hide decision uncertainty. A pairwise break-even boundary is the set of penalty values where two candidates have equal loss; on opposite sides of the boundary, the preferred candidate changes.
 
 \paragraph{Pairwise loss difference.}
 
@@ -304,7 +304,7 @@ For fixed \(w\), solving Equation~\eqref{eq:break-even-count} gives
 \label{eq:lambda-breakpoint}
 \end{equation}
 
-The breakpoint is usable only with nonzero denominator and \(\lambda^\star>0\); evaluate the loss sign on either side.
+Use this breakpoint only when the denominator is nonzero and \(\lambda^\star>0\). Then check the sign of the loss difference on each side of the breakpoint to see which candidate is preferred.
 
 \paragraph{Break-even relative penalty for fixed \(\lambda\).}
 
@@ -321,7 +321,7 @@ w_{i,j}^\star(\lambda)
 }.
 \label{eq:R-breakpoint}
 \end{equation}
-Require a nonzero denominator and \(w^\star\ge0\). Across pairs, these boundaries divide the \((w,\lambda)\) plane into regions with a constant minimiser.
+Require a nonzero denominator and \(w^\star\ge0\). Across candidate pairs, these boundaries divide the \((w,\lambda)\) plane into regions where the same candidate minimises the loss.
 
 \paragraph{Worked comparison.}
 Against \texttt{gpt-5-nano}, \texttt{gpt-5-mini} has \((\Delta c,\Delta\mathrm{FP},\Delta\mathrm{FN})=(0.0009468,0,-43)\) on \(n_t=1112\). Mini costs more per call, matches nano on false positives, and avoids 43 false negatives. At \(w=0.2\), the break-even severity is \(\lambda^\star=0.1469\) USD; the illustrative point \((w,\lambda)=(0.2,0.186)\) therefore still favours mini.
@@ -342,7 +342,7 @@ with at least one strict inequality. Under nonnegative penalties, \(m_j\) then c
 \section{Business scenarios}
 \label{sec:constraint-based-selection}
 
-The loss map provides regions of preferred models under different penalty settings. A high-volume collection task can legitimately choose a low-cost candidate when the absolute penalty of a missed or extra post is small. A default operating point can select a stable cost-quality compromise. A report with no manual review should first impose a precision constraint and then compare recall and cost. These are policy choices; the measured candidate counts decide which model is feasible in each scenario.
+The loss map turns policy assumptions into model choices. If missed or extra posts are cheap, a lower-cost candidate can be preferred. If missing relevant posts matters most, impose a recall target or a budget ceiling and then optimise within that feasible set. If no manual review is available, impose a precision floor first and only then compare recall and cost. These are policy choices; the measured candidate counts determine which models are feasible in each scenario.
 
 \paragraph{Minimum recall, then minimum API charge.}
 
@@ -400,10 +400,10 @@ This rule limits the share of predicted positives that are irrelevant, then find
 
 \paragraph{Edge cases.}
 
-An empty feasible set returns no candidate; tied optima require a declared secondary rule; an undefined required rate cannot establish feasibility.
+If the feasible set is empty, return no candidate. If several candidates tie, apply a declared secondary rule. If a required rate is undefined, that candidate cannot establish feasibility.
 
 \section{Decision scope and monitoring handoff}
 
-The ranking is conditional on the candidate roster, common full-benchmark cases, observed charges, and declared preferences; it has no production-sampling interpretation. The sentinel panel supplies an alert, never the FP/FN counts for candidate ranking. Close losses require sensitivity and operational review.
+This ranking applies only to the current candidate roster, the common full-benchmark cases, the observed charges, and the declared penalties. The sentinel panel can trigger review, but it never supplies the FP/FN counts used for candidate ranking. When loss gaps are small, report a sensitivity region and review the decision before deployment.
 
 Equation~\eqref{eq:model-selection} ranks candidates only for the declared common cases, error penalties, and inference charges. The panel is never used for these FP/FN counts. A close loss difference is reported as a sensitivity region.
