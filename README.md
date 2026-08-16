@@ -22,7 +22,7 @@ The thesis build consumes committed publication-ready assets from this repositor
 
 - rendered figures under `assets/evidence/`
 - generated tables/macros under `assets/metrics_export/`
-- prompt excerpts copied into the thesis asset tree
+- publication-ready appendix evidence, excluding exact prompt text
 
 The upstream pipeline code, frozen Langfuse CSV snapshots, prompt-optimisation splits, and canonical evidence export remain in [`GeorgiiBurdinComo/llm-batch-eval`](https://github.com/GeorgiiBurdinComo/llm-batch-eval).
 
@@ -36,7 +36,7 @@ latexmk -pdf thesis.tex
 
 ## Important scripts
 
-- `scripts/sync_canonical_evidence.py` copies frozen evidence and prompt artifacts into the thesis asset tree
+- `scripts/sync_canonical_evidence.py` copies frozen evidence into the thesis asset tree while excluding exact prompt text
 - `scripts/compute_planning_power.py` and `scripts/mcnemar_power.py` support the statistical figures and tables
 - `scripts/regen_*.py` rebuild selected publication figures from committed source data
 

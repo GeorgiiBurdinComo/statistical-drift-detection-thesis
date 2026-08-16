@@ -14,6 +14,7 @@ The system has five parts:
     \item a read-only dashboard for review.
 \end{enumerate}
 In this system, Langfuse serves as the persistent evaluation store. It holds the two fixed labelled datasets used in the thesis: the full 1199-item benchmark \texttt{campaign\_relevance\_02e1a68ccb0f} and the fixed 300-item monitoring panel \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}. Each dataset item stores the multimodal input, the expected binary label \texttt{campaign\_relevant}, and stable metadata such as \texttt{custom\_id}. After each run, Langfuse also stores traces and scores for the returned outputs.
+\reproanchor{The frozen benchmark definition is public in \codepath{prompt_optimization/splits/train.json}, \codepath{prompt_optimization/splits/val.json}, \codepath{prompt_optimization/splits/test.json}, and \codepath{prompt_optimization/splits/split_manifest.json}. The fixed 300-item monitoring panel is public in \codepath{notebooks/canonical_evidence_export/panel_ids.txt}; the scored run snapshots used throughout the thesis are \codepath{streamlit_app/langfuse_traces.csv} and \codepath{streamlit_app/langfuse_scores.csv}. Dataset sync logic lives in \codepath{scripts/sync_dataset.py}.}
 
 The public code repository for this pipeline is \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval}. It contains the batch-evaluation code, workflow automation, prompt-optimisation code, and the frozen reproducibility inputs used to regenerate the published evidence. The public manuscript repository is \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis}; it contains the thesis source and the publication-ready assets consumed by the \LaTeX{} build.
 
@@ -128,6 +129,7 @@ which is Equation~\eqref{eq:expected-cost}. Here \(c_t(m)\) is the API charge pe
     \caption[Dashboard reporting views]{Dashboard views for two review questions: run-level accuracy histories across scheduled runs~(a), and paired counts with the exact McNemar result for one baseline/current panel comparison~(b).}
     \label{fig:dashboard-canonical}
 \end{figure}
+\reproanchor{These dashboard views are implemented in \codepath{streamlit_app/app.py} on top of the frozen exports \codepath{streamlit_app/langfuse_traces.csv} and \codepath{streamlit_app/langfuse_scores.csv}, produced by \codepath{streamlit_app/export_langfuse_csv.py}. The screenshots cited here are stored as \thesispath{assets/evidence/fig_dashboard_overview_shot.png} and \thesispath{assets/evidence/fig_dashboard_mcnemar_shot.png}.}
 \clearpage
 \begin{figure}[!p]
     \ContinuedFloat
@@ -139,6 +141,7 @@ which is Equation~\eqref{eq:expected-cost}. Here \(c_t(m)\) is the API charge pe
     \caption[]{Continued: expected-cost view~(c) on the common benchmark cases. A reviewer sets \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\); the highlighted bar is the candidate with the lowest displayed \(L_t(m)\). This view supports candidate ranking after escalation from panel monitoring.}
     \label{fig:dashboard-expected-cost}
 \end{figure}
+\reproanchor{The expected-cost ranking shown in the dashboard is computed from the same frozen Langfuse score/trace exports as the static rebuilds. The code path is \codepath{streamlit_app/app.py}; the common-case benchmark comparison reused by the thesis is frozen in \codepath{notebooks/canonical_evidence_export/deployment_cost_may22.csv}; the screenshot asset is \thesispath{assets/evidence/fig_dashboard_expected_cost_shot.png}.}
 \clearpage
 
 \section{Run identity and stored artifacts}
@@ -173,7 +176,8 @@ These records keep predictions from different executions separate and pair the s
 
 For the fixed datasets used in this thesis, the persisted benchmark identifier is \texttt{campaign\_relevance\_02e1a68ccb0f} and the persisted monitoring-panel identifier is \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}. Langfuse-backed traces, scores, and their export layer preserve these dataset keys so every reported value remains traceable to one fixed benchmark or panel definition.
 
-The public code repository keeps the reproducibility inputs that sit upstream of these stored records, including the evaluation pipeline, the frozen Langfuse CSV snapshots, and the canonical evidence export. The public manuscript repository keeps the rendered figures, tables, prompt excerpts, and \LaTeX{} assets cited in this thesis.
+The public code repository keeps the reproducibility inputs that sit upstream of these stored records, including the evaluation pipeline, the frozen Langfuse CSV snapshots, and the canonical evidence export. The public manuscript repository keeps the rendered figures, tables, and \LaTeX{} assets cited in this thesis; exact prompt text is intentionally withheld from the public branch.
+\reproanchor{The main code paths behind this storage layer are \codepath{scripts/run_eval.py}, \codepath{scripts/poll_and_ingest.py}, \codepath{scripts/ingest.py}, and \codepath{streamlit_app/export_langfuse_csv.py}. The frozen upstream manifests and hashes are published in \codepath{notebooks/canonical_evidence_export/input_manifest.json} and \codepath{notebooks/canonical_evidence_export/artifact_manifest.csv}.}
 
 \section{Post-run decision logic}
 \label{sec:decision-logic}

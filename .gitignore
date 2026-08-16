@@ -18,6 +18,7 @@ assets/fig-5-3-ga-pipeline.png
 assets/mapping.png
 assets/metrics_by_model.png
 assets/utility_*.png
+assets/evidence/gepa_*prompt.txt
 
 # Fallback: common TeX artifacts (if generated outside build/)
 *.aux

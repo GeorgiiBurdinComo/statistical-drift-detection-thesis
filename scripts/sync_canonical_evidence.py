@@ -30,32 +30,6 @@ DATA_EXPORTS = (
     "canonical_disagreement_matrix_source.csv",
     "canonical_disagreement_matrix_summary.json",
 )
-PROMPT_FILES = {
-    "gepa_gpt41nano_seed_prompt.txt": SOURCE_ROOT
-    / "prompt_optimization"
-    / "runs"
-    / "gpt-4.1-nano"
-    / "20260713-184939Z"
-    / "seed_prompt.txt",
-    "gepa_gpt41nano_selected_prompt.txt": SOURCE_ROOT
-    / "prompt_optimization"
-    / "runs"
-    / "gpt-4.1-nano"
-    / "20260713-184939Z"
-    / "best_prompt.txt",
-    "gepa_gpt54nano_seed_prompt.txt": SOURCE_ROOT
-    / "prompt_optimization"
-    / "runs"
-    / "gpt-5.4-nano"
-    / "20260713-184940Z"
-    / "seed_prompt.txt",
-    "gepa_gpt54nano_selected_prompt.txt": SOURCE_ROOT
-    / "prompt_optimization"
-    / "runs"
-    / "gpt-5.4-nano"
-    / "20260713-184940Z"
-    / "best_prompt.txt",
-}
 
 
 def fmt(value: float, digits: int = 3) -> str:
@@ -305,8 +279,6 @@ def main() -> None:
             shutil.copy2(SOURCE / f"{stem}{suffix}", FIGURE_TARGET / f"{stem}{suffix}")
     for name in DATA_EXPORTS:
         shutil.copy2(SOURCE / name, TARGET / name)
-    for target_name, source_path in PROMPT_FILES.items():
-        shutil.copy2(source_path, FIGURE_TARGET / target_name)
 
     print(
         json.dumps(
@@ -323,7 +295,6 @@ def main() -> None:
                     "production_monitoring_scenarios.tex",
                     *DATA_EXPORTS,
                     *[f"{stem}.pdf" for stem in FIGURE_STEMS],
-                    *PROMPT_FILES,
                 ],
                 "reference_rho": power["reference_rho"],
             },

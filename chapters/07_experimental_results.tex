@@ -19,6 +19,7 @@ At the one-sided nominal level \(\alpha=.05\), three comparisons produced monito
     \label{tab:canonical-monitoring-summary}
     \input{assets/metrics_export/canonical_monitoring_summary.tex}
 \end{table}
+\reproanchor{The monitoring-window totals in Table~\ref{tab:canonical-monitoring-summary} are computed in \codepath{canonical_evidence.py} from \codepath{streamlit_app/langfuse_traces.csv} and \codepath{streamlit_app/langfuse_scores.csv}. The frozen summary row lives in \codepath{notebooks/canonical_evidence_export/canonical_summary.json}; the rendered thesis asset is \thesispath{assets/metrics_export/canonical_monitoring_summary.tex}.}
 
 \begin{figure}[htbp]
     \centering
@@ -37,12 +38,14 @@ Table~\ref{tab:nominal-mcnemar} reports the paired correctness counts for those 
     \label{tab:nominal-mcnemar}
     \input{assets/metrics_export/canonical_nominal_comparisons.tex}
 \end{table}
+\reproanchor{The three nominal signal tables are rebuilt from \codepath{notebooks/canonical_evidence_export/baseline_to_later_mcnemar.csv} by \codepath{scripts/sync_canonical_evidence.py}. The underlying trigger metadata, including the 22~March \texttt{gpt-4.1-mini} alert, is also recorded in \codepath{notebooks/canonical_evidence_export/canonical_summary.json}.}
 \FloatBarrier
 
 \paragraph{The March signal and rebound.}
 The strongest signal compared \texttt{gpt-4.1-mini} on 15~March with its 22~March run. There were \(n_{\mathrm{paired}}=296\) complete pairs: \(b=49\) items changed from correct to incorrect and \(c=12\) changed from incorrect to correct. Accuracy fell from \(0.7872\) to \(0.6622\), a change of \(-12.5\) percentage points. The one-sided exact p-value was \(9.849\times10^{-7}\).
 
 The next run, 22--28~March, reversed the movement: on 297 complete pairs accuracy rose from \(0.6633\) to \(0.7946\), with 11 regressions and 50 improvements. From 15 to 28~March the net change was \(+0.67\) percentage points, so the episode did not persist. Same-period models had no comparable drop, which weakens a shared local-failure explanation. \texttt{gpt-4.1-mini} was a monitored candidate; no production deployment was changed.
+\reproanchor{The March trigger, rebound comparison, and same-period controls are checkable from \codepath{notebooks/canonical_evidence_export/baseline_to_later_mcnemar.csv}, \codepath{notebooks/canonical_evidence_export/eligible_monitoring_runs.csv}, and \codepath{notebooks/thesis_evidence_export/table_claim_ledger.csv}. The transition plot and contingency view are rendered as \thesispath{assets/evidence/fig_canonical_monitoring_trajectory.pdf} and \thesispath{assets/evidence/fig_canonical_mcnemar_matrix.pdf}.}
 
 \begin{figure}[htbp]
     \centering
@@ -68,6 +71,7 @@ Exact unconditional power calculations also clarify what a 300-item panel can es
     \label{tab:canonical-power}
     \input{assets/metrics_export/canonical_power_summary.tex}
 \end{table}
+\reproanchor{The exact power values and 80\%-power thresholds come from \codepath{canonical_evidence.py}, which writes the frozen design grid to \codepath{notebooks/canonical_evidence_export/exact_unconditional_power_sensitivity.csv}. The table asset is \thesispath{assets/metrics_export/canonical_power_summary.tex}.}
 
 \begin{figure}[htbp]
     \centering
@@ -75,6 +79,7 @@ Exact unconditional power calculations also clarify what a 300-item panel can es
     \caption[Exact power over discordance and degradation]{Exact unconditional power of the one-sided McNemar test for \(n_{\mathrm{panel}}=300\). The white contour marks 80\% power; the cross marks design discordance \(\rho_{\mathrm{design}}=0.12\) and planned degradation \(g=5\text{pp}\). The dashed horizontal guides at 5 and 8 percentage points provide practical orientation markers for small-to-moderate change on the fixed panel. Multiplicity control moves the detectable region upward, making moderate degradation much harder to identify. The blank upper-left region is inadmissible because \(g>\rho_{\mathrm{design}}\).}
     \label{fig:canonical-power-heatmap}
 \end{figure}
+\reproanchor{The heatmap is rendered by \codepath{make_canonical_figures.py} from \codepath{notebooks/canonical_evidence_export/exact_unconditional_power_sensitivity.csv}; the rendered thesis figure is \thesispath{assets/evidence/fig_canonical_power_heatmap.pdf}.}
 
 Taken together, the nominal and conservative panels visualise the cost of multiplicity control directly. The nominal threshold retains a visibly wider region of adequate power, whereas the family-conservative threshold contracts that region sharply. The comparison therefore exposes the central trade-off of the monitoring design: stronger control of repeated-testing false alarms is purchased with lower sensitivity to moderate degradation.
 
@@ -102,6 +107,7 @@ The error cost of an undetected episode can be estimated conditionally on the pe
     \label{tab:production-monitoring-scenarios}
     \input{assets/metrics_export/production_monitoring_scenarios.tex}
 \end{table}
+\reproanchor{The monitoring-cost totals, annualized panel cost, incremental error-loss calculation, and break-even volumes are frozen in \thesispath{assets/metrics_export/monitoring_cost_summary.tex} and \thesispath{assets/metrics_export/production_monitoring_scenarios.tex}. Their upstream source is the canonical summary and cost export rebuilt from \codepath{streamlit_app/langfuse_traces.csv}, \codepath{streamlit_app/langfuse_scores.csv}, \codepath{notebooks/canonical_evidence_export/canonical_summary.json}, and \codepath{notebooks/canonical_evidence_export/deployment_cost_may22.csv}.}
 
 For the three-model portfolio, one weekly panel sweep costs \(\$2.74\) and breaks even at 902 affected classifications under this scenario. Other failure patterns imply different thresholds; disagreement sampling's efficiency remains untested against an equal-size random panel.
 
@@ -123,6 +129,7 @@ which is equivalent to \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\) U
     \label{tab:canonical-cost-comparison}
     \input{assets/metrics_export/canonical_cost_summary.tex}
 \end{table}
+\reproanchor{The 22~May common-case ranking is computed in \codepath{canonical_evidence.py} from the frozen Langfuse trace/score exports. The exact candidate slice is \codepath{notebooks/canonical_evidence_export/deployment_cost_may22.csv}; the shared-case count, hash, and winner are recorded in \codepath{notebooks/canonical_evidence_export/canonical_summary.json}.}
 
 \texttt{gpt-5-mini} minimises plug-in loss at \(0.003698\). It balances low inference cost with five false positives and 62 false negatives. The cheaper \texttt{gpt-5-nano} is a close second at \(0.003950\): its lower inference cost does not offset 105 false negatives. The accuracy leader \texttt{gpt-5.2} reaches \(0.97932\) accuracy but has loss \(0.010835\), mainly because its inference cost and 16 false positives are expensive under the stated business asymmetry. Therefore neither maximum accuracy nor minimum API price alone selects the preferred deployment model.
 
@@ -132,6 +139,7 @@ which is equivalent to \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\) U
     \caption[Cost-minimising model over error-cost assumptions]{Model minimising the empirical plug-in loss over relative false-negative cost \(w\) and total error severity \(\lambda\). The cross marks the operating point reported in Table~\ref{tab:canonical-cost-comparison}. Large regions with different winners show why the result is conditional on declared penalties.}
     \label{fig:canonical-cost-decision-map}
 \end{figure}
+\reproanchor{The decision map is rendered by \codepath{make_canonical_figures.py} from \codepath{notebooks/canonical_evidence_export/deployment_cost_map_source.csv}; the thesis asset is \thesispath{assets/evidence/fig_canonical_cost_decision_map.pdf}.}
 
 The penalties encode the intended business preference, but they are not estimated from realised downstream losses. The choice is still close: the loss advantage of \texttt{gpt-5-mini} over \texttt{gpt-5-nano} is about \(2.52\times10^{-4}\) USD per request. The decision map therefore matters as much as the point ranking: a modest change in the assumed penalties can change the winner. Sampling uncertainty in the plug-in ranking is not quantified here.
 
