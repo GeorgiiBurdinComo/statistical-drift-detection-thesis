@@ -14,6 +14,7 @@ This repository contains:
 - `scripts/` for evidence-sync and figure/table regeneration used by the manuscript
 
 This repository does not need temporary audit screenshots, editor metadata, local caches, or duplicate output files for publication.
+The public branch excludes historical screenshot clutter and other scratch-image variants that are not cited by the manuscript.
 
 ## Reproducibility assets
 

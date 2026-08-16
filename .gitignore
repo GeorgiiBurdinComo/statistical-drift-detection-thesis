@@ -10,6 +10,14 @@ output/
 __pycache__/
 *.pyc
 Burdin_thesis_draft*.pdf
+assets/Screenshot*.png
+assets/System Architecture.png
+assets/daily_metrics_all.png
+assets/fig-5-1-apo-taxonomy.png
+assets/fig-5-3-ga-pipeline.png
+assets/mapping.png
+assets/metrics_by_model.png
+assets/utility_*.png
 
 # Fallback: common TeX artifacts (if generated outside build/)
 *.aux
