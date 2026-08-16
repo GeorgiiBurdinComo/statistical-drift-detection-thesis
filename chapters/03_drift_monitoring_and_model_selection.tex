@@ -185,3 +185,5 @@ For each configuration \(q\), every later eligible run is compared with that con
 \end{figure}
 
 The monitoring rule opens review on the fixed panel. Review then checks the trajectory across runs, the effective pair counts, the same-batch controls, and the class-specific error composition, especially the balance between false positives and false negatives. These diagnostics explain the source and operational relevance of the change, but they do not modify the McNemar rejection rule.
+
+When the panel signal and its diagnostics support escalation, the next step is a broader rerun on the full benchmark \(\mathcal{D}_N\) of 1199 labelled posts. That rerun serves a different role from the sentinel panel: it supplies the common-case false-positive counts, false-negative counts, and inference charges required for deployment comparison across candidate configurations. Chapter~\ref{ch:cost-deployment-utility} uses those benchmark outcomes to rank candidates under declared task-specific losses and to support the replacement decision.

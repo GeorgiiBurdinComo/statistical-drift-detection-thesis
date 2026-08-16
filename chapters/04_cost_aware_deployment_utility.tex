@@ -1,161 +1,64 @@
 \chapter{Cost-Aware Deployment Decisions}
 \label{ch:cost-deployment-utility}
 
-\noindent This chapter ranks candidate replacements on common full-benchmark cases using observed API charges and explicit false-positive and false-negative penalties. The result is conditional on declared error prices and observed inference charges. It applies cost-sensitive decision analysis after inference rather than training a cost-sensitive classifier~\cite{elkan2001cost,turney2000cost}.
+\noindent Chapter~\ref{ch:drift} establishes a directional monitoring signal on the fixed panel \(\mathcal{D}_n\). When that signal and its diagnostics support escalation, the next step is a broader rerun on the full benchmark \(\mathcal{D}_N\) of 1199 labelled posts. That rerun serves a different role from the sentinel panel: it places candidate model--prompt configurations on a common evaluation basis and supplies the false-positive counts, false-negative counts, and observed inference charges needed for deployment comparison. This chapter turns those benchmark outcomes into a model-selection rule under declared task-specific losses~\cite{elkan2001cost,turney2000cost}.
 
-\section{Common evaluation basis and cost components}
+\section{From panel signal to benchmark comparison}
 
-Candidate ranking is meaningful only when every candidate is scored on the same requests and every cost term has a declared meaning. This section fixes the common evaluation subset and defines the three inputs to loss: mean API charge, false positives, and false negatives.
+Let
+\(\mathcal{M}_{\mathrm{cand}}=\{m_1,\ldots,m_J\}\) be the candidate set of model--prompt configurations at evaluation time \(t\).
 
-\paragraph{Candidate set and common complete cases.}
+Let \(\mathcal{B}_t\subseteq\mathcal{D}_N\) be the benchmark items with a valid parsed prediction and usage record for every candidate, and write \(n_t=|\mathcal{B}_t|>0\). Using the same items for every candidate keeps the ranking attributable to model differences rather than to item composition.
 
-Every candidate must be scored on the same items. Otherwise a loss difference could come from different item sets rather than different model behaviour. Let
+\paragraph{Step 1: confusion-matrix decomposition.}
+On the common rerun set \(\mathcal{B}_t\), candidate \(m\) at evaluation time \(t\) produces confusion counts \(\mathrm{TP}_t(m)\), \(\mathrm{FP}_t(m)\), \(\mathrm{TN}_t(m)\), and \(\mathrm{FN}_t(m)\) satisfying
 \[
-\mathcal{M}_{\mathrm{cand}}
-=
-\{m_1,\ldots,m_J\}
-\]
-be the set of candidate model--prompt configurations considered at evaluation time \(t\). Each candidate must be judged on the same items.
-
-Define the \emph{common complete-case benchmark set}
-\begin{equation}
-    \mathcal{B}_t
+    \mathrm{TP}_t(m)
+    +\mathrm{FP}_t(m)
+    +\mathrm{TN}_t(m)
+    +\mathrm{FN}_t(m)
     =
-    \left\{
-        (x_i,y_i)\in\mathcal{D}_N:
-        \begin{array}{l}
-        \text{the reference label is available, and}\\
-        \text{every candidate has a parsed prediction and usage record}
-        \end{array}
-    \right\}.
-    \label{eq:common-complete-case-set}
-\end{equation}
-Write
-\begin{equation}
-    n_t=|\mathcal{B}_t|,
-    \qquad
-    n_t>0.
-    \label{eq:common-complete-case-size}
-\end{equation}
+    n_t.
+\]
+Let \(c_t(m)\) denote the mean inference charge in USD per request on \(\mathcal{B}_t\). This quantity can differ across models, so the comparison uses the average observed inference cost for candidate \(m\) over the requests in \(\mathcal{B}_t\). The scenario penalties \(C_{\mathrm{FP}}\ge0\) and \(C_{\mathrm{FN}}\ge0\) assign a business cost in USD to one false positive and one false negative, respectively.
 
-The intersection is important. If one candidate were evaluated on easy items and another on difficult items, a loss difference could be caused by item composition rather than model behaviour. A common set removes denominator mismatch. Informative missingness remains, so coverage and exclusion counts accompany the ranking.
-
-\paragraph{Observed cost components.}
-
-The ranking uses the following observed quantities and scenario parameters:
+\paragraph{Step 2: total batch cost.}
+The total batch cost is the sum of inference cost and business-error cost:
 \begin{description}
-    \item[\(r_{i,t}(m)\)] observed token-derived API charge in USD for item \(i\) under candidate \(m\);
-    \item[\(c_t(m)\)] mean inference charge of candidate \(m\) on the common complete-case set;
-    \item[\(I^{\mathrm{FP}}_{i,t}(m)\)] false-positive indicator for item \(i\) under candidate \(m\);
-    \item[\(I^{\mathrm{FN}}_{i,t}(m)\)] false-negative indicator for item \(i\) under candidate \(m\);
-    \item[\(C_{\mathrm{FP}},C_{\mathrm{FN}}\)] scenario penalties in USD per false positive and USD per false negative.
+    \item[\(n_t\)] size of the common rerun set;
+    \item[\(c_t(m)\)] mean inference charge for candidate \(m\);
+    \item[\(\mathrm{FP}_t(m),\ \mathrm{FN}_t(m)\)] observed false-positive and false-negative counts;
+    \item[\(C_{\mathrm{FP}},\ C_{\mathrm{FN}}\)] assigned costs of one false positive and one false negative.
 \end{description}
-The formal definitions are as follows. The mean inference charge is
 \begin{equation}
-    c_t(m)
+    \operatorname{TotalCost}_t(m)
     =
-    \frac{1}{n_t}
-    \sum_{i\in\mathcal{B}_t}r_{i,t}(m)
-    \qquad
-    \text{USD per request}.
-    \label{eq:mean-inference-charge}
+    \underbrace{n_t c_t(m)}_{\text{inference}}
+    +
+    \underbrace{
+        C_{\mathrm{FP}}\mathrm{FP}_t(m)
+        +C_{\mathrm{FN}}\mathrm{FN}_t(m)
+    }_{\text{business error cost}}.
+    \label{eq:total-batch-cost}
 \end{equation}
 
-Define the false-positive and false-negative indicators
-\begin{align}
-I^{\mathrm{FP}}_{i,t}(m)
-&=
-\mathbb{I}\{y_i=0,\hat y_{i,t}(m)=1\},\\
-I^{\mathrm{FN}}_{i,t}(m)
-&=
-\mathbb{I}\{y_i=1,\hat y_{i,t}(m)=0\}.
-\end{align}
-Their sums are the observed error counts:
-\begin{align}
-\mathrm{FP}_t(m)
-&=
-\sum_{i\in\mathcal{B}_t}I^{\mathrm{FP}}_{i,t}(m),\\
-\mathrm{FN}_t(m)
-&=
-\sum_{i\in\mathcal{B}_t}I^{\mathrm{FN}}_{i,t}(m).
-\end{align}
-
-The penalties satisfy
-\[
-C_{\mathrm{FP}}\ge0
-\qquad\text{and}\qquad
-C_{\mathrm{FN}}\ge0.
-\]
-They are not estimated from the benchmark. They may represent analyst correction time, a contaminated report, a missed signal, or another downstream consequence. Correct predictions add no business-error penalty in this model.
-
-\section{Empirical loss and candidate selection}
-
-The three components become comparable only after they are placed on one additive scale. This section converts API cost and error penalties into one USD-per-request loss and then selects the candidate with the smallest value.
-
-\paragraph{Loss derivation.}
-
-The purpose of the loss is to express the cost of one candidate over the common benchmark without giving any component an implicit weight. The observed total inference charge for candidate \(m\) is
-\[
-\sum_{i\in\mathcal{B}_t}r_{i,t}(m)
-=
-n_t c_t(m).
-\]
-The assigned total error penalty is
-\[
-C_{\mathrm{FP}}\mathrm{FP}_t(m)
-+
-C_{\mathrm{FN}}\mathrm{FN}_t(m).
-\]
-Adding these components gives total assigned benchmark cost:
-\[
-n_t c_t(m)
-+
-C_{\mathrm{FP}}\mathrm{FP}_t(m)
-+
-C_{\mathrm{FN}}\mathrm{FN}_t(m).
-\]
-To compare candidates on a per-request scale, divide by the common \(n_t\):
+\paragraph{Step 3: per-request expected cost.}
+Dividing by \(n_t\) gives the empirical per-request loss
 \begin{equation}
-\begin{split}
 L_t(m)
-&=
-\frac{
-    n_t c_t(m)
-    +C_{\mathrm{FP}}\mathrm{FP}_t(m)
-    +C_{\mathrm{FN}}\mathrm{FN}_t(m)
-}{n_t}\\
-&=
+=
 c_t(m)
 +
 \frac{
     C_{\mathrm{FP}}\mathrm{FP}_t(m)
     +C_{\mathrm{FN}}\mathrm{FN}_t(m)
 }{n_t}.
-\end{split}
 \label{eq:expected-cost}
 \end{equation}
+The counts and charges are observed on \(\mathcal{B}_t\), whereas \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) are declared scenario inputs. Changing the penalties therefore changes the deployment objective.
 
-Every term now has the same unit, USD per evaluated request:
-\[
-\underbrace{c_t(m)}_{\text{USD/request}}
-+
-\underbrace{
-C_{\mathrm{FP}}\frac{\mathrm{FP}_t(m)}{n_t}
-}_{\text{USD/error}\times\text{errors/request}}
-+
-\underbrace{
-C_{\mathrm{FN}}\frac{\mathrm{FN}_t(m)}{n_t}
-}_{\text{USD/error}\times\text{errors/request}}.
-\]
-This unit check verifies that the addition in Equation~\eqref{eq:expected-cost} is meaningful.
-
-\paragraph{Finite-benchmark interpretation.}
-
-The counts and charges are observed on \(\mathcal{B}_t\), while the penalties are scenario inputs. Thus \(L_t(m)\) is the observed per-request loss on the common complete cases under the chosen false-positive and false-negative penalty scenario. Changing the penalties changes the decision problem.
-
-\paragraph{Minimum-loss candidate.}
-
-Once the common set, components, and penalties are fixed, candidate selection requires no additional score. The deployment rule is
+\paragraph{Step 4: model selection rule under fixed costs.}
+When \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) are declared, the preferred deployment candidate is
 \begin{equation}
     m_t^\star
     \in
@@ -163,19 +66,22 @@ Once the common set, components, and penalties are fixed, candidate selection re
     L_t(m).
     \label{eq:model-selection}
 \end{equation}
-The set-valued \(\arg\min\) allows ties, which require a declared secondary rule.
+The set-valued \(\arg\min\) allows ties and therefore leaves room for a declared secondary rule when two candidates have the same loss. Table~\ref{tab:chapter4-cost-summary} illustrates the rule at one declared setting, \(C_{\mathrm{FP}}=0.155\) USD and \(C_{\mathrm{FN}}=0.031\) USD.
 
-\paragraph{Illustrative operating point.}
-At \(C_{\mathrm{FP}}=0.155\) USD and \(C_{\mathrm{FN}}=0.031\) USD, the canonical export selects \texttt{gpt-5-mini}. Later sections vary the ratio and absolute scale of these penalties to show how the ranking moves.
+\begin{table}[htbp]
+    \centering
+    \small
+    \caption[Illustrative benchmark comparison under declared task losses]{Illustrative benchmark comparison on the common complete-case rerun set under \(C_{\mathrm{FP}}=0.155\) USD and \(C_{\mathrm{FN}}=0.031\) USD.}
+    \label{tab:chapter4-cost-summary}
+    \input{assets/metrics_export/canonical_cost_summary.tex}
+\end{table}
 
-\section{Encoding cost preferences}
+At this operating point, \texttt{gpt-5-mini} minimises the loss at \(0.0037\) USD per request. It combines five false positives and 62 false negatives with a low mean inference charge. The cheaper \texttt{gpt-5-nano} remains close, but its additional false negatives raise the loss to \(0.0039\). The accuracy leader \texttt{gpt-5.2} still carries a much larger loss because higher inference cost and more false positives are expensive under the stated operational asymmetry. The comparison therefore selects the model for the declared objective, rather than the model with the highest accuracy or the lowest API price in isolation.
+
+\section{Preference parameters and decision map}
 \label{sec:cost-parameters-uncertainty}
 
-One pair \((C_{\mathrm{FP}},C_{\mathrm{FN}})\) gives one ranking, but it hides why the ranking changes. The reparameterisation below separates two questions: how much more costly is a false negative than a false positive, and how important are business errors relative to API price.
-
-\paragraph{Relative importance and total severity.}
-
-For \(C_{\mathrm{FP}}>0\), define
+Two parameters separate the relative error trade-off from the overall severity of business errors:
 \begin{equation}
     w
     =
@@ -186,30 +92,13 @@ For \(C_{\mathrm{FP}}>0\), define
     C_{\mathrm{FP}}+C_{\mathrm{FN}}.
     \label{eq:R-lambda-definition}
 \end{equation}
-These two preference parameters have distinct roles:
-\begin{description}
-    \item[\(w\)] false-negative penalty relative to a false positive, with \(w\ge0\);
-    \item[\(\lambda\)] absolute severity of errors relative to an API call, with \(\lambda>0\).
-\end{description}
-Both parameters are required: the ratio alone does not decide whether a more accurate expensive model is justified.
-
-\paragraph{Recovering the original penalties.}
-
-The inverse transformation is
-\begin{equation}
-    C_{\mathrm{FP}}
-    =
-    \frac{\lambda}{1+w},
+Here \(w\) measures how costly a false negative is relative to a false positive, while \(\lambda\) measures how much business errors matter relative to inference price. The original penalties can be recovered from
+\[
+    C_{\mathrm{FP}}=\frac{\lambda}{1+w},
     \qquad
-    C_{\mathrm{FN}}
-    =
-    \frac{\lambda w}{1+w}.
-    \label{eq:penalties-from-R-lambda}
-\end{equation}
-
-\paragraph{Preference-parameterised loss.}
-
-Substitution into Equation~\eqref{eq:expected-cost} gives
+    C_{\mathrm{FN}}=\frac{\lambda w}{1+w}.
+\]
+Substituting these expressions into Equation~\eqref{eq:expected-cost} gives
 \begin{align}
 L_t(m;w,\lambda)
 &=
@@ -221,189 +110,116 @@ c_t(m)
 }{n_t}.
 \label{eq:expected-cost-lambda-R}
 \end{align}
-Increasing \(\lambda\) makes business errors matter more relative to API cost; changing \(w\) makes false negatives more or less expensive relative to false positives. Figure~\ref{fig:cost-penalty-map} shows the same ranking in the raw penalty coordinates \(C_{\mathrm{FN}}\) and \(C_{\mathrm{FP}}\): pick one penalty pair, read the region label at that point, and crossing a boundary changes the preferred candidate. Panel~(a) uses linear axes from \(0\) to \(10\) USD; panel~(b) uses logarithmic axes over \(10^{-2}\) to \(10\) USD so that the near-origin transitions remain visible.
+This form exposes the decision logic directly: increasing \(\lambda\) gives more weight to business errors relative to API cost, and increasing \(w\) gives more weight to false negatives relative to false positives.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\linewidth]{assets/evidence/fig_cost_penalty_map.pdf}
-    \caption[Cost-minimising candidate map on linear and logarithmic axes]{Empirical winner map for the assigned loss over the false-negative penalty \(C_{\mathrm{FN}}\) and false-positive penalty \(C_{\mathrm{FP}}\). Panel~(a) uses linear axes from \(0\) to \(10\) USD. Panel~(b) uses logarithmic axes from \(10^{-2}\) to \(10\) USD. Both panels use the observed false-positive counts, false-negative counts, and inference charges of \texttt{gpt-5-nano}, \texttt{gpt-5-mini}, \texttt{gpt-5.1}, and \texttt{gpt-5}. Region labels identify the candidate with the lowest resulting loss.}
-    \label{fig:cost-penalty-map}
+    \includegraphics[width=0.9\linewidth]{assets/evidence/fig_canonical_cost_decision_map.pdf}
+    \caption[Preferred candidate over task-loss assumptions]{Preferred candidate over relative false-negative cost \(w\) and total error severity \(\lambda\) on the common benchmark rerun. The cross marks the illustrative operating point from Table~\ref{tab:chapter4-cost-summary}. Region changes show where the deployment choice changes with the operational objective.}
+    \label{fig:cost-decision-map-ch4}
 \end{figure}
 
-\section{Sensitivity and break-even analysis}
-\label{sec:break-even-analysis}
+Figure~\ref{fig:cost-decision-map-ch4} turns Equation~\eqref{eq:expected-cost-lambda-R} into a decision surface. A point in the \((w,\lambda)\) plane specifies one operational objective; the region label at that point identifies the minimum-loss candidate. The cross marks the illustrative operating point, where \texttt{gpt-5-mini} is preferred. Crossing a region boundary changes the preferred deployment model because the weighted error savings no longer offset the competing model's API charge.
 
-Because the penalties are scenario inputs rather than measured constants, reporting only one minimiser would hide decision uncertainty. A pairwise break-even boundary is the set of penalty values where two candidates have equal loss; on opposite sides of the boundary, the preferred candidate changes.
-
-\paragraph{Pairwise loss difference.}
-
-The absolute losses are not needed to locate a preference switch; subtracting them isolates the component trade-offs between two candidates. For candidates \(m_i\) and \(m_j\), the comparison uses:
-\begin{description}
-    \item[\(\Delta_{i,j}c_t\)] difference in mean inference charge;
-    \item[\(\Delta_{i,j}\mathrm{FP}_t\)] difference in observed false-positive count;
-    \item[\(\Delta_{i,j}\mathrm{FN}_t\)] difference in observed false-negative count.
-\end{description}
-These component differences in the direction \(i-j\) are
-\begin{align}
-\Delta_{i,j}c_t
-&=
-c_t(m_i)-c_t(m_j),\\
-\Delta_{i,j}\mathrm{FP}_t
-&=
-\mathrm{FP}_t(m_i)-\mathrm{FP}_t(m_j),\\
-\Delta_{i,j}\mathrm{FN}_t
-&=
-\mathrm{FN}_t(m_i)-\mathrm{FN}_t(m_j).
-\label{eq:candidate-differences}
-\end{align}
-A negative difference favours \(m_i\) for that component; a positive difference favours \(m_j\).
-
-Subtract the two losses:
-\begin{align}
-\Delta_{i,j}L_t
-&=
-L_t(m_i)-L_t(m_j)\\
-&=
-\Delta_{i,j}c_t
-+
-\frac{
-    C_{\mathrm{FP}}\Delta_{i,j}\mathrm{FP}_t
-    +C_{\mathrm{FN}}\Delta_{i,j}\mathrm{FN}_t
-}{n_t}.
-\label{eq:pairwise-loss-difference}
-\end{align}
-Candidate \(m_i\) is preferred when \(\Delta_{i,j}L_t<0\), tied at zero, and otherwise disfavoured.
-
-\paragraph{Direct break-even boundary.}
-
-A boundary is the set of assumptions at which neither candidate is preferred, so it is obtained by setting the pairwise difference to zero:
-\begin{equation}
-    \Delta_{i,j}c_t
-    +
-    \frac{
-        C_{\mathrm{FP}}\Delta_{i,j}\mathrm{FP}_t
-        +C_{\mathrm{FN}}\Delta_{i,j}\mathrm{FN}_t
-    }{n_t}
-    =0.
-    \label{eq:break-even-count}
-\end{equation}
-This states how weighted error savings offset inference-cost differences.
-
-\paragraph{Break-even severity for fixed \(w\).}
-
-For fixed \(w\), solving Equation~\eqref{eq:break-even-count} gives
-\begin{equation}
-\lambda_{i,j}^\star(w)
-=
--\frac{
-    n_t(1+w)\Delta_{i,j}c_t
-}{
-    \Delta_{i,j}\mathrm{FP}_t
-    +w\Delta_{i,j}\mathrm{FN}_t
-}.
-\label{eq:lambda-breakpoint}
-\end{equation}
-
-Use this breakpoint only when the denominator is nonzero and \(\lambda^\star>0\). Then check the sign of the loss difference on each side of the breakpoint to see which candidate is preferred.
-
-\paragraph{Break-even relative penalty for fixed \(\lambda\).}
-
-For fixed \(\lambda\), the corresponding boundary is
-\begin{equation}
-w_{i,j}^\star(\lambda)
-=
--\frac{
-    n_t\Delta_{i,j}c_t
-    +\lambda\Delta_{i,j}\mathrm{FP}_t
-}{
-    n_t\Delta_{i,j}c_t
-    +\lambda\Delta_{i,j}\mathrm{FN}_t
-}.
-\label{eq:R-breakpoint}
-\end{equation}
-Require a nonzero denominator and \(w^\star\ge0\). Across candidate pairs, these boundaries divide the \((w,\lambda)\) plane into regions where the same candidate minimises the loss.
-
-\paragraph{Worked comparison.}
-Against \texttt{gpt-5-nano}, \texttt{gpt-5-mini} has \((\Delta c,\Delta\mathrm{FP},\Delta\mathrm{FN})=(0.0009468,0,-43)\) on \(n_t=1112\). Mini costs more per call, matches nano on false positives, and avoids 43 false negatives. At \(w=0.2\), the break-even severity is \(\lambda^\star=0.1469\) USD; the illustrative point \((w,\lambda)=(0.2,0.186)\) therefore still favours mini.
-
-\paragraph{Dominance.}
-
-Candidate \(m_i\) dominates \(m_j\) if
-\begin{equation}
-c_t(m_i)\le c_t(m_j),
-\qquad
-\mathrm{FP}_t(m_i)\le\mathrm{FP}_t(m_j),
-\qquad
-\mathrm{FN}_t(m_i)\le\mathrm{FN}_t(m_j),
-\label{eq:dominance-conditions}
-\end{equation}
-with at least one strict inequality. Under nonnegative penalties, \(m_j\) then cannot have lower loss and may be removed without deleting a unique minimiser.
-
-\section{Business scenarios}
+\section{From business requirements to model choice}
 \label{sec:constraint-based-selection}
 
-The loss map turns policy assumptions into model choices. If missed or extra posts are cheap, a lower-cost candidate can be preferred. If missing relevant posts matters most, impose a recall target or a budget ceiling and then optimise within that feasible set. If no manual review is available, impose a precision floor first and only then compare recall and cost. These are policy choices; the measured candidate counts determine which models are feasible in each scenario.
+In practice, a deployment request starts with two questions. First, how costly should one business error be relative to one model call? This fixes \(\lambda\). Second, which error matters more, a false positive or a false negative? This fixes \(w\). Once those two inputs are declared, Equation~\eqref{eq:expected-cost-lambda-R}, Table~\ref{tab:chapter4-cost-summary}, and Figure~\ref{fig:cost-decision-map-ch4} identify the preferred candidate.
 
-\paragraph{Minimum recall, then minimum API charge.}
+The same comparison is available interactively in the expected-cost dashboard view of Section~\ref{sec:metrics-dashboard}: a reviewer enters \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) (or their ratio), and the ranking highlights the current minimum-loss model under those scenario prices (Figure~\ref{fig:dashboard-expected-cost}).
 
-Let \(\tau_{\mathrm{rec}}\in[0,1]\) be the minimum acceptable recall. Define the feasible set
+\paragraph{Worked comparison: \texttt{gpt-5-mini} versus \texttt{gpt-5-nano}.}
+On the shared rerun set, the loss formula is
 \[
-\mathcal{F}_{\mathrm{rec}}
-=
-\left\{
-    m\in\mathcal{M}_{\mathrm{cand}}:
-    \mathrm{Recall}_t(m)\ge\tau_{\mathrm{rec}}
-\right\}.
+    L_t(m)
+    =
+    c_t(m)
+    +
+    \frac{
+        C_{\mathrm{FP}}\mathrm{FP}_t(m)
+        +C_{\mathrm{FN}}\mathrm{FN}_t(m)
+    }{n_t},
 \]
-Among these candidates, choose the one with the lowest mean inference charge:
-\begin{equation}
-m_t^\star(\tau_{\mathrm{rec}})
-\in
-\arg\min_{\substack{m\in\mathcal{M}_{\mathrm{cand}}\\
-\mathrm{Recall}_t(m)\ge\tau_{\mathrm{rec}}}}
-c_t(m).
-\label{eq:recall-constrained-selection}
-\end{equation}
-This rule is appropriate when missing relevant posts must be controlled first and API price is secondary.
-
-\paragraph{Maximum API budget, then minimum miss rate.}
-
-Let \(B\ge0\) be the maximum acceptable mean inference charge in USD per request. The feasible set is
+with \(n_t=1112\), \(C_{\mathrm{FP}}=0.155\), and \(C_{\mathrm{FN}}=0.031\). Substituting the observed values for \texttt{gpt-5-mini} gives
 \[
-\mathcal{F}_{B}
-=
-\{m\in\mathcal{M}_{\mathrm{cand}}:c_t(m)\le B\}.
+\begin{aligned}
+L_{\texttt{mini}}
+&=
+0.0012740
++
+\frac{0.155\times5+0.031\times62}{1112}\\
+&=
+0.0012740
++
+0.0006969
++
+0.0017284\\
+&=
+0.0036994.
+\end{aligned}
 \]
-Among candidates within budget, choose the lowest false-negative rate:
-\begin{equation}
-m_t^\star(B)
-\in
-\arg\min_{\substack{m\in\mathcal{M}_{\mathrm{cand}}\\
-c_t(m)\le B}}
-\mathrm{FNR}_t(m).
-\label{eq:budget-constrained-selection}
-\end{equation}
-Because \(\mathrm{FNR}=1-\mathrm{Recall}\) when positives occur, this is equivalent to maximizing recall within the budget.
+For \texttt{gpt-5-nano}, the same substitution gives
+\[
+\begin{aligned}
+L_{\texttt{nano}}
+&=
+0.0003258
++
+\frac{0.155\times5+0.031\times105}{1112}\\
+&=
+0.0003258
++
+0.0006969
++
+0.0029272\\
+&=
+0.0039499.
+\end{aligned}
+\]
+The same comparison can be written in the \((w,\lambda)\) parametrization with \(w=0.2\) and \(\lambda=0.186\):
+\[
+\begin{aligned}
+L_{\texttt{mini}}
+&=
+0.0012740
++
+\frac{0.186}{1+0.2}
+\frac{5+0.2\times62}{1112}\\
+&=
+0.0012740
++
+\frac{0.186}{1.2}
+\frac{17.4}{1112}\\
+&=
+0.0036994,
+\end{aligned}
+\qquad
+\begin{aligned}
+L_{\texttt{nano}}
+&=
+0.0003258
++
+\frac{0.186}{1+0.2}
+\frac{5+0.2\times105}{1112}\\
+&=
+0.0003258
++
+\frac{0.186}{1.2}
+\frac{26}{1112}\\
+&=
+0.0039499.
+\end{aligned}
+\]
+The two models have the same false-positive term, so the decision depends on the trade-off between extra inference cost and false-negative savings. Mini adds about \(0.00095\) USD per request in API cost, but it avoids 43 false negatives on 1112 evaluated posts, which reduces the false-negative term by about \(0.00120\) USD per request. The net effect is therefore about \(-0.00025\) USD per request, or about \(-0.025\) USD per 100 categorizations, so mini has the lower total loss.
 
-\paragraph{Minimum precision, then maximum recall.}
+\begin{figure}[htbp]
+    \centering
+    \input{assets/fig_mini_nano_tradeoff.tex}
+    \caption[Mini-versus-nano expected-cost decomposition]{Expected-cost decomposition in USD cents per 100 categorizations for \texttt{gpt-5-mini} and \texttt{gpt-5-nano} at the declared operating point. Mini has the larger inference-cost component, both models have the same false-positive component, and nano has the larger false-negative component. The lower total bar for mini shows why it is preferred under the stated FP/FN costs.}
+    \label{fig:mini-nano-tradeoff}
+\end{figure}
 
-Let \(\tau_{\mathrm{prec}}\in[0,1]\) be the minimum acceptable precision. First remove candidates below that threshold; then maximize recall:
-\begin{equation}
-m_t^\star(\tau_{\mathrm{prec}})
-\in
-\arg\max_{\substack{m\in\mathcal{M}_{\mathrm{cand}}\\
-\widehat{\mathrm{Precision}}_t(m)\ge\tau_{\mathrm{prec}}}}
-\mathrm{Recall}_t(m).
-\label{eq:precision-constrained-selection}
-\end{equation}
-This rule limits the share of predicted positives that are irrelevant, then finds as many relevant items as possible among the acceptable candidates.
+Figure~\ref{fig:mini-nano-tradeoff} visualises the same calculation directly on a 100-categorization scale: mini is higher on inference cost, equal on false-positive cost, and lower on false-negative cost. If a business analyst can state those two preferences directly, the loss rule already gives the answer. If direct monetary calibration is unavailable, the same decision can be encoded through operational constraints on recall, budget, or precision. Table~\ref{tab:chapter4-cost-summary} therefore reports precision, recall, inference cost, and loss in one place, so the alternative decision rules below can be read against the same candidate roster.
+\section{Scope of the decision}
 
-\paragraph{Edge cases.}
-
-If the feasible set is empty, return no candidate. If several candidates tie, apply a declared secondary rule. If a required rate is undefined, that candidate cannot establish feasibility.
-
-\section{Decision scope and monitoring handoff}
-
-This ranking applies only to the current candidate roster, the common full-benchmark cases, the observed charges, and the declared penalties. The sentinel panel can trigger review, but it never supplies the FP/FN counts used for candidate ranking. When loss gaps are small, report a sensitivity region and review the decision before deployment.
-
-Equation~\eqref{eq:model-selection} ranks candidates only for the declared common cases, error penalties, and inference charges. The panel is never used for these FP/FN counts. A close loss difference is reported as a sensitivity region.
+The decision rule in Equation~\eqref{eq:model-selection} ranks the current candidate roster on the current common full-benchmark cases under declared penalties and observed inference charges. Small loss gaps therefore call for sensitivity reporting, close inspection of nearby decision boundaries, and a cautious deployment review rather than a claim of universal model superiority.
