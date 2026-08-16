@@ -11,7 +11,7 @@
 
 \title{Statistical Drift Detection for Non-Stationary Black-Box LLM Classifiers}
 \author{Georgii}{Burdin}
-\submissiondate{2026}[08][14]
+\submissiondate{2026}[08][17]
 \courseofstudy{B.Sc. Applied Mathematics}
 \seminargroup{MA22w1-B}
 \examiner[Prof.\ Dr.\ rer.\ nat.\ Dr.-Ing.\ habil.]{Florian Zaussinger}
@@ -109,12 +109,9 @@ Closed LLM APIs are used in this thesis to classify social-media posts as releva
 \newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
 \newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
 \newcommand{\CodeRepoBase}{https://github.com/GeorgiiBurdinComo/llm-batch-eval/blob/main/}
-\newcommand{\ThesisRepoBase}{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis/blob/main/}
 \newcommand{\codepath}[1]{\href{\CodeRepoBase#1}{\nolinkurl{#1}}}
-\newcommand{\thesispath}[1]{\href{\ThesisRepoBase#1}{\nolinkurl{#1}}}
-\newcommand{\reproanchor}[1]{%
-  \par\smallskip\noindent{\footnotesize\textit{Reproducibility anchor.} #1\par}%
-}
+\newcommand{\provref}[1]{\hyperref[prov:#1]{\textcolor{vizmuted}{\footnotesize[#1]}}}
+\newcommand{\provline}[1]{\par\smallskip\noindent\hfill\provref{#1}\par}
 
 % Keep the main contents at thesis-outline level; derivation signposts remain in the body.
 \setcounter{tocdepth}{1}

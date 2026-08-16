@@ -56,7 +56,7 @@ For API configuration \(q\) evaluated at time \(t\), benchmark accuracy is
 This is the proportion of the 1199 benchmark posts classified correctly. Since the benchmark was not obtained through a documented probability sample from production, \(A_N(q,t)\) describes performance on this fixed dataset rather than an unbiased estimate of production accuracy.
 
 The benchmark labels were assigned manually by human annotators. Where initial judgements differed, the final reference label was resolved by discussion and then frozen for all subsequent evaluations.
-The public code repository \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval} stores the frozen reproducibility inputs for this benchmark and for the derived monitoring panel, while the public manuscript repository \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis} stores the rendered tables and figures cited in this chapter.
+The public code repository \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval} stores the frozen reproducibility inputs for this benchmark and for the derived monitoring panel.
 
 Repeatedly evaluating every monitored configuration on all \(N=1199\) items is expensive. Monitoring therefore relies on a smaller fixed subset
 \begin{equation}
@@ -264,14 +264,14 @@ The implemented choice \(n=300\) lies just below this cutoff and yields exact po
     \caption[Exact minimum panel size versus discordance]{Exact \(n_{\min}\) for 80\% power as a function of discordance \(\rho\), shown for target degradations of 3, 5, and 8 percentage points. The guide marks the pilot estimate \(\hat\rho=137/1199\); on the 5-percentage-point curve, the filled marker is the exact threshold \(n_{\min}=304\) and the open marker is the implemented size \(n=300\).}
     \label{fig:panel-size-vs-rho}
 \end{figure}
-\reproanchor{The pilot discordance, exact \(n_{\min}\), and the plotted power thresholds are computed in \codepath{canonical_evidence.py} from \codepath{streamlit_app/langfuse_traces.csv}, \codepath{streamlit_app/langfuse_scores.csv}, and \codepath{prompt_optimization/splits/split_manifest.json}; the frozen design grid is \codepath{notebooks/canonical_evidence_export/exact_unconditional_power_sensitivity.csv}; the thesis figure is \thesispath{assets/evidence/fig_panel_size_vs_rho.pdf}.}
+\provline{P1}
 
 The implemented monitoring design therefore fixes the panel size at \(n=300\). The remaining question addresses which posts should occupy those 300 positions.
 
 \section{Disagreement-based subset construction}
 \label{sec:informative-sampling-disagreement}
 
-With target size fixed at \(n=300\), construction chooses the identities in \(\mathcal{I}_n\). The panel favours posts where models disagree, because those posts are more likely to expose subtle behavioural change. This is close in spirit to query-by-committee sampling~\cite{seung1992query,settles2009active}: when several models disagree on the same item, that item is a plausible candidate for a hard or boundary-near case.
+With target size fixed at \(n=300\), construction chooses the identities in \(\mathcal{I}_n\). The panel favours posts where models disagree, because those posts are more likely to expose subtle behavioural change. This is close in spirit to query-by-committee sampling~\cite{seung1992query}: when several models disagree on the same item, that item is a plausible candidate for a hard or boundary-near case.
 
 The ensemble contained ten OpenAI and six Gemini models. Coverage was sparse, so the vote summary for post \(i\) uses:
 \begin{description}
@@ -308,7 +308,7 @@ The realised disagreement structure is shown in Figure~\ref{fig:sensitivity-pane
 \caption[Empirical disagreement structure for the monitoring intuition]{Empirical disagreement matrix on the frozen 1199-item benchmark. Rows are ordered by the relevant-vote share \(\hat p_i\) across eight high-coverage model runs. Blue cells are predicted non-relevant, red cells are predicted relevant, and grey cells mark missing predictions. The narrow strips at left show the reference label, \(\hat p_i\), and the frozen panel membership; green rows in the panel strip mark selected panel posts. The solid box marks the full mixed-vote band.}
 \label{fig:sensitivity-panel-intuition}
 \end{figure}
-\reproanchor{The eight-run matrix is built by \codepath{make_disagreement_figure.py} on top of the frozen measurements loaded by \codepath{canonical_evidence.py}. The row-wise vote shares, coverage counts, and selected run metadata are stored in \codepath{notebooks/canonical_evidence_export/canonical_disagreement_matrix_source.csv} and \codepath{notebooks/canonical_evidence_export/canonical_disagreement_matrix_summary.json}; the rendered thesis asset is \thesispath{assets/evidence/fig_canonical_disagreement_matrix.pdf}.}
+\provline{P2}
 
 The fixed 300-post panel was then obtained by seeded random sampling from two construction-time buckets. In the recorded execution, the high-disagreement bucket contained \(349\) covered rows and the remaining bucket contained \(850\). The sampler drew \(201\) posts without replacement from the high-disagreement bucket and \(99\) from the remaining covered rows, using \texttt{numpy.random.default\_rng(42)} and a final shuffle. This split keeps disagreement enrichment as the dominant signal without treating one observed comparison pass as a perfect oracle of item difficulty: posts outside the high-disagreement bucket may still be hard or boundary-near, but they did not surface as maximally split in that one realised run. Figures~\ref{fig:vote-share-distribution} and~\ref{fig:sensitivity-panel-intuition} visualise the corresponding disagreement structure in the canonical eight-run matrix, where disagreement is densest around \(\hat p_i=0.5\).
 
@@ -325,7 +325,7 @@ The fixed 300-post panel was then obtained by seeded random sampling from two co
         \bottomrule
     \end{tabular}
 \end{table}
-\reproanchor{The bucket sizes \(349/850\), the final 300 panel identifiers, and the benchmark-to-panel subset relation are checkable from \codepath{notebooks/canonical_evidence_export/canonical_disagreement_matrix_source.csv}, \codepath{notebooks/canonical_evidence_export/panel_ids.txt}, and \codepath{notebooks/canonical_evidence_export/canonical_summary.json}. The disagreement-ordering logic lives in \codepath{make_disagreement_figure.py}; the fixed benchmark items come from \codepath{prompt_optimization/splits/train.json}, \codepath{prompt_optimization/splits/val.json}, and \codepath{prompt_optimization/splits/test.json}.}
+\provline{P2}
 
 Table~\ref{tab:dataset-summary} compares the composition of the benchmark and the implemented monitoring panel.
 

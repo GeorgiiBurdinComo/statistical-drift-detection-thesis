@@ -1,0 +1,93 @@
+% Service architecture: who talks to whom.
+% Scheduled workflow detail stays in fig_ga_pipeline.tex (Figure 5.2).
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >=Latex,
+  node distance=8mm and 12mm,
+  script/.style={
+    draw=vizaxis, line width=0.4pt, rounded corners=1.5pt, fill=white,
+    align=center, text width=34mm, minimum height=9mm, inner sep=2pt
+  },
+  lfpart/.style={
+    draw=vizaxis, line width=0.4pt, rounded corners=1.5pt, fill=white,
+    align=center, text width=26mm, minimum height=9mm, inner sep=2pt
+  },
+  svc/.style={
+    draw=vizaxis, line width=0.4pt, rounded corners=1.5pt, fill=white,
+    align=center, text width=28mm, minimum height=10mm, inner sep=2.2pt
+  },
+  prov/.style={
+    draw=vizaxis, line width=0.4pt, rounded corners=1.5pt, fill=white,
+    align=center, text width=20mm, minimum height=7.5mm, inner sep=1.6pt
+  },
+  group/.style={draw=vizgrid, line width=0.5pt, rounded corners=2pt},
+  grouplabel/.style={
+    font=\scriptsize\bfseries, text=vizink, anchor=west,
+    fill=white, inner xsep=1mm, inner ysep=0.2mm
+  },
+  flow/.style={->, vizmuted, line width=0.55pt},
+  hand/.style={->, vizblue, line width=0.65pt},
+  lab/.style={font=\scriptsize, text=vizink, fill=white, inner sep=0.7pt},
+]
+
+% --- pipeline scripts ---
+\node[script] (run) {\mbox{\texttt{run\_eval.py}}};
+\node[script, below=of run] (poll) {\mbox{\texttt{poll\_and\_ingest.py}}};
+
+\begin{scope}[on background layer]
+  \node[group, fit=(run)(poll), inner xsep=3mm, inner ysep=3.5mm]
+    (pipegroup) {};
+\end{scope}
+\node[grouplabel] at ($(pipegroup.north west)+(1mm,0)$)
+  {Evaluation pipeline};
+
+% --- Langfuse: datasets + traces inside one frame ---
+\node[lfpart, left=22mm of run] (lfdata) {Langfuse datasets\\fixed labelled};
+\node[lfpart, below=of lfdata] (lftrace) {Langfuse traces\\traces and scores};
+
+\begin{scope}[on background layer]
+  \node[group, fit=(lfdata)(lftrace), inner xsep=2.8mm, inner ysep=2.8mm]
+    (lfgroup) {};
+\end{scope}
+\node[grouplabel] at ($(lfgroup.north west)+(1mm,0)$)
+  {Langfuse};
+
+% --- surrounding services ---
+\node[svc, above=12mm of pipegroup] (gha) {GitHub Actions};
+
+\node[svc, below=14mm of lfgroup] (dash) {Read-only\\Streamlit dashboard};
+
+\node[prov, right=28mm of run] (openai) {OpenAI};
+\node[prov, below=3.5mm of openai] (gemini) {Gemini};
+\node[prov, below=3.5mm of gemini] (claude) {Claude};
+
+\begin{scope}[on background layer]
+  \node[group, fit=(openai)(gemini)(claude), inner xsep=2.8mm, inner ysep=2.8mm]
+    (provgroup) {};
+\end{scope}
+\node[grouplabel] at ($(provgroup.north west)+(1mm,0)$)
+  {Provider batch APIs};
+
+% GHA launches the pipeline
+\draw[hand] (gha) -- (pipegroup)
+  node[midway, lab, right] {run};
+
+% datasets -> run_eval
+\draw[flow] (lfdata) -- (run)
+  node[midway, lab, above] {load datasets};
+
+% poll writes traces/scores
+\draw[hand] (poll) -- (lftrace)
+  node[midway, lab, below] {write traces/scores};
+
+% Only run_eval submits; only poll receives results
+\draw[flow] (run.east) -- (provgroup.west|-run)
+  node[midway, lab, above] {submit batch};
+\draw[flow] (provgroup.west|-poll) -- (poll.east)
+  node[midway, lab, below] {completed results};
+
+% traces -> dashboard
+\draw[hand] (lftrace) -- (lftrace|-dash.north) -- (dash.north)
+  node[pos=0.55, lab, left] {traces and scores};
+
+\end{tikzpicture}

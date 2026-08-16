@@ -1,7 +1,13 @@
 \chapter{System Implementation}
 \label{chap:system-architecture}
 
-This chapter describes the batch system that runs the evaluation workflow. The implementation stores item-level outputs, scores, and run identifiers so completed runs can be rescored, paired, and audited without calling a model again. External providers return the model outputs. Local code fixes the datasets, builds requests, scores outputs, and exports the review views.
+This chapter describes the batch evaluation system.
+The system stores item-level outputs, scores, and run identifiers,
+so completed runs can be rescored, paired, and audited without a new
+model call.
+Provider APIs return the model outputs.
+Local code fixes the datasets, builds requests, scores outputs, and
+exports the review views.
 
 \section{System flow}
 \label{sec:evaluation-pipeline-overview}
@@ -13,21 +19,113 @@ The system has five parts:
     \item retrieval, ingestion, and scoring;
     \item a read-only dashboard for review.
 \end{enumerate}
-In this system, Langfuse serves as the persistent evaluation store. It holds the two fixed labelled datasets used in the thesis: the full 1199-item benchmark \texttt{campaign\_relevance\_02e1a68ccb0f} and the fixed 300-item monitoring panel \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}. Each dataset item stores the multimodal input, the expected binary label \texttt{campaign\_relevant}, and stable metadata such as \texttt{custom\_id}. After each run, Langfuse also stores traces and scores for the returned outputs.
-\reproanchor{The frozen benchmark definition is public in \codepath{prompt_optimization/splits/train.json}, \codepath{prompt_optimization/splits/val.json}, \codepath{prompt_optimization/splits/test.json}, and \codepath{prompt_optimization/splits/split_manifest.json}. The fixed 300-item monitoring panel is public in \codepath{notebooks/canonical_evidence_export/panel_ids.txt}; the scored run snapshots used throughout the thesis are \codepath{streamlit_app/langfuse_traces.csv} and \codepath{streamlit_app/langfuse_scores.csv}. Dataset sync logic lives in \codepath{scripts/sync_dataset.py}.}
 
-The public code repository for this pipeline is \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval}. It contains the batch-evaluation code, workflow automation, prompt-optimisation code, and the frozen reproducibility inputs used to regenerate the published evidence. The public manuscript repository is \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis}; it contains the thesis source and the publication-ready assets consumed by the \LaTeX{} build.
+Langfuse is the persistent evaluation store.
+It holds two fixed labelled datasets:
+\begin{enumerate}
+    \item the full 1199-item benchmark\\
+    \mbox{\texttt{campaign\_relevance\_02e1a68ccb0f}};
+    \item the fixed 300-item monitoring panel\\
+    \mbox{\texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}}.
+\end{enumerate}
+Each dataset item stores:
+\begin{enumerate}
+    \item the multimodal input;
+    \item the expected binary label \texttt{campaign\_relevant};
+    \item stable metadata such as \texttt{custom\_id}.
+\end{enumerate}
+After each run, Langfuse also stores traces and scores for the returned outputs.
+\provref{P3}
 
-These parts support three run types:
+Figure~\ref{fig:system-architecture} shows the service architecture:
+GitHub Actions runs the pipeline, Langfuse supplies the fixed dataset
+and stores traces and scores, provider batch APIs execute inference,
+and the Streamlit dashboard reads traces and scores from Langfuse.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{adjustbox}{max width=\linewidth}
+    \input{assets/fig_system_architecture.tex}
+    \end{adjustbox}
+    \caption[Batch evaluation system architecture]{Service architecture of the batch evaluation system. GitHub Actions launches the evaluation pipeline. \texttt{run\_eval.py} loads the fixed dataset from Langfuse and submits batches to OpenAI, Gemini, or Anthropic. \texttt{poll\_and\_ingest.py} collects completed results and writes traces and scores back to Langfuse. The read-only Streamlit dashboard consumes those traces and scores from Langfuse.}
+    \label{fig:system-architecture}
+\end{figure}
+
+Two public repositories support this work.
+
+\noindent\textbf{Code repository.}\\
+\url{https://github.com/GeorgiiBurdinComo/llm-batch-eval}
 \begin{itemize}
-    \item a routine monitoring run evaluates the frozen \(n=300\) panel;
-    \item a full-benchmark run evaluates \(\mathcal{D}_N\) during baseline construction or candidate comparison;
-    \item an escalation run is a full-benchmark run requested after a panel signal and diagnostic review.
+    \item \mbox{\codepath{scripts/run_eval.py}}
+    --- evaluation entry point;
+    \item \mbox{\codepath{scripts/lib/load_dataset.py}}
+    --- dataset merge helper;
+    \item provider adapters:\\
+    \mbox{\codepath{scripts/batch_openai.py}},\\
+    \mbox{\codepath{scripts/batch_gemini.py}},\\
+    \mbox{\codepath{scripts/batch_claude.py}};
+    \item retrieval and scoring:\\
+    \mbox{\codepath{scripts/poll_and_ingest.py}};
+    \item \mbox{\codepath{config/request_template.json}}
+    --- request template;
+    \item dashboard and Langfuse export:\\
+    \mbox{\codepath{streamlit_app/app.py}},\\
+    \mbox{\codepath{streamlit_app/export_langfuse_csv.py}};
+    \item frozen score and trace snapshots:\\
+    \mbox{\codepath{streamlit_app/langfuse_scores.csv}},\\
+    \mbox{\codepath{streamlit_app/langfuse_traces.csv}}.
 \end{itemize}
 
-The panel run is the weekly warning step because it is cheap enough to repeat. The full benchmark run is the decision step because candidate ranking requires the broader labelled set. The panel answers whether paired performance changed on a fixed sensitivity set. The full benchmark answers which candidate performs better on the broader comparison set.
+These parts support four run types:
+\begin{enumerate}
+    \item a baseline full-benchmark run on \(\mathcal{D}_N\),
+    which creates the first reference run for a monitored model;
+    \item a routine monitoring run on the frozen \(n=300\) panel;
+    \item an escalation full-benchmark run after a panel signal and diagnostic review;
+    \item a candidate-comparison run on \(\mathcal{D}_N\) for deployment ranking.
+\end{enumerate}
 
-Figure~\ref{fig:ga-weekly-pipelines} shows the three scheduled workflows. Submission and retrieval run as separate jobs because provider batch APIs are asynchronous. The dashboard export starts only after retrieval and ingestion finish.
+The first recorded run for a monitored model is a full-benchmark baseline on \(\mathcal{D}_N\).
+The panel run is the weekly warning step.
+The full-benchmark run is the decision step.
+The panel answers whether paired performance changed on a fixed sensitivity set.
+The full benchmark answers which candidate performs better on the broader comparison set.
+
+During the recorded monitoring window, the recurring panel series were:
+\begin{enumerate}
+    \item \texttt{claude-haiku-4-5}
+    \item \texttt{claude-sonnet-4-5}
+    \item \texttt{claude-sonnet-4-6}
+    \item \texttt{gemini-2.5-flash}
+    \item \texttt{gpt-4.1-mini}
+    \item \texttt{gpt-4.1-nano}
+    \item \texttt{gpt-5}
+    \item \texttt{gpt-5-mini}
+    \item \texttt{gpt-5-nano}
+    \item \texttt{gpt-5.1}
+    \item \texttt{gpt-5.2}
+    \item \texttt{gpt-5.4}
+\end{enumerate}
+Two additional models were recorded once as baseline-only entries
+during the same period:
+\begin{enumerate}
+    \item \texttt{gemini-2.0-flash}
+    \item \texttt{gpt-5.4-2026-03-05}
+\end{enumerate}
+
+Figure~\ref{fig:ga-weekly-pipelines} expands that architecture into the three
+scheduled workflows.
+Submission and retrieval run as separate jobs because provider batch APIs are asynchronous.
+The dashboard export starts only after retrieval and ingestion finish.
+The workflow files are:
+\begin{enumerate}
+    \item \mbox{\codepath{.github/workflows/weekly_drift_monitoring.yml}}\\
+    Friday 05:00 UTC: build and submit batches;
+    \item \mbox{\codepath{.github/workflows/weekly_retrieve.yml}}\\
+    Monday 05:00 UTC: poll batches, ingest results, and write Langfuse traces and scores;
+    \item \mbox{\codepath{.github/workflows/sync-streamlit-dashboard.yml}}\\
+    Monday 07:00 UTC: export Langfuse CSV snapshots and publish the dashboard data.
+\end{enumerate}
 
 \begin{figure}[htbp]
     \centering
@@ -44,67 +142,147 @@ Each dataset row is normalized to
 \[
 \{\texttt{custom\_id},\ \texttt{body},\ \texttt{campaign\_relevant}\}.
 \]
-The normalized row has three fields:
-\begin{description}
-    \item[\texttt{custom\_id}] stable join key across dates, providers, and ground truth;
-    \item[\texttt{body}] request body obtained by combining the fixed template in \texttt{config/request\_template.json} with the item's multimodal input;
-    \item[\texttt{campaign\_relevant}] local ground-truth label used during scoring.
-\end{description}
-Holding the template, prompt, dataset, output schema, and parser fixed keeps request construction stable across repeated runs.
+Each normalized row contains a stable join key \texttt{custom\_id}, a provider
+request payload \texttt{body} built from the fixed template
+\mbox{\codepath{config/request_template.json}} and the item's multimodal input,
+and the ground-truth label \texttt{campaign\_relevant} for scoring.
+Repeated runs keep the dataset items, request template, campaign instruction,
+output schema, and response parser fixed, which stabilizes both the request
+payload and the interpretation of the returned JSON.
 
-The merge performed by \texttt{load\_dataset.py} is explicit:
+The merge is performed by\\
+\mbox{\codepath{scripts/lib/load_dataset.py}}:
 \[
 \texttt{body}
 =
 \{\texttt{**request\_template},\ \texttt{"input"}:\texttt{item.input}\}.
 \]
-Here \texttt{item.input} is a Responses-style message array. A system item contains the campaign instruction; user content contains \texttt{input\_text} and zero or more \texttt{input\_image} parts with image URLs. The ground-truth \texttt{campaign\_relevant} value remains beside \texttt{body} and stays local to scoring.
+\texttt{item.input} is a Responses-style message array that carries the
+campaign instruction, the user text, and any image inputs; the ground-truth
+\texttt{campaign\_relevant} value stays beside \texttt{body} for scoring.
 
-The current template sets \texttt{store=true} and requests a strict JSON object named \texttt{CampaignRelevanceMinimal}. Its properties are \texttt{campaign\_relevant:boolean} and \texttt{relevancy\_reasoning:string}; both are required and \texttt{additionalProperties=false}. The reasoning string is stored for audit, while all binary metrics use only \texttt{campaign\_relevant}.
+The template\\
+\mbox{\codepath{config/request_template.json}}
+stores provider responses (\texttt{store=true}) and requires a
+\texttt{CampaignRelevanceMinimal} object with required fields
+\texttt{campaign\_relevant} and \texttt{relevancy\_reasoning};
+additional properties are forbidden. Scoring uses only
+\texttt{campaign\_relevant}; \texttt{relevancy\_reasoning} is kept for audit.
 
-\texttt{run\_eval.py} inserts the selected model and dispatches the canonical body to a provider adapter. Table~\ref{tab:provider-adapters} records the transformations implemented in the three adapters.
+\mbox{\codepath{scripts/run_eval.py}}
+inserts the selected model and sends the canonical body to one of three
+provider adapters: OpenAI, Gemini, or Claude. Table~\ref{tab:provider-adapters}
+lists the JSONL envelope of each adapter.
 
 \begin{table}[htbp]
 \centering
-\scriptsize
-\caption[Exact provider batch mapping]{Provider-specific JSONL envelopes and transformations applied to the canonical request body.}
+\caption[Provider JSONL envelopes]{JSONL envelope fields written by each provider adapter.}
 \label{tab:provider-adapters}
-\begin{tabularx}{\linewidth}{lYY}
+\begin{tabular}{@{}ll@{}}
 \toprule
-Provider & One JSONL record & Implemented request transformation \\
+Provider & JSONL record fields \\
 \midrule
-OpenAI &
-\texttt{\{custom\_id, method, url, body\}} &
-\texttt{POST /v1/responses}; add \texttt{model}; preserve canonical \texttt{input}, image URLs, and \texttt{text.format}; use low reasoning effort for supported models. \\
-Gemini &
-\texttt{\{key, request\}} &
-Map system text to \texttt{systemInstruction} and user parts to \texttt{contents}; replace image URLs by Files API \texttt{fileData} URI/MIME pairs; map the schema to \texttt{generationConfig.responseSchema}, with temperature zero and thinking disabled for supported models. \\
-Claude &
-\texttt{\{custom\_id, params\}} &
-Sanitize the ID reversibly; map input to \texttt{system} and \texttt{messages}, retaining URL image sources; map the schema to \texttt{output\_config.format}; set \texttt{max\_tokens=1024} and low effort where supported. \\
+OpenAI & \texttt{custom\_id}, \texttt{method}, \texttt{url}, \texttt{body} \\
+Gemini & \texttt{key}, \texttt{request} \\
+Claude & \texttt{custom\_id}, \texttt{params} \\
 \bottomrule
-\end{tabularx}
+\end{tabular}
 \end{table}
 
-Every invocation receives a UTC \texttt{run\_id}. Submission writes \texttt{data/batch\_ids.json}, containing that identifier, the requested subset size, and each model's provider and batch identifier. A failed submission is retained in the manifest with a null batch identifier and an error message. Thus a run is identified by its manifest.
+\paragraph{OpenAI.}
+Implemented in\\
+\mbox{\codepath{scripts/batch_openai.py}}:
+\begin{enumerate}
+    \item POST to \texttt{/v1/responses};
+    \item add the selected \texttt{model};
+    \item keep \texttt{input}, image URLs, and \texttt{text.format};
+    \item set low reasoning effort when the model supports it.
+\end{enumerate}
+
+\paragraph{Gemini.}
+Implemented in\\
+\mbox{\codepath{scripts/batch_gemini.py}}:
+\begin{enumerate}
+    \item map system text to \texttt{systemInstruction};
+    \item map user parts to \texttt{contents};
+    \item replace image URLs by Files API \texttt{fileData} URI/MIME pairs;
+    \item map the schema to \texttt{generationConfig.responseSchema};
+    \item set temperature zero and disable thinking when supported.
+\end{enumerate}
+
+\paragraph{Claude.}
+Implemented in\\
+\mbox{\codepath{scripts/batch_claude.py}}:
+\begin{enumerate}
+    \item sanitize \texttt{custom\_id} reversibly;
+    \item map input to \texttt{system} and \texttt{messages}, keeping URL image sources;
+    \item map the schema to \texttt{output\_config.format};
+    \item set \texttt{max\_tokens=1024} and low effort when supported.
+\end{enumerate}
+
+Every invocation receives a UTC \texttt{run\_id}, and submission records that
+identifier, the requested subset size, and each model's provider and batch
+identifier in \texttt{data/batch\_ids.json}; failed submissions retain a null
+batch identifier and an error message.
 
 \section{Retrieval, completeness, and scoring}
 \label{sec:metrics-dashboard}
-\texttt{poll\_and\_ingest.py} restores the manifest, polls each submitted batch, and writes completed JSONL files to \texttt{data/results/}. Failed, cancelled, expired, and timed-out jobs are reported separately. A missing result file is listed in the retrieval summary and leaves the corresponding model--run incomplete. Reviewers check completeness before reading any paired panel result.
+\mbox{\codepath{scripts/poll_and_ingest.py}}
+restores the manifest and then:
+\begin{enumerate}
+    \item polls each submitted batch;
+    \item downloads each completed batch as a JSONL file in \texttt{data/results/};
+    \item calls \texttt{ingest\_results(...)} from \mbox{\codepath{scripts/ingest.py}};
+    \item reports failed, cancelled, expired, and timed-out jobs separately;
+    \item lists missing result files in the retrieval summary.
+\end{enumerate}
+A missing result file leaves the corresponding model--run incomplete.
+Reviewers check completeness before reading any paired panel result.
 
-For downloaded rows, \texttt{ingest.py} joins the response to its label by \texttt{custom\_id}, records \texttt{model}, \texttt{provider}, and \texttt{run\_id} in trace metadata, and writes three downstream quantities: binary correctness, the TP/FP/TN/FN error type, and token-derived inference cost. Precision, recall, and F1 are then computed as defined in Section~\ref{sec:classification-metrics}. Results without a matching label receive no accuracy or error-type score.
+For downloaded rows,\\
+\mbox{\codepath{scripts/ingest.py}}
+does the following:
+\begin{enumerate}
+    \item joins each response to its label by \texttt{custom\_id};
+    \item extracts the returned binary prediction and token usage;
+    \item computes the token-derived inference cost when pricing is available;
+    \item creates a Langfuse trace, span, and generation for the returned row;
+    \item records \texttt{model}, \texttt{provider}, \texttt{custom\_id}, and \texttt{run\_id}
+    in Langfuse metadata;
+    \item writes Langfuse scores for \texttt{accuracy}, \texttt{error\_type}, and
+    \texttt{cost\_usd} when those values are available.
+\end{enumerate}
+Rows without a matching label receive no \texttt{accuracy} or \texttt{error\_type} score.
 
-The implementation distinguishes an absent provider result from a malformed returned result. Absence leaves no scored row. By contrast, the current parser maps a missing or invalid structured boolean in a returned row to \texttt{false}; this deterministic fallback keeps the row, so format failures remain visible through retrieval summaries and trace inspection.
+An absent provider result leaves no scored row.
+A returned row with a missing or invalid structured boolean is parsed as
+\texttt{false}; that fallback keeps the row, so format failures stay visible
+in retrieval summaries and trace inspection.
 
-The same scored outputs are exported to a read-only Streamlit dashboard used in stakeholder review. Offline Langfuse score and trace snapshots drive:
-\begin{itemize}
-    \item an overview of accuracy traces by model and run;
+\subsection{Dashboard review interface}
+The read-only Streamlit dashboard implemented in\\
+\mbox{\codepath{streamlit_app/app.py}}
+uses offline CSV snapshots written by\\
+\mbox{\codepath{streamlit_app/export_langfuse_csv.py}}.
+That export script fetches traces and scores from the Langfuse API and writes
+\texttt{langfuse\_traces.csv} and \texttt{langfuse\_scores.csv}.
+The live review app is available at\\
+\url{https://llm-eval-dashboard.streamlit.app/}.
+These snapshots drive three views:
+\begin{enumerate}
+    \item overview of accuracy traces by model and run;
     \item paired McNemar evidence;
     \item expected-cost ranking on common benchmark cases.
-\end{itemize}
-An external email notification opens the review step after an alert. The same evidence store then supports the follow-up checks and any later escalation.
+\end{enumerate}
+Screenshots of those views are shown in Appendix~\ref{app:dashboard-views}
+(Figure~\ref{fig:dashboard-canonical}).
+An external email notification opens the review step after an alert.
+The same evidence store then supports the follow-up checks and any later escalation.
 
-The third view implements the expected-cost ranking of Chapter~\ref{ch:cost-deployment-utility} on the common benchmark cases. It uses the common cases so every candidate is scored on the same labelled items. For each candidate it displays
+The third view implements the expected-cost ranking of
+Chapter~\ref{ch:cost-deployment-utility} on the common benchmark cases.
+Every candidate is scored on the same labelled items.
+For each candidate the dashboard displays
 \begin{equation}
 L_t(m)
 =
@@ -117,71 +295,96 @@ C_{\mathrm{FN}}\,\mathrm{FN}_t(m)
 }{n_t},
 \label{eq:dashboard-expected-cost}
 \end{equation}
-which is Equation~\eqref{eq:expected-cost}. Here \(c_t(m)\) is the API charge per case for candidate \(m\), \(\mathrm{FP}_t(m)\) and \(\mathrm{FN}_t(m)\) are its false-positive and false-negative counts on the common benchmark cases, and \(n_t\) is the number of those common cases. The penalties \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) set the review scenario. For example, if \(C_{\mathrm{FP}}=1\), \(C_{\mathrm{FN}}=4\), \(\mathrm{FP}_t(m)=3\), \(\mathrm{FN}_t(m)=5\), and \(n_t=500\), then the penalty term is \((1\cdot 3 + 4\cdot 5)/500 = 0.046\) cost units per case before the API charge \(c_t(m)\) is added. A reviewer can change the penalties, or the ratio \(C_{\mathrm{FN}}/C_{\mathrm{FP}}\), and the ranking updates immediately. The highlighted bar is the candidate with the lowest displayed expected cost under the current settings. The dashboard reports that ranking for review, after which the engineer can recommend a deployment change.
-
-\clearpage
-\begin{figure}[!p]
-    \centering
-    {\small\bfseries (a)}~{\small Overview --- accuracy traces by model}\\[0.35em]
-    \includegraphics[width=0.92\linewidth]{assets/evidence/fig_dashboard_overview_shot.png}\\[1.1em]
-    {\small\bfseries (b)}~{\small McNemar --- paired run comparison}\\[0.35em]
-    \includegraphics[width=0.92\linewidth]{assets/evidence/fig_dashboard_mcnemar_shot.png}
-    \caption[Dashboard reporting views]{Dashboard views for two review questions: run-level accuracy histories across scheduled runs~(a), and paired counts with the exact McNemar result for one baseline/current panel comparison~(b).}
-    \label{fig:dashboard-canonical}
-\end{figure}
-\reproanchor{These dashboard views are implemented in \codepath{streamlit_app/app.py} on top of the frozen exports \codepath{streamlit_app/langfuse_traces.csv} and \codepath{streamlit_app/langfuse_scores.csv}, produced by \codepath{streamlit_app/export_langfuse_csv.py}. The screenshots cited here are stored as \thesispath{assets/evidence/fig_dashboard_overview_shot.png} and \thesispath{assets/evidence/fig_dashboard_mcnemar_shot.png}.}
-\clearpage
-\begin{figure}[!p]
-    \ContinuedFloat
-    \centering
-    {\small\bfseries (c)}~{\small Expected cost --- tunable ranking}\\[0.4em]
-    \begin{adjustbox}{max width=\linewidth, max height=0.84\textheight, keepaspectratio}
-    \includegraphics{assets/evidence/fig_dashboard_expected_cost_shot.png}
-    \end{adjustbox}
-    \caption[]{Continued: expected-cost view~(c) on the common benchmark cases. A reviewer sets \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\); the highlighted bar is the candidate with the lowest displayed \(L_t(m)\). This view supports candidate ranking after escalation from panel monitoring.}
-    \label{fig:dashboard-expected-cost}
-\end{figure}
-\reproanchor{The expected-cost ranking shown in the dashboard is computed from the same frozen Langfuse score/trace exports as the static rebuilds. The code path is \codepath{streamlit_app/app.py}; the common-case benchmark comparison reused by the thesis is frozen in \codepath{notebooks/canonical_evidence_export/deployment_cost_may22.csv}; the screenshot asset is \thesispath{assets/evidence/fig_dashboard_expected_cost_shot.png}.}
-\clearpage
+which is Equation~\eqref{eq:expected-cost}.
+The displayed terms are:
+\begin{enumerate}
+    \item \(c_t(m)\): API charge per case for candidate \(m\);
+    \item \(\mathrm{FP}_t(m)\), \(\mathrm{FN}_t(m)\): false-positive and false-negative counts
+    on the common benchmark cases;
+    \item \(n_t\): number of those common cases;
+    \item \(C_{\mathrm{FP}}\), \(C_{\mathrm{FN}}\): reviewer-chosen scenario penalties.
+\end{enumerate}
+For example, if \(C_{\mathrm{FP}}=1\), \(C_{\mathrm{FN}}=4\),
+\(\mathrm{FP}_t(m)=3\), \(\mathrm{FN}_t(m)=5\), and \(n_t=500\),
+then the penalty term is
+\((1\cdot 3 + 4\cdot 5)/500 = 0.046\) cost units per case
+before the API charge \(c_t(m)\) is added.
+A reviewer can change the penalties, or the ratio \(C_{\mathrm{FN}}/C_{\mathrm{FP}}\),
+and the ranking updates immediately.
+The highlighted bar is the candidate with the lowest displayed expected cost
+under the current settings.
+The dashboard reports that ranking for review;
+the engineer then recommends a deployment change.
 
 \section{Run identity and stored artifacts}
 \label{sec:artifacts-data-flow}
-Here, a \emph{run} means one submission event covering one dataset subset and one or more models. Its \texttt{run\_id} distinguishes results produced by different scheduled executions. Within a run, one prediction is identified by
+Here, a \emph{run} means one submission event covering one dataset subset and one or more models.
+Its \texttt{run\_id} distinguishes results from different scheduled executions.
+Within a run, one prediction is identified by
 \[
 (\texttt{run\_id},\ \texttt{provider},\ \texttt{model},\ \texttt{custom\_id}).
 \]
-The first three fields identify the execution and model; \texttt{custom\_id} identifies the benchmark item and permits an exact join to its baseline prediction and label.
+The first three fields identify the execution and model;
+\texttt{custom\_id} identifies the benchmark item and joins it to its baseline prediction and label.
 
-Table~\ref{tab:stored-artifacts} summarizes the main persisted artifacts and their roles in the workflow.
+The workflow persists five artifact classes:
+\begin{enumerate}
+    \item \textbf{Batch manifest} (\texttt{data/batch\_ids.json}):
+    records \texttt{run\_id}, dataset choice, provider, model, and submitted batch identifiers;
+    connects submission, retrieval, and audit of incomplete or failed jobs.
+    \item \textbf{Raw provider outputs} (\texttt{data/results/}):
+    keep item-level responses keyed by \texttt{custom\_id};
+    support rescoring, parser review, and repeated export without new inference.
+    \item \textbf{Langfuse traces}:
+    store run metadata, model identity, benchmark item, and parsed prediction;
+    provide the canonical item-level record for review and dashboard export.
+    \item \textbf{Langfuse scores}:
+    store correctness, TP/FP/TN/FN type, and token-derived cost;
+    feed paired monitoring, benchmark comparison, and cost-aware ranking.
+    \item \textbf{Dashboard snapshots}:
+    present trajectories, paired evidence, and candidate comparisons;
+    support human review, reporting, and deployment discussion.
+\end{enumerate}
 
-\begin{table}[htbp]
-\centering
-\small
-\caption[Core persisted artifacts]{Core persisted artifacts used to connect asynchronous inference, rescoring, and review.}
-\label{tab:stored-artifacts}
-\begin{tabularx}{\linewidth}{lYY}
-\toprule
-Artifact & Purpose & Downstream use \\
-\midrule
-Batch manifest & Records \texttt{run\_id}, dataset choice, provider, model, and submitted batch identifiers. & Connects submission, retrieval, and audit of incomplete or failed jobs. \\
-Raw provider outputs & Retain item-level responses keyed by \texttt{custom\_id}. & Support rescoring, parser review, and repeated export without new inference. \\
-Langfuse traces & Store run metadata, model identity, benchmark item, and parsed prediction. & Provide the canonical item-level record for review and dashboard export. \\
-Langfuse scores & Store correctness, TP/FP/TN/FN type, and token-derived cost. & Feed paired monitoring, benchmark comparison, and cost-aware ranking. \\
-Dashboard snapshots and exports & Present trajectories, paired evidence, and candidate comparisons. & Support human review, reporting, and deployment discussion. \\
-\bottomrule
-\end{tabularx}
-\end{table}
+These records keep predictions from different executions separate and pair the same
+benchmark item across runs.
+Saved provider responses allow scoring and statistical analysis to be repeated without
+calling the model again.
+Stronger replay would also require immutable hashes for the dataset, request template,
+prompt, parser, and model configuration.
 
-These records keep predictions from different executions separate and pair the same benchmark item across runs. Saved provider responses allow scoring and statistical analysis to be repeated without calling the model again. Stronger replay guarantees would additionally require immutable hashes for the dataset, request template, prompt, parser, and model configuration.
+For the fixed datasets used in this thesis, the persisted identifiers are:
+\begin{enumerate}
+    \item benchmark:\\
+    \mbox{\texttt{campaign\_relevance\_02e1a68ccb0f}};
+    \item monitoring panel:\\
+    \mbox{\texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}}.
+\end{enumerate}
+Langfuse-backed traces, scores, and their export layer preserve these dataset keys,
+so every reported value stays traceable to one fixed benchmark or panel definition.
 
-For the fixed datasets used in this thesis, the persisted benchmark identifier is \texttt{campaign\_relevance\_02e1a68ccb0f} and the persisted monitoring-panel identifier is \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}. Langfuse-backed traces, scores, and their export layer preserve these dataset keys so every reported value remains traceable to one fixed benchmark or panel definition.
-
-The public code repository keeps the reproducibility inputs that sit upstream of these stored records, including the evaluation pipeline, the frozen Langfuse CSV snapshots, and the canonical evidence export. The public manuscript repository keeps the rendered figures, tables, and \LaTeX{} assets cited in this thesis; exact prompt text is intentionally withheld from the public branch.
-\reproanchor{The main code paths behind this storage layer are \codepath{scripts/run_eval.py}, \codepath{scripts/poll_and_ingest.py}, \codepath{scripts/ingest.py}, and \codepath{streamlit_app/export_langfuse_csv.py}. The frozen upstream manifests and hashes are published in \codepath{notebooks/canonical_evidence_export/input_manifest.json} and \codepath{notebooks/canonical_evidence_export/artifact_manifest.csv}.}
+The public code repository keeps the reproducibility inputs upstream of these records,
+including the evaluation pipeline and the frozen Langfuse CSV snapshots\\
+\mbox{\codepath{streamlit_app/langfuse_traces.csv}}
+and\\
+\mbox{\codepath{streamlit_app/langfuse_scores.csv}}.
+Rendered figures, tables, and \LaTeX{} assets are part of this thesis source.
+\provref{P3}
 
 \section{Post-run decision logic}
 \label{sec:decision-logic}
-Figure~\ref{fig:run-decision-logic} shows the post-alert procedure. A panel alert first triggers a check of completeness, matched identifiers, missing pairs, and provider or parser failures. The reviewer then checks whether the shift persists in the next run and whether same-batch models moved in the same direction. If the episode remains sustained and actionable, the next step is a full-benchmark evaluation of an alternative model and, optionally, of a revised prompt.
+Figure~\ref{fig:run-decision-logic} shows the post-alert procedure.
+After a panel alert, the reviewer follows these steps:
+\begin{enumerate}
+    \item check completeness, matched identifiers, missing pairs, and provider or parser failures;
+    \item check whether the shift persists in the next run;
+    \item check whether same-batch models moved in the same direction;
+    \item if the episode remains sustained and actionable, run a full-benchmark evaluation of an
+    alternative model and, optionally, of a revised prompt;
+    \item compare predictive loss and API cost on \(\mathcal{D}_N\);
+    \item recommend retaining the current setup, or recommend a model or prompt change under the
+    declared acceptance rule.
+\end{enumerate}
 
 \begin{figure}[htbp]
     \centering

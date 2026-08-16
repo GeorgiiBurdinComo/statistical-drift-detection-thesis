@@ -262,11 +262,6 @@ def main() -> None:
         )
     scenario_lines.extend(
         [
-            r"\midrule",
-            rf"All three & \${monitoring_cost['production_panel_usd']:.2f} & "
-            rf"\${monitoring_cost['production_benchmark_usd']:.2f} & "
-            rf"\${monitoring_cost['production_weekly_panel_annual_usd']:.2f} & "
-            rf"{monitoring_cost['production_weekly_break_even_affected_items']} posts \\",
             r"\bottomrule",
             r"\end{tabular}",
         ]

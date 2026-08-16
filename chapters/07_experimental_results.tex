@@ -1,14 +1,19 @@
 \chapter{Experimental Results}
 \label{chap:experimental-results}
 
-This chapter reports the recorded monitoring window from 15~March to 6~July~2026 and the later common-case candidate comparison.
+This chapter reports the recorded monitoring window from 15~March to 6~July~2026 for the 12 recurring monitoring series and the later common-case deployment comparison for the eight candidate models with shared full-benchmark outputs on 22~May~2026.
 
 \section{Monitoring results}
 \label{sec:drift-results}
 
-The timeline contains 187 eligible runs. Twelve recurring model labels contribute 185 runs and 173 baseline-to-later paired comparisons. Missing outputs are removed pairwise, so the effective sample size can be below 300.
+The timeline contains 187 eligible runs. The recurring monitored series are \texttt{claude-haiku-4-5}, \texttt{claude-sonnet-4-5}, \texttt{claude-sonnet-4-6}, \texttt{gemini-2.5-flash}, \texttt{gpt-4.1-mini}, \texttt{gpt-4.1-nano}, \texttt{gpt-5}, \texttt{gpt-5-mini}, \texttt{gpt-5-nano}, \texttt{gpt-5.1}, \texttt{gpt-5.2}, and \texttt{gpt-5.4}. For each recurring model, the first recorded run was a full-benchmark baseline on \(\mathcal{D}_N\); later routine monitoring runs used the frozen \(n=300\) panel, and paired monitoring comparisons restricted both runs to the common panel items. These twelve recurring model labels therefore contribute 185 runs and 173 baseline-to-later paired comparisons. Missing outputs are removed pairwise, so the effective sample size can be below 300.
 
-The two singleton labels, \texttt{gemini-2.0-flash} and \texttt{gpt-5.4-2026-03-05}, each appear once. A model's first eligible run is its baseline, so these two runs remain recorded baselines until a later comparison exists. The frozen labelled sets make that admission routine: a newly released model is scored on the same posts as the existing candidates, compared immediately with contemporaneous series, and then paired against its own first-run baseline as soon as later runs exist.
+The two singleton labels are \texttt{gemini-2.0-flash} and \texttt{gpt-5.4-2026-03-05}; each appears once. A model's first recorded run is its full-benchmark baseline, so these two runs remain recorded baselines until a later comparison exists. The frozen labelled sets make this straightforward:
+\begin{enumerate}
+    \item a newly released model is scored on the same posts as the existing candidates;
+    \item its first run is compared with the other series from the same period;
+    \item later runs are paired against that model's own first-run baseline.
+\end{enumerate}
 
 At the one-sided nominal level \(\alpha=.05\), three comparisons produced monitoring signals with \(p_{\mathrm{exact}}<.05\). These signals opened review on the fixed panel; deployment significance was determined separately.
 
@@ -19,7 +24,7 @@ At the one-sided nominal level \(\alpha=.05\), three comparisons produced monito
     \label{tab:canonical-monitoring-summary}
     \input{assets/metrics_export/canonical_monitoring_summary.tex}
 \end{table}
-\reproanchor{The monitoring-window totals in Table~\ref{tab:canonical-monitoring-summary} are computed in \codepath{canonical_evidence.py} from \codepath{streamlit_app/langfuse_traces.csv} and \codepath{streamlit_app/langfuse_scores.csv}. The frozen summary row lives in \codepath{notebooks/canonical_evidence_export/canonical_summary.json}; the rendered thesis asset is \thesispath{assets/metrics_export/canonical_monitoring_summary.tex}.}
+\provline{P4}
 
 \begin{figure}[htbp]
     \centering
@@ -29,8 +34,14 @@ At the one-sided nominal level \(\alpha=.05\), three comparisons produced monito
 \end{figure}
 \FloatBarrier
 
-Table~\ref{tab:nominal-mcnemar} reports the paired correctness counts for those three comparisons. McNemar's test uses the discordant cells: \(b\) counts items that changed from correct to wrong, and \(c\) counts items that changed from wrong to correct. \texttt{gpt-4.1-mini} has \(b=49\) against \(c=12\) (\(n=296\)). The two \texttt{claude-haiku-4-5} comparisons have the same directional imbalance on much smaller discordant sets: \(b=9\) against \(c=2\) for 22~March--22~June, and \(b=7\) against \(c=1\) for 22~March--6~July (\(n=265\) in both). The March \texttt{gpt-4.1-mini} episode is therefore the strongest signal both in effect size and in discordant-count imbalance.
+Table~\ref{tab:nominal-mcnemar} reports the paired correctness counts for the three comparisons with nominal one-sided signals. McNemar's test uses the discordant cells: \(b\) counts items that changed from correct to wrong, and \(c\) counts items that changed from wrong to correct. The three comparisons are:
+\begin{enumerate}
+    \item \texttt{gpt-4.1-mini}, 15~March--22~March: \(b=49\), \(c=12\), \(n=296\);
+    \item \texttt{claude-haiku-4-5}, 22~March--22~June: \(b=9\), \(c=2\), \(n=265\);
+    \item \texttt{claude-haiku-4-5}, 22~March--6~July: \(b=7\), \(c=1\), \(n=265\).
+\end{enumerate}
 
+None of these two models were deployed in production, so no production deployment change was made.
 \begin{table}[htbp]
     \centering
     \small
@@ -38,14 +49,16 @@ Table~\ref{tab:nominal-mcnemar} reports the paired correctness counts for those 
     \label{tab:nominal-mcnemar}
     \input{assets/metrics_export/canonical_nominal_comparisons.tex}
 \end{table}
-\reproanchor{The three nominal signal tables are rebuilt from \codepath{notebooks/canonical_evidence_export/baseline_to_later_mcnemar.csv} by \codepath{scripts/sync_canonical_evidence.py}. The underlying trigger metadata, including the 22~March \texttt{gpt-4.1-mini} alert, is also recorded in \codepath{notebooks/canonical_evidence_export/canonical_summary.json}.}
+\provline{P4}
 \FloatBarrier
 
 \paragraph{The March signal and rebound.}
-The strongest signal compared \texttt{gpt-4.1-mini} on 15~March with its 22~March run. There were \(n_{\mathrm{paired}}=296\) complete pairs: \(b=49\) items changed from correct to incorrect and \(c=12\) changed from incorrect to correct. Accuracy fell from \(0.7872\) to \(0.6622\), a change of \(-12.5\) percentage points. The one-sided exact p-value was \(9.849\times10^{-7}\).
+For \texttt{gpt-4.1-mini}, the 15--22~March comparison in Table~\ref{tab:nominal-mcnemar} produced the strongest signal. Panel accuracy fell from \(0.7872\) to \(0.6622\), a change of \(-12.5\) percentage points, and the one-sided exact p-value was \(9.849\times10^{-7}\).
 
-The next run, 22--28~March, reversed the movement: on 297 complete pairs accuracy rose from \(0.6633\) to \(0.7946\), with 11 regressions and 50 improvements. From 15 to 28~March the net change was \(+0.67\) percentage points, so the episode did not persist. Same-period models had no comparable drop, which weakens a shared local-failure explanation. \texttt{gpt-4.1-mini} was a monitored candidate; no production deployment was changed.
-\reproanchor{The March trigger, rebound comparison, and same-period controls are checkable from \codepath{notebooks/canonical_evidence_export/baseline_to_later_mcnemar.csv}, \codepath{notebooks/canonical_evidence_export/eligible_monitoring_runs.csv}, and \codepath{notebooks/thesis_evidence_export/table_claim_ledger.csv}. The transition plot and contingency view are rendered as \thesispath{assets/evidence/fig_canonical_monitoring_trajectory.pdf} and \thesispath{assets/evidence/fig_canonical_mcnemar_matrix.pdf}.}
+The next run, 22--28~March, reversed the movement: on 297 complete pairs accuracy rose from \(0.6633\) to \(0.7946\), with 11 regressions and 50 improvements. From 15 to 28~March the net change was \(+0.67\) percentage points, so the episode did not persist. \texttt{gpt-4.1-mini} was only a monitored candidate, therefore no production deployment change.
+
+No model-specific incident or update notice for \texttt{gpt-4.1-mini} was listed in the public OpenAI status history for 15 or 22~March~2026~\cite{openai2026status}. The episode therefore illustrates the intended role of the monitor: it surfaced an unexplained provider-side behaviour change on the fixed panel without any contemporaneous public notice for that model was available.
+\provref{P4}
 
 \begin{figure}[htbp]
     \centering
@@ -55,33 +68,8 @@ The next run, 22--28~March, reversed the movement: on 297 complete pairs accurac
 \end{figure}
 \FloatBarrier
 
-\section{Realised discordance and detectable effects}
-\label{sec:realized-discordance}
-
-Across the 173 comparisons, median observed discordance was \(0.02685\), where discordance is \((b+c)/n_{\mathrm{paired}}\). This historical value describes how much paired movement occurred in these runs. Future failures may generate much larger discordance, as the March signal itself did (\(61/296=0.2061\)); low historical discordance therefore says little about a model's intrinsic stability or the magnitude of future changes.
-
-The historical size calculation used pilot discordance \(\rho_{\mathrm{pilot}}=137/1199=0.1143\), a target degradation of 5 percentage points, and nominal one-sided \(\alpha=.05\). The construction-time approximation suggested \(n_{\mathrm{planned}}=273\), which was rounded upward to \(n_{\mathrm{panel}}=300\). At this implemented size, exact unconditional power rounds to \(0.80\).
-
-Exact unconditional power calculations also clarify what a 300-item panel can establish outside that single sizing point. At the nearby design discordance \(\rho_{\mathrm{design}}=.12\), the 80\%-power minimum detectable degradation is \(5.15\) percentage points at nominal \(\alpha=.05\), but \(8.32\) percentage points at the family-conservative level \(\alpha=.05/173\). For a 5-percentage-point degradation, exact power is \(0.776\) nominally and \(0.137\) under the family-conservative level; for an 8-percentage-point degradation, it rises to \(0.994\) and \(0.736\), respectively. On this panel, degradations of 5--8 percentage points provide a practical orientation band: they matter operationally, yet strict multiplicity control still makes them hard to detect reliably.
-
-\begin{table}[htbp]
-    \centering
-    \small
-    \caption{Exact power at \(n_{\mathrm{panel}}=300\) and \(\rho_{\mathrm{design}}=.12\).}
-    \label{tab:canonical-power}
-    \input{assets/metrics_export/canonical_power_summary.tex}
-\end{table}
-\reproanchor{The exact power values and 80\%-power thresholds come from \codepath{canonical_evidence.py}, which writes the frozen design grid to \codepath{notebooks/canonical_evidence_export/exact_unconditional_power_sensitivity.csv}. The table asset is \thesispath{assets/metrics_export/canonical_power_summary.tex}.}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{assets/evidence/fig_canonical_power_heatmap.pdf}
-    \caption[Exact power over discordance and degradation]{Exact unconditional power of the one-sided McNemar test for \(n_{\mathrm{panel}}=300\). The white contour marks 80\% power; the cross marks design discordance \(\rho_{\mathrm{design}}=0.12\) and planned degradation \(g=5\text{pp}\). The dashed horizontal guides at 5 and 8 percentage points provide practical orientation markers for small-to-moderate change on the fixed panel. Multiplicity control moves the detectable region upward, making moderate degradation much harder to identify. The blank upper-left region is inadmissible because \(g>\rho_{\mathrm{design}}\).}
-    \label{fig:canonical-power-heatmap}
-\end{figure}
-\reproanchor{The heatmap is rendered by \codepath{make_canonical_figures.py} from \codepath{notebooks/canonical_evidence_export/exact_unconditional_power_sensitivity.csv}; the rendered thesis figure is \thesispath{assets/evidence/fig_canonical_power_heatmap.pdf}.}
-
-Taken together, the nominal and conservative panels visualise the cost of multiplicity control directly. The nominal threshold retains a visibly wider region of adequate power, whereas the family-conservative threshold contracts that region sharply. The comparison therefore exposes the central trade-off of the monitoring design: stronger control of repeated-testing false alarms is purchased with lower sensitivity to moderate degradation.
+\section{Monitoring cost}
+\label{sec:monitoring-cost}
 
 \begin{table}[htbp]
     \centering
@@ -91,7 +79,7 @@ Taken together, the nominal and conservative panels visualise the cost of multip
     \input{assets/metrics_export/monitoring_cost_summary.tex}
 \end{table}
 
-For the three production models---\texttt{gpt-5-mini}, \texttt{gpt-5-nano}, and \texttt{gpt-5}---one panel sweep cost \(\$2.74\), compared with \(\$9.53\) for a full-benchmark sweep. Weekly panel monitoring therefore costs approximately \(\$142.42\) per year in API charges.
+That paired sensitivity is inexpensive enough to run routinely. For the three production models---\texttt{gpt-5-mini}, \texttt{gpt-5-nano}, and \texttt{gpt-5}---one panel sweep cost \(\$2.74\), compared with \(\$9.53\) for a full-benchmark sweep. Weekly panel monitoring therefore costs approximately \(\$142.42\) per year in API charges.
 
 The error cost of an undetected episode can be estimated conditionally on the penalties used in Section~\ref{sec:cost-aware-comparison}. On the 296 items shared by the \texttt{gpt-4.1-mini} baseline and signal runs, the confusion counts changed from \((\mathrm{FP},\mathrm{FN})=(2,61)\) to \((0,100)\). Holding inference price fixed, the resulting incremental error loss per affected classification is
 \[
@@ -103,18 +91,18 @@ The error cost of an undetected episode can be estimated conditionally on the pe
 \begin{table}[htbp]
     \centering
     \small
-    \caption[Production-model monitoring scenarios]{Model-specific monitoring costs and break-even volumes under the observed episode's incremental error loss of \(\$0.003037\) per affected classification. Costs are USD; annual panel cost assumes 52 weekly sweeps.}
+    \caption[Production-model monitoring scenarios]{Model-specific monitoring costs and break-even volumes under the observed episode's incremental error loss of \(\$0.003037\) per affected classification. Costs are USD; annual panel cost is \(52\times\) weekly panel cost, and weekly break-even volume is \(\text{panel cost}/0.003037=\text{annual panel cost}/(52\times0.003037)\).}
     \label{tab:production-monitoring-scenarios}
     \input{assets/metrics_export/production_monitoring_scenarios.tex}
 \end{table}
-\reproanchor{The monitoring-cost totals, annualized panel cost, incremental error-loss calculation, and break-even volumes are frozen in \thesispath{assets/metrics_export/monitoring_cost_summary.tex} and \thesispath{assets/metrics_export/production_monitoring_scenarios.tex}. Their upstream source is the canonical summary and cost export rebuilt from \codepath{streamlit_app/langfuse_traces.csv}, \codepath{streamlit_app/langfuse_scores.csv}, \codepath{notebooks/canonical_evidence_export/canonical_summary.json}, and \codepath{notebooks/canonical_evidence_export/deployment_cost_may22.csv}.}
+\provline{P5}
 
-For the three-model portfolio, one weekly panel sweep costs \(\$2.74\) and breaks even at 902 affected classifications under this scenario. Other failure patterns imply different thresholds; disagreement sampling's efficiency remains untested against an equal-size random panel.
+For the three production models, weekly panel cost ranges from \(\$0.11\) to \(\$2.20\), and the corresponding break-even volume ranges from 37 to 723 affected classifications under this scenario. Other failure patterns imply different thresholds. This supports the operational case for running the fixed panel routinely as a review trigger; model replacement still depends on the separate full-benchmark comparison in Section~\ref{sec:cost-aware-comparison}.
 
 \section{Cost-aware comparison}
 \label{sec:cost-aware-comparison}
 
-The deployment comparison uses the 22~May common complete-case intersection: 1112 items observed for all eight candidate models. This avoids changing the evaluated item set across candidates. The illustrative operating point is
+The deployment comparison uses the 22~May common complete-case intersection for the eight candidate models with shared full-benchmark outputs on that date: 1113 items observed for all eight models. This avoids changing the evaluated item set across candidates. The illustrative operating point is
 \[
     w=\frac{C_{\mathrm{FN}}}{C_{\mathrm{FP}}}=0.2,
     \qquad
@@ -125,11 +113,11 @@ which is equivalent to \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\) U
 \begin{table}[htbp]
     \centering
     \small
-    \caption{Complete-case results on 22~May 2026 (\(n_t=1112\)); \(w=0.2\), \(\lambda=0.186\).}
+    \caption{Complete-case results on 22~May 2026 (\(n_t=1113\)); \(w=0.2\), \(\lambda=0.186\).}
     \label{tab:canonical-cost-comparison}
     \input{assets/metrics_export/canonical_cost_summary.tex}
 \end{table}
-\reproanchor{The 22~May common-case ranking is computed in \codepath{canonical_evidence.py} from the frozen Langfuse trace/score exports. The exact candidate slice is \codepath{notebooks/canonical_evidence_export/deployment_cost_may22.csv}; the shared-case count, hash, and winner are recorded in \codepath{notebooks/canonical_evidence_export/canonical_summary.json}.}
+\provline{P5}
 
 \texttt{gpt-5-mini} minimises plug-in loss at \(0.003698\). It balances low inference cost with five false positives and 62 false negatives. The cheaper \texttt{gpt-5-nano} is a close second at \(0.003950\): its lower inference cost does not offset 105 false negatives. The accuracy leader \texttt{gpt-5.2} reaches \(0.97932\) accuracy but has loss \(0.010835\), mainly because its inference cost and 16 false positives are expensive under the stated business asymmetry. Therefore neither maximum accuracy nor minimum API price alone selects the preferred deployment model.
 
@@ -139,11 +127,6 @@ which is equivalent to \(C_{\mathrm{FP}}=0.155\) and \(C_{\mathrm{FN}}=0.031\) U
     \caption[Cost-minimising model over error-cost assumptions]{Model minimising the empirical plug-in loss over relative false-negative cost \(w\) and total error severity \(\lambda\). The cross marks the operating point reported in Table~\ref{tab:canonical-cost-comparison}. Large regions with different winners show why the result is conditional on declared penalties.}
     \label{fig:canonical-cost-decision-map}
 \end{figure}
-\reproanchor{The decision map is rendered by \codepath{make_canonical_figures.py} from \codepath{notebooks/canonical_evidence_export/deployment_cost_map_source.csv}; the thesis asset is \thesispath{assets/evidence/fig_canonical_cost_decision_map.pdf}.}
+\provline{P5}
 
-The penalties encode the intended business preference, but they are not estimated from realised downstream losses. The choice is still close: the loss advantage of \texttt{gpt-5-mini} over \texttt{gpt-5-nano} is about \(2.52\times10^{-4}\) USD per request. The decision map therefore matters as much as the point ranking: a modest change in the assumed penalties can change the winner. Sampling uncertainty in the plug-in ranking is not quantified here.
-
-\section{Scope of the result}
-\label{sec:what-established}
-
-Across 173 comparisons, three nominal signals were reviewed. The March \texttt{gpt-4.1-mini} episode recovered in the next run, and the two \texttt{claude-haiku-4-5} signals were not acted on because that model was not deployed. A retrospective closed-family review across the 173 comparisons leaves only the \texttt{gpt-4.1-mini} episode after global Holm correction. For the three-model production portfolio, the panel reduced measured sweep cost by \(71.2\%\). The May complete-case comparison selected \texttt{gpt-5-mini} only under its declared loss scenario. None of these observations proves a provider-side model update, a production-risk shift, or universal superiority of the panel sampler.
+At the declared operating point, \texttt{gpt-5-mini} beats \texttt{gpt-5-nano} by only \(2.52\times10^{-4}\) USD per request. The margin is therefore small, and a modest change in the assumed penalties can change the winner. 

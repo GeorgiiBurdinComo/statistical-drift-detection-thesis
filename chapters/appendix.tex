@@ -5,13 +5,21 @@
 
 \section{Purpose and protocol}
 
-In this thesis, automatic prompt optimisation is an attempted repair of the same campaign-relevance classifier studied in the main chapters. For each post, the model still receives the same campaign definition, post text, and visual content and must still return the same binary label \texttt{campaign\_relevant} \(\in \{0,1\}\). What changes is only the client-controlled instruction prompt that tells the model how to interpret those inputs and where to place the decision boundary between relevant and non-relevant posts.
+Automatic prompt optimisation (APO) is an attempted repair of the same
+campaign-relevance classifier studied in the main chapters. The task, labels,
+model endpoint, output schema, and parser stay fixed. Only the client-controlled
+instruction prompt changes.
 
-This distinction matters for the drift framework. Passive monitoring keeps the full request contract fixed and asks whether the provider-side behaviour changed over time. If a closed provider model starts behaving differently, its internal cause cannot be inspected or repaired directly by the user. In that situation, one plausible question is whether a small change in the prompt can restore the earlier decision behaviour without switching to another model. Prompt optimisation is different from monitoring because it is an intentional intervention. Once the prompt is rewritten, the system is no longer the original monitored configuration but a new model--prompt candidate that must be evaluated again under the same benchmark protocol before any deployment decision.
+This makes APO conceptually separate from monitoring. Monitoring keeps the
+request contract fixed and asks whether provider-side behaviour changed. APO is
+an intentional intervention that creates a new model--prompt candidate, which
+must return to the same benchmark and deployment comparison as any model switch.
 
-Operationally, APO treats prompt repair as a black-box search problem. A human-written seed prompt is run on labelled classification examples, the error pattern is converted into feedback, and the optimiser proposes revised prompts that may express the relevance rule more clearly or more robustly. The model weights, provider endpoint, output schema, parser, and labels remain fixed during that search; only the prompt text is edited.
-
-A valid APO experiment also needs separation between search and final evaluation. The optimiser may inspect mistakes on an adaptation set and use them to revise the prompt. A separate validation set is then used to select a candidate. A sealed test set is touched only after selection. If test results are inspected while deciding whether to continue, repeat, or reinterpret the search, the evidence becomes exploratory rather than confirmatory. That is the status of the runs reported here.
+Operationally, APO is a black-box search over prompt text. A seed prompt is
+evaluated on labelled examples, the errors are converted into feedback, and the
+optimiser proposes revised prompts. The runs reported here remain exploratory,
+because test results were inspected during interpretation rather than reserved
+for one final confirmatory decision.
 
 \begin{figure}[htbp]
 \centering
@@ -24,13 +32,22 @@ A valid APO experiment also needs separation between search and final evaluation
 
 \section{Exploratory GEPA runs}
 
-The exploratory trial used GEPA (Genetic--Pareto Evolutionary Prompt Optimisation)~\cite{agrawal2025gepa}. In the present setting, a candidate is simply one version of the campaign-relevance instruction prompt. The seed prompt already specifies the task and required boolean output; GEPA does not invent a new task, but rewrites that instruction after observing where the current prompt misclassifies labelled posts.
-The public code repository \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval} stores the frozen split manifest under \texttt{prompt\_optimization/splits/} and the run-level GEPA summaries under \texttt{prompt\_optimization/runs/}. The public manuscript repository \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis} stores the rendered appendix assets cited here. Exact prompt text is intentionally withheld from both public branches.
-\reproanchor{The split definition is public in \codepath{prompt_optimization/splits/train.json}, \codepath{prompt_optimization/splits/val.json}, \codepath{prompt_optimization/splits/test.json}, and \codepath{prompt_optimization/splits/split_manifest.json}. The optimisation code path is \codepath{prompt_optimization/run_gepa.py}; the two frozen historical runs cited below are documented by \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/summary.json}, \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/candidates.csv}, \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/metrics_history.csv}, \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/summary.json}, \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/candidates.csv}, and \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/metrics_history.csv}. Exact prompt text is withheld from the public repos.}
+The exploratory trial used GEPA (Genetic--Pareto Evolutionary Prompt
+Optimisation)~\cite{agrawal2025gepa}. Here, a candidate is one version of the
+campaign-relevance instruction prompt. The seed prompt already defines the task
+and required boolean output; GEPA only rewrites that instruction.
 
-Concretely, GEPA evaluates a parent prompt on a minibatch of benchmark items, identifies which posts were classified incorrectly, and turns those failures into textual feedback for a reflection model. The offspring prompt may then sharpen the relevance criterion, reduce over-triggering on weak brand cues, or better state when merchandise-only or context-poor posts should stay negative. Each offspring is therefore another candidate binary classifier for the same task, not a free-form prompt variant judged subjectively.
+The public repository
+\url{https://github.com/GeorgiiBurdinComo/llm-batch-eval}
+stores the frozen split manifest under \texttt{prompt\_optimization/splits/}
+and the run-level GEPA summaries under \texttt{prompt\_optimization/runs/}.
+Exact prompt text is intentionally withheld from the public branch.
+\provref{P6}
 
-GEPA keeps a population of prompts that perform well on different validation items instead of immediately collapsing the search to one average-best incumbent. This is useful for campaign-relevance classification because the hard cases near the effective decision boundary are heterogeneous: one edit may recover visually implied positives but introduce new false positives on loosely related brand mentions, while another edit does the opposite. Population retention preserves such alternatives until the validation rule selects one.
+GEPA evaluates a parent prompt, turns its mistakes into textual feedback, and
+proposes revised prompts. Each offspring is another candidate classifier for the
+same task. GEPA also keeps a small population of validation-strong prompts
+instead of collapsing immediately to one incumbent.
 
 Two runs used the same \(719/239/241\) train/validation/test split. Both validation-selected prompts improved validation accuracy, but their descriptive test outcomes differed:
 
@@ -48,60 +65,120 @@ Model & Seed val. & Best val. & Seed test & Best test & Test change \\
 \bottomrule
 \end{tabular}
 \end{table}
-\reproanchor{Table~\ref{tab:app-gepa-runs} is frozen in \codepath{notebooks/thesis_evidence_export/table_gepa_runs.csv}. The public run-level source files are \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/summary.json}, \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/candidates.csv}, \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/metrics_history.csv}, \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/summary.json}, \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/candidates.csv}, and \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/metrics_history.csv}. Exact prompt text and prompt-bearing JSON artifacts are intentionally withheld from the public repos.}
+\provline{P6}
 
-The two outcomes move in opposite directions. This shows two things at once. First, even with a closed API model, automated prompt search can sometimes recover noticeably better classification behaviour on the same task, so APO is a plausible corrective mechanism when weight updates are unavailable. In the small exploratory trial here, this was tested on two models and at least one run produced a much stronger candidate. Second, large validation gains do not by themselves guarantee stable generalisation to unseen labelled posts. For that reason, a rewritten prompt cannot be treated as a silent patch; it must return to the same full-benchmark and cost-aware comparison as any alternative model.
+The two outcomes move in opposite directions. APO can therefore improve the same
+task on a closed API model, but large validation gains do not guarantee stable
+test performance. A rewritten prompt is another candidate, not a silent patch,
+and must return to the same full-benchmark and cost-aware comparison.
 
-Because test outcomes were inspected while the broader experimental sequence was still being interpreted, Table~\ref{tab:app-gepa-runs} is descriptive evidence only. It documents feasibility and risk, not a confirmed production-ready recovery result.
+Table~\ref{tab:app-gepa-runs} is descriptive evidence only. It shows feasibility
+and risk, not a confirmed production-ready recovery result.
 
 \section{Possible use after a provider-side model change}
 
-If a future monitoring cycle shows a sustained and actionable degradation signal again, prompt optimisation could be used to generate an alternative prompt as one candidate beside a model switch. The practical idea is simple: if the provider model is closed and appears to have shifted, first test whether its behaviour can be nudged back toward acceptable classification performance by revising the instruction prompt. In that workflow, APO does not replace drift detection and does not bypass model comparison; it only adds another controllable recovery path when changing the prompt is operationally easier than replacing the provider model. Any revised prompt must still pass the same sealed full-benchmark and cost-aware evaluation as the model-based alternatives.
+If a future monitoring cycle shows a sustained and actionable degradation,
+prompt optimisation could generate one recovery candidate beside a model switch.
+It does not replace drift detection or model comparison. It adds one more
+controllable response when changing the prompt is operationally easier than
+replacing the provider model.
 
-The observed March episode did not require this step because the degradation was transient rather than sustained. The GEPA runs reported here therefore sit outside the production episode. They are included only as exploratory evidence that, on two tested models, automated methods can sometimes find a better prompt candidate and thus offer a realistic response option if a future long-duration trigger occurs.
+The observed March episode did not require this step, because the degradation
+was transient. The GEPA runs therefore sit outside the production episode and
+remain exploratory evidence only.
 
-\section{Reproducibility ledger}
+\chapter{Reproducibility Ledger}
+\label{app:reproducibility-ledger}
 
-Table~\ref{tab:repro-ledger} collects the shortest route from the main thesis claims to their public code, frozen inputs, and rendered assets.
+The entries below expand the numbered provenance pointers used in the main text.
 
-\begin{table}[p]
-\centering
-\scriptsize
-\caption[Reproducibility ledger]{Compact ledger from major thesis claims to public code, frozen inputs, and rendered assets.}
-\label{tab:repro-ledger}
-\begin{tabularx}{\linewidth}{L{0.22\linewidth}L{0.23\linewidth}L{0.28\linewidth}Y}
-\toprule
-Claim or figure & Computed by & Frozen input(s) & Rendered thesis output \\
-\midrule
-Panel-size planning and exact power in Chapters~2 and~7 &
-\codepath{canonical_evidence.py} &
-\codepath{notebooks/canonical_evidence_export/exact_unconditional_power_sensitivity.csv}; \codepath{streamlit_app/langfuse_traces.csv}; \codepath{streamlit_app/langfuse_scores.csv} &
-\thesispath{assets/evidence/fig_panel_size_vs_rho.pdf}; \thesispath{assets/metrics_export/canonical_power_summary.tex}; \thesispath{assets/evidence/fig_canonical_power_heatmap.pdf} \\
-\addlinespace
-Disagreement matrix, vote-share structure, and fixed panel definition in Chapter~2 &
-\codepath{make_disagreement_figure.py}; \codepath{canonical_evidence.py} &
-\codepath{notebooks/canonical_evidence_export/canonical_disagreement_matrix_source.csv}; \codepath{notebooks/canonical_evidence_export/canonical_disagreement_matrix_summary.json}; \codepath{notebooks/canonical_evidence_export/panel_ids.txt} &
-\thesispath{assets/evidence/fig_vote_share_distribution.pdf}; \thesispath{assets/evidence/fig_canonical_disagreement_matrix.pdf} \\
-\addlinespace
-Monitoring-window totals, nominal signals, March trigger, and rebound in Chapter~7 &
-\codepath{canonical_evidence.py}; \codepath{scripts/sync_canonical_evidence.py} &
-\codepath{notebooks/canonical_evidence_export/canonical_summary.json}; \codepath{notebooks/canonical_evidence_export/baseline_to_later_mcnemar.csv}; \codepath{notebooks/canonical_evidence_export/eligible_monitoring_runs.csv} &
-\thesispath{assets/metrics_export/canonical_monitoring_summary.tex}; \thesispath{assets/metrics_export/canonical_nominal_comparisons.tex}; \thesispath{assets/evidence/fig_canonical_monitoring_trajectory.pdf}; \thesispath{assets/evidence/fig_canonical_mcnemar_matrix.pdf} \\
-\addlinespace
-Dashboard views and stored-artifact narrative in Chapter~6 &
-\codepath{streamlit_app/app.py}; \codepath{streamlit_app/export_langfuse_csv.py} &
-\codepath{streamlit_app/langfuse_traces.csv}; \codepath{streamlit_app/langfuse_scores.csv}; \codepath{notebooks/canonical_evidence_export/input_manifest.json} &
-\thesispath{assets/evidence/fig_dashboard_overview_shot.png}; \thesispath{assets/evidence/fig_dashboard_mcnemar_shot.png}; \thesispath{assets/evidence/fig_dashboard_expected_cost_shot.png} \\
-\addlinespace
-Cost comparison, mini-versus-nano worked example, and decision map in Chapters~4 and~7 &
-\codepath{canonical_evidence.py}; \codepath{make_canonical_figures.py} &
-\codepath{notebooks/canonical_evidence_export/deployment_cost_may22.csv}; \codepath{notebooks/canonical_evidence_export/deployment_cost_map_source.csv}; \codepath{notebooks/canonical_evidence_export/canonical_summary.json} &
-\thesispath{assets/metrics_export/canonical_cost_summary.tex}; \thesispath{assets/evidence/fig_canonical_cost_decision_map.pdf}; \thesispath{assets/fig_mini_nano_tradeoff.tex} \\
-\addlinespace
-Exploratory GEPA split, run summaries, and appendix outcome table &
-\codepath{prompt_optimization/run_gepa.py} &
-\codepath{prompt_optimization/splits/split_manifest.json}; \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/summary.json}; \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/summary.json} &
-\codepath{notebooks/thesis_evidence_export/table_gepa_runs.csv}; exact prompt text withheld from public repos \\
-\bottomrule
-\end{tabularx}
-\end{table}
+\begingroup
+\small
+
+\phantomsection\label{prov:P1}
+\paragraph*{[P1] Panel-size planning and exact power}
+\begin{description}
+    \item[Scope] Panel-size planning in Chapter~2.
+    \item[Computed by] \codepath{canonical_evidence.py}; figure rendering in \codepath{make_canonical_figures.py}.
+    \item[Frozen inputs] \codepath{notebooks/canonical_evidence_export/exact_unconditional_power_sensitivity.csv}; \codepath{streamlit_app/langfuse_traces.csv}; \codepath{streamlit_app/langfuse_scores.csv}.
+    \item[Rendered outputs] \texttt{assets/evidence/fig\_panel\_size\_vs\_rho.pdf}.
+\end{description}
+
+\phantomsection\label{prov:P2}
+\paragraph*{[P2] Disagreement matrix and fixed panel definition}
+\begin{description}
+    \item[Scope] Vote-share structure, disagreement matrix, and the frozen 300-item panel in Chapter~2.
+    \item[Computed by] \codepath{make_disagreement_figure.py}; \codepath{canonical_evidence.py}.
+    \item[Frozen inputs] \codepath{notebooks/canonical_evidence_export/canonical_disagreement_matrix_source.csv}; \codepath{notebooks/canonical_evidence_export/canonical_disagreement_matrix_summary.json}; \codepath{notebooks/canonical_evidence_export/panel_ids.txt}.
+    \item[Rendered outputs] \texttt{assets/evidence/fig\_vote\_share\_distribution.pdf}; \texttt{assets/evidence/fig\_canonical\_disagreement\_matrix.pdf}.
+\end{description}
+
+\phantomsection\label{prov:P3}
+\paragraph*{[P3] Dashboard views and stored artifacts}
+\begin{description}
+    \item[Scope] Langfuse-backed datasets, dashboard screenshots in Appendix~\ref{app:dashboard-views}, and the stored-artifact narrative in Chapter~5.
+    \item[Computed by] \codepath{streamlit_app/app.py}; \codepath{streamlit_app/export_langfuse_csv.py}; runtime storage paths in \codepath{scripts/run_eval.py}, \codepath{scripts/poll_and_ingest.py}, and \codepath{scripts/ingest.py}.
+    \item[Frozen inputs] \codepath{streamlit_app/langfuse_traces.csv}; \codepath{streamlit_app/langfuse_scores.csv}; \codepath{notebooks/canonical_evidence_export/input_manifest.json}; \codepath{notebooks/canonical_evidence_export/artifact_manifest.csv}.
+    \item[Rendered outputs] \texttt{assets/evidence/fig\_dashboard\_overview\_shot.png}; \texttt{assets/evidence/fig\_dashboard\_mcnemar\_shot.png}; \texttt{assets/evidence/fig\_dashboard\_expected\_cost\_shot.png}.
+\end{description}
+
+\phantomsection\label{prov:P4}
+\paragraph*{[P4] Monitoring window, nominal alerts, and March rebound}
+\begin{description}
+    \item[Scope] Monitoring-window totals, nominal McNemar signals, and the March \texttt{gpt-4.1-mini} trigger/rebound discussion in Chapter~6.
+    \item[Computed by] \codepath{canonical_evidence.py}.
+    \item[Frozen inputs] \codepath{notebooks/canonical_evidence_export/canonical_summary.json}; \codepath{notebooks/canonical_evidence_export/baseline_to_later_mcnemar.csv}; \codepath{notebooks/canonical_evidence_export/eligible_monitoring_runs.csv}; \texttt{assets/metrics\_export/table\_claim\_ledger.csv}.
+    \item[Rendered outputs] \texttt{assets/metrics\_export/canonical\_monitoring\_summary.tex}; \texttt{assets/metrics\_export/canonical\_nominal\_comparisons.tex}; \texttt{assets/evidence/fig\_canonical\_monitoring\_trajectory.pdf}; \texttt{assets/evidence/fig\_canonical\_mcnemar\_matrix.pdf}.
+\end{description}
+
+\phantomsection\label{prov:P5}
+\paragraph*{[P5] Cost comparison and decision map}
+\begin{description}
+    \item[Scope] Common-case cost ranking and the mini-versus-nano worked example in Chapter~4, monitoring-cost scenarios in Chapter~6, and the decision map in Chapter~6.
+    \item[Computed by] \codepath{canonical_evidence.py}; \codepath{make_canonical_figures.py}.
+    \item[Frozen inputs] \codepath{notebooks/canonical_evidence_export/deployment_cost_may22.csv}; \codepath{notebooks/canonical_evidence_export/deployment_cost_map_source.csv}; \codepath{notebooks/canonical_evidence_export/canonical_summary.json}; \codepath{streamlit_app/langfuse_traces.csv}; \codepath{streamlit_app/langfuse_scores.csv}.
+    \item[Rendered outputs] \texttt{assets/metrics\_export/canonical\_cost\_summary.tex}; \texttt{assets/metrics\_export/monitoring\_cost\_summary.tex}; \texttt{assets/metrics\_export/production\_monitoring\_scenarios.tex}; \texttt{assets/evidence/fig\_canonical\_cost\_decision\_map.pdf}; \texttt{assets/fig\_mini\_nano\_tradeoff.tex}.
+\end{description}
+
+\phantomsection\label{prov:P6}
+\paragraph*{[P6] Exploratory GEPA run summaries}
+\begin{description}
+    \item[Scope] Split definition, GEPA run summaries, and the appendix outcome table.
+    \item[Computed by] \codepath{prompt_optimization/run_gepa.py}.
+    \item[Frozen inputs] \codepath{prompt_optimization/splits/split_manifest.json}; \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/summary.json}; \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/candidates.csv}; \codepath{prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/metrics_history.csv}; \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/summary.json}; \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/candidates.csv}; \codepath{prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/metrics_history.csv}.
+    \item[Rendered outputs] \texttt{assets/metrics\_export/table\_gepa\_runs.csv}. Exact prompt text is intentionally withheld from the public repo.
+\end{description}
+
+\endgroup
+
+\chapter{Dashboard Review Views}
+\label{app:dashboard-views}
+
+Section~\ref{sec:metrics-dashboard} describes the read-only Streamlit dashboard used for
+stakeholder review after monitoring and escalation.
+The live app is available at\\
+\url{https://llm-eval-dashboard.streamlit.app/}.
+Figure~\ref{fig:dashboard-canonical} shows the three review views driven by the exported
+Langfuse CSV snapshots.
+\provref{P3}
+
+\begin{figure}[htbp]
+    \centering
+    {\small\bfseries (a)}~{\small Overview --- accuracy traces by model}\\[0.35em]
+    \includegraphics[width=0.92\linewidth]{assets/evidence/fig_dashboard_overview_shot.png}\\[1.1em]
+    {\small\bfseries (b)}~{\small McNemar --- paired run comparison}\\[0.35em]
+    \includegraphics[width=0.92\linewidth]{assets/evidence/fig_dashboard_mcnemar_shot.png}
+    \caption[Dashboard reporting views]{Dashboard views for two review questions: run-level accuracy histories across scheduled runs~(a), and paired counts with the exact McNemar result for one baseline/current panel comparison~(b).}
+    \label{fig:dashboard-canonical}
+\end{figure}
+
+\begin{figure}[htbp]
+    \ContinuedFloat
+    \centering
+    {\small\bfseries (c)}~{\small Expected cost --- tunable ranking}\\[0.4em]
+    \begin{adjustbox}{max width=\linewidth, max height=0.84\textheight, keepaspectratio}
+    \includegraphics{assets/evidence/fig_dashboard_expected_cost_shot.png}
+    \end{adjustbox}
+    \caption[]{Continued: expected-cost view~(c) on the common benchmark cases. A reviewer sets \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\); the highlighted bar is the candidate with the lowest displayed \(L_t(m)\). This view supports candidate ranking after escalation from panel monitoring.}
+    \label{fig:dashboard-expected-cost}
+\end{figure}

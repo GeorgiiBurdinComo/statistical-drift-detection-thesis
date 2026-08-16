@@ -1,52 +1,111 @@
 \chapter{Conclusion}
 \label{chap:conclusion}
 
-This thesis separates three decisions that are often conflated:
-\begin{itemize}
-    \item whether a black-box classifier changed on a fixed sensitivity set;
-    \item whether the observation warrants investigation;
-    \item which candidate is preferable for a stated business scenario.
-\end{itemize}
+This thesis establishes a two-stage decision framework for external LLM
+classifiers:
+\begin{enumerate}
+    \item a fixed monitoring panel answers whether behaviour changed;
+    \item a full-benchmark comparison answers which candidate should be deployed
+    for a stated business scenario.
+\end{enumerate}
 
-\paragraph{RQ1: How can campaign-relevance classification by an external LLM API be formalised as repeated evaluation of a non-stationary black-box binary classifier?}
-Campaign-relevance classification by an external LLM API can be formalised as repeated evaluation of a non-stationary black-box binary classifier on fixed labelled items. The observable object is the binary output produced under a fixed client-controlled request contract, while the provider-side state remains hidden. This makes it possible to separate three roles clearly: the production task, the full benchmark used for broad comparison, and the frozen monitoring panel used for repeated paired checks. The same frozen items admit a newly released model into that comparison as soon as a first eligible run exists; that run is the model's baseline for later paired checks. Intentional prompt changes remain conceptually separate from passive behavioural drift.
+\paragraph{RQ1: How can campaign-relevance classification by an external LLM API
+be formalised as repeated evaluation of a non-stationary black-box binary
+classifier?}
+Campaign-relevance classification by an external LLM API can be formalised as
+repeated evaluation of a non-stationary black-box binary classifier on fixed
+labelled items. The observable object is the binary output produced under a
+fixed client-controlled request contract, while the provider-side state remains
+hidden.
+This supports a clean separation between the production task, the full
+benchmark used for candidate comparison, and the frozen monitoring panel used
+for repeated paired checks.
 
-\paragraph{RQ2: How can a reduced monitoring subset be constructed and sized so that routine evaluation is substantially cheaper while retaining sensitivity to behavioural change?}
-The 300-item disagreement-enriched panel provides a low-cost sensitivity set for routine paired monitoring. Its construction concentrates evaluation effort on difficult cases, and the exact power analysis validates \(n=300\) as an adequate implemented size for the intended warning-panel role under the stated planning model, with \(\operatorname{Power}(300)\approx 0.80\). The panel is a low-cost warning instrument. Production-accuracy estimation is out of scope.
+\paragraph{RQ2: How can a reduced monitoring subset be constructed and sized so
+that routine evaluation is substantially cheaper while retaining sensitivity to
+behavioural change?}
+The monitoring subset should be a disagreement-enriched panel that
+concentrates evaluation effort on difficult cases. In this thesis, exact power
+analysis supports an implemented size of \(n=300\), with
+\(\operatorname{Power}(300)\approx 0.80\) under the stated planning model.
+The result is a low-cost warning panel for routine paired monitoring.
+Production-accuracy estimation stays outside its scope.
 
-\paragraph{RQ3: Which paired statistical test and multiplicity treatment provide an appropriate rule for detecting directional degradation across repeated runs?}
-The exact one-sided McNemar test is appropriate because the same labelled posts are observed in both runs. Its input is the imbalance between correct-to-wrong and wrong-to-correct transitions, not two independent accuracy estimates. The operational rule uses nominal paired signals and review on the fixed panel, while a stricter closed-window check can be reserved for later study summary. Over the recorded window, the panel produced three nominal monitoring signals. The strongest was \texttt{gpt-4.1-mini}, which declined by 12.5 percentage points from 15 to 22~March 2026 (\(n=296\), \(b=49\), \(c=12\)) and recovered in the next run. This is an observed temporary correctness change on the panel.
+\paragraph{RQ3: Which paired statistical test provides an appropriate rule for
+detecting directional degradation across repeated runs?}
+The appropriate paired test is the exact one-sided McNemar test, because the
+same labelled posts are observed in both runs and the monitoring question is
+directional.
+The operational rule in this thesis uses nominal pairwise signals
+on the fixed panel to open review. Over the recorded window, this rule
+produced three nominal monitoring signals, including a temporary 12.5
+percentage-point drop for \texttt{gpt-4.1-mini} from 15 to 22~March~2026
+\((n=296,\ b=49,\ c=12)\) that reversed in the next run.
 
-\paragraph{RQ4: How should candidate models be compared and selected when predictive quality, inference cost, and campaign-specific false-positive and false-negative costs differ?}
-On 1,112 common full-benchmark cases, candidates can be compared by mean inference charge plus weighted false-positive and false-negative counts. At the illustrative penalty point \(C_{\mathrm{FP}}=0.155\) USD and \(C_{\mathrm{FN}}=0.031\) USD, \texttt{gpt-5-mini} has loss \(0.003698\), narrowly below \texttt{gpt-5-nano} at \(0.003950\). The ranking depends on both relative and absolute error costs, so a different business scenario can select a different model.
+\paragraph{RQ4: How should candidate models be compared and selected when
+predictive quality, inference cost, and campaign-specific false-positive and
+false-negative costs differ?}
+Candidates should be compared on common full-benchmark cases by mean inference
+charge plus weighted false-positive and false-negative loss:
+\[
+L_t(m)
+=
+c_t(m)
++
+\frac{
+    C_{\mathrm{FP}}\mathrm{FP}_t(m)
+    +
+    C_{\mathrm{FN}}\mathrm{FN}_t(m)
+}{n_t}.
+\]
+Equivalently, with
+\(
+w=C_{\mathrm{FN}}/C_{\mathrm{FP}}
+\)
+and
+\(
+\lambda=C_{\mathrm{FP}}+C_{\mathrm{FN}},
+\)
+the rule can be written as
+\[
+L_t(m;w,\lambda)
+=
+c_t(m)
++
+\frac{\lambda}{1+w}
+\frac{
+    \mathrm{FP}_t(m)+w\mathrm{FN}_t(m)
+}{n_t}.
+\]
+The winner depends on the declared business penalties, so the deployment rule
+must rank candidates by scenario-specific loss rather than by accuracy or API
+price alone.
 
 \section{Contribution and limits}
 
-The contribution is a concrete decision pipeline:
+The main contribution is a concrete decision pipeline:
 \begin{itemize}
-    \item a fixed client-controlled request contract and stable item identifiers make repeated pairing possible;
-    \item a disagreement-enriched panel reduces monitoring cost;
-    \item the frozen labelled items admit a newly released model into the same comparison as existing candidates, with its first eligible run serving as the baseline for later paired checks;
-    \item exact paired testing supplies nominal monitoring signals on the fixed panel;
-    \item manual review separates a signal from an action;
+    \item a fixed client-controlled request contract and stable item identifiers
+    make repeated pairing possible;
+    \item exact paired testing supplies nominal review signals on the fixed panel;
     \item the full benchmark supports scenario-specific candidate selection.
 \end{itemize}
 
 The main limits are material:
 \begin{itemize}
-    \item the panel is a disagreement-enriched sensitivity set;
-    \item the original disagreement-selection matrix is unavailable for exact replay;
-    \item the stored manifest lacks immutable request hashes;
+    \item the panel is a disagreement-enriched sensitivity set, therefore does
+    not provide a valid accuracy estimate itself.
     \item the error prices are scenario inputs.
 \end{itemize}
+
 Future work should:
 \begin{itemize}
-    \item compare random and disagreement-enriched panels prospectively;
-    \item pre-register an online multiple-testing rule;
-    \item preserve immutable evaluation artifacts;
-    \item estimate penalties from real business outcomes.
+    \item test Automatic Prompt Optimisation as a recovery path after a
+    sustained monitoring signal;
+    \item compare APO with other automatic candidate-generation methods, so the
+    review step can propose alternatives automatically when behaviour changes.
 \end{itemize}
 
-The public code repository for the evaluation pipeline and frozen reproducibility inputs is \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval}. The public manuscript repository is \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis}; it contains the thesis source and the publication-ready assets consumed by the \LaTeX{} build. Exact replay remains limited by the external provider APIs, the unavailable original disagreement-selection matrix, and the absence of immutable request hashes in the historical run manifests.
-
-The recorded episode shows why this separation is useful: an observed alert can be real, temporary, and irrelevant to the deployed model. The correct response was review and continued monitoring.
+The public code repository for the evaluation pipeline and frozen
+reproducibility inputs is
+\url{https://github.com/GeorgiiBurdinComo/llm-batch-eval}
