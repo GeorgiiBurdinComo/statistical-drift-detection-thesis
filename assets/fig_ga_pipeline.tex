@@ -1,0 +1,67 @@
+% Scheduled GitHub Actions workflows. Each lane is one workflow; the schedule is
+% carried in the lane label rather than in a node.
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >=Latex,
+  wfstep/.style={
+    draw=vizaxis, line width=0.4pt, rounded corners=1.5pt, fill=white,
+    align=center, text width=21mm, minimum height=10mm, inner sep=2pt
+  },
+  lane/.style={draw=vizgrid, line width=0.5pt, rounded corners=2pt},
+  lanelabel/.style={font=\scriptsize\bfseries, text=vizink, anchor=west, fill=white, inner xsep=1.5mm, inner ysep=0.4mm},
+  flow/.style={->, vizmuted, line width=0.5pt},
+  hand/.style={->, vizblue, line width=0.6pt},
+  node distance=3.8mm,
+]
+
+% ---------------- lane 1: submit
+\node[wfstep] (a1) {Run evaluation\\\texttt{run\_eval.py}};
+\node[wfstep, right=of a1] (a2) {Load panel\\from Langfuse};
+\node[wfstep, right=of a2] (a3) {Serialize through\\provider adapters};
+\node[wfstep, right=of a3] (a4) {Submit provider\\batch jobs};
+\node[wfstep, right=of a4] (a5) {Cache batch\\manifest};
+\foreach \i/\j in {a1/a2, a2/a3, a3/a4, a4/a5} \draw[flow] (\i) -- (\j);
+
+% ---------------- lane 2: retrieve
+\node[wfstep, below=18mm of a1] (b1) {Restore cached\\batch manifest};
+\node[wfstep, right=of b1] (b2) {Poll batch jobs\\and retrieve results};
+\node[wfstep, right=of b2] (b3) {Persist raw results\\as JSONL};
+\node[wfstep, right=of b3] (b4) {Join labels and\\compute scores};
+\node[wfstep, right=of b4] (b5) {Store traces and\\scores in Langfuse};
+\foreach \i/\j in {b1/b2, b2/b3, b3/b4, b4/b5} \draw[flow] (\i) -- (\j);
+
+% ---------------- lane 3: dashboard
+\node[wfstep, below=18mm of b1] (c1) {Export Langfuse\\CSV snapshot};
+\node[wfstep, right=of c1] (c2) {Commit versioned\\analysis snapshot};
+\node[wfstep, right=of c2] (c3) {Publish data to\\dashboard repository};
+\foreach \i/\j in {c1/c2, c2/c3} \draw[flow] (\i) -- (\j);
+
+% ---------------- lane frames and labels
+\begin{scope}[on background layer]
+  \node[lane, fit=(a1)(a5), inner xsep=3mm, inner ysep=3.2mm] (L1) {};
+  \node[lane, fit=(b1)(b5), inner xsep=3mm, inner ysep=3.2mm] (L2) {};
+  \node[lane, fit=(c1)(c3)(b5|-c1), inner xsep=3mm, inner ysep=3.2mm] (L3) {};
+\end{scope}
+\node[lanelabel] at ($(L1.north west)+(2mm,0)$)
+  {\texttt{weekly\_drift\_monitoring.yml} \textnormal{--- Fri 05:00 UTC}};
+\node[lanelabel] at ($(L2.north west)+(2mm,0)$)
+  {\texttt{weekly\_retrieve.yml} \textnormal{--- Mon 05:00 UTC}};
+\node[lanelabel] at ($(L3.north west)+(2mm,0)$)
+  {\texttt{sync-streamlit-dashboard.yml} \textnormal{--- Mon 07:00 UTC}};
+
+% ---------------- cross-lane handoffs, routed through the inter-lane gap
+\coordinate (mid1) at ($(L1.south)!0.5!(L2.north)$);
+\coordinate (mid2) at ($(L2.south)!0.5!(L3.north)$);
+
+% routed left of the lane frames so they never cross a lane label
+\coordinate (offL) at ($(L2.west)-(3.5mm,0)$);
+
+\draw[hand] (a5.south) -- (a5.south|-mid1) -- (offL|-mid1) -- (offL|-b1) -- (b1.west);
+\node[above=0.2mm, font=\scriptsize, text=vizink]
+  at ($(a5.south|-mid1)!0.5!(offL|-mid1)$) {\texttt{batch\_ids.json} via Actions cache};
+
+\draw[hand] (b5.south) -- (b5.south|-mid2) -- (offL|-mid2) -- (offL|-c1) -- (c1.west);
+\node[above=0.2mm, font=\scriptsize, text=vizink]
+  at ($(b5.south|-mid2)!0.5!(offL|-mid2)$) {traces and scores via Langfuse API};
+
+\end{tikzpicture}

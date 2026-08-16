@@ -1,6 +1,15 @@
 # Build directories
 build/
 dist/
+tmp/
+output/
+
+# Local/editor clutter
+.DS_Store
+.cursor/
+__pycache__/
+*.pyc
+Burdin_thesis_draft*.pdf
 
 # Fallback: common TeX artifacts (if generated outside build/)
 *.aux
@@ -29,4 +38,3 @@ dist/
 *.ind
 *.ilg
 *.ist
-/.cursor/settings.json

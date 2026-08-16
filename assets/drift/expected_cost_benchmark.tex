@@ -1,0 +1,17 @@
+% Canonical common-intersection full-benchmark cost table.
+% R = C_FN/C_FP = 8; C_FP=0.25, C_FN=2.0
+% Prevalence fixed at benchmark rho=0.5688; n=1113 shared items.
+\begin{tabular}{lrrrrrr}
+    \toprule
+    Model & $n$ & FP & FN & Accuracy & Mean cost (USD) & Loss (USD) \\
+    \midrule
+    \texttt{gpt-5} & 1113 & 22 & 3 & 0.9775 & 0.006511 & 0.016832 \\
+    \texttt{gpt-5.2} & 1113 & 17 & 7 & 0.9784 & 0.008416 & 0.024900 \\
+    \texttt{gpt-5.1} & 1113 & 17 & 15 & 0.9712 & 0.005299 & 0.036322 \\
+    \texttt{gpt-5.4} & 1113 & 19 & 15 & 0.9695 & 0.011516 & 0.042981 \\
+    \texttt{gpt-5-mini} & 1113 & 5 & 62 & 0.9398 & 0.001274 & 0.115052 \\
+    \texttt{gpt-5-nano} & 1113 & 4 & 104 & 0.9030 & 0.000326 & 0.190208 \\
+    \texttt{gpt-4.1-nano} & 1113 & 49 & 200 & 0.7763 & 0.000692 & 0.374993 \\
+    \texttt{gpt-4.1-mini} & 1113 & 2 & 268 & 0.7574 & 0.001870 & 0.489342 \\
+    \bottomrule
+\end{tabular}

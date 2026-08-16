@@ -1,0 +1,12 @@
+{
+  "n_comparisons": 173,
+  "median_psi": 0.026845637583892617,
+  "psi_q25": 0.013377926421404682,
+  "psi_q75": 0.07692307692307693,
+  "median_gap_days": 64,
+  "mean_delta": 0.003002207456186537,
+  "raw_sig": 3,
+  "holm_sig": 1,
+  "alerts": 1,
+  "median_flips": 8
+}

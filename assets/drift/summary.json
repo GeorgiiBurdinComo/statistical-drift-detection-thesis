@@ -1,0 +1,90 @@
+{
+  "study_window": {
+    "start": "2026-03-15 00:00:00+00:00",
+    "end": "2026-07-06 23:59:59+00:00"
+  },
+  "input_hashes": {
+    "streamlit_app/langfuse_traces.csv": "baa42c5566d2a8cea54451106e8b1a4822474db043729bd2a6c30c243105242d",
+    "streamlit_app/langfuse_scores.csv": "a342e10a6f039c9aa6e0ba662aa9fc6be11a4bb2e890531408dd8a23abdce4c3",
+    "prompt_optimization/splits/train.json": "b07582a19bbb77bd753da77178d69691735b1623b97c0ca9daf9a2ea1adb4ebd",
+    "prompt_optimization/splits/val.json": "14a7d4d1ad05b929fb67650ac8b0cb5a67f8957197a07cf64c0da504efdc4279",
+    "prompt_optimization/splits/test.json": "ad68e5e64d575aa47c43673a507fb0d45379c86f2b627bac71539584efaa9711",
+    "prompt_optimization/splits/split_manifest.json": "4657d370dfae268890bc72201dc62579342ad771b2ee63ebe382486ada8f8543"
+  },
+  "panel": {
+    "n": 300,
+    "hash": "97a522fc5d564c940834beba7d1b0ee12dbf249232a6b2f29f63e353b8e7185d",
+    "positives": 250,
+    "prevalence": 0.8333333333333334
+  },
+  "comparisons": 173,
+  "models": 12,
+  "alert_counts": {
+    "raw": 3,
+    "holm": 1,
+    "holm_floor": 1,
+    "3pp": 2,
+    "5pp": 1
+  },
+  "pooled_median_discordance": 0.026845637583892617,
+  "pilot_power": {
+    "psi": 0.11426188490408674,
+    "power_n273": 0.7561254425944776,
+    "power_n300": 0.7954569616271048,
+    "n_for_80pct": 304
+  },
+  "trigger": {
+    "model": "gpt-4.1-mini",
+    "run_a": "gha-23118723659",
+    "run_b": "gha-23349348405",
+    "date_a": "2026-03-15",
+    "date_b": "2026-03-22",
+    "n_pairs": 296,
+    "acc_a": 0.7871621621621622,
+    "acc_b": 0.6621621621621622,
+    "a": 184,
+    "b": 49,
+    "c": 12,
+    "d": 51,
+    "discordance": 0.20608108108108109,
+    "delta": -0.125,
+    "delta_lo": -0.1747173117207013,
+    "delta_hi": -0.07528268827929871,
+    "p_down": 9.84939209043318e-07,
+    "p_up": 0.999999770558439
+  },
+  "cost": {
+    "day": "2026-05-22",
+    "common_n": 1113,
+    "rho_benchmark": 0.5688073394495413,
+    "C_FP": 0.25,
+    "C_FN": 2.0,
+    "R": 8.0,
+    "n_winners_on_grid": 5,
+    "winner_shares": {
+      "gpt-5": 0.4979166666666667,
+      "gpt-5.2": 0.09791666666666667,
+      "gpt-5.1": 0.03194444444444444,
+      "gpt-5-mini": 0.25833333333333336,
+      "gpt-5-nano": 0.11388888888888889
+    }
+  },
+  "monitoring_cost": {
+    "models": 8,
+    "benchmark_usd": 43.1,
+    "panel_usd": 12.26,
+    "cost_ratio": 3.51,
+    "item_ratio": 3.96,
+    "per_item_benchmark": 0.00455,
+    "per_item_panel": 0.00512,
+    "median_monitoring_day_usd": 24.67,
+    "per_item_premium": 1.13
+  },
+  "gepa_status": "exploratory_test_peek",
+  "notes": [
+    "3pp floor is operational, not inferential",
+    "Holm is retrospective over the frozen family",
+    "Online alpha-spending rule is separate from this analysis",
+    "GEPA existing runs peeked at test and must not be called confirmatory"
+  ]
+}

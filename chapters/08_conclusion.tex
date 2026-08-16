@@ -47,4 +47,6 @@ Future work should:
     \item estimate penalties from real business outcomes.
 \end{itemize}
 
+The public code repository for the evaluation pipeline and frozen reproducibility inputs is \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval}. The public manuscript repository is \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis}; it contains the thesis source and the publication-ready assets consumed by the \LaTeX{} build. Exact replay remains limited by the external provider APIs, the unavailable original disagreement-selection matrix, and the absence of immutable request hashes in the historical run manifests.
+
 The recorded episode shows why this separation is useful: an observed alert can be real, temporary, and irrelevant to the deployed model. The correct response was review and continued monitoring.

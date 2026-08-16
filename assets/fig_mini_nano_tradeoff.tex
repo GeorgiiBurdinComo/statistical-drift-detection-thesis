@@ -1,0 +1,49 @@
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.58\linewidth,
+    height=7.0cm,
+    ybar stacked,
+    bar width=2.7cm,
+    xmin=0.65,
+    xmax=1.85,
+    xtick={1,1.5},
+    xticklabels={{\texttt{gpt-5-mini}},{\texttt{gpt-5-nano}}},
+    ymin=0,
+    ymax=52,
+    clip=false,
+    ylabel={USD cents per 100 categorizations},
+    ytick={0,10,20,30,40},
+    yticklabels={0,10,20,30,40},
+    scaled y ticks=false,
+    ymajorgrids,
+    major grid style={gray!30},
+    axis lines=left,
+    tick label style={font=\small},
+    x tick label style={font=\small},
+    label style={font=\small},
+    legend style={
+        at={(0.5,1.05)},
+        anchor=south,
+        legend columns=-1,
+        font=\small,
+        draw=none
+    },
+]
+\addplot[fill=blue!35, draw=blue!60] coordinates {
+    (1,12.74)
+    (1.5,3.26)
+};
+\addplot[fill=orange!45, draw=orange!70!black] coordinates {
+    (1,6.97)
+    (1.5,6.97)
+};
+\addplot[fill=green!45, draw=green!60!black] coordinates {
+    (1,17.28)
+    (1.5,29.27)
+};
+\legend{Inference, FP cost, FN cost}
+
+\node[font=\normalsize\bfseries, anchor=south] at (axis cs:1,41.2) {37.0};
+\node[font=\normalsize\bfseries, anchor=south] at (axis cs:1.5,41.2) {39.5};
+\end{axis}
+\end{tikzpicture}

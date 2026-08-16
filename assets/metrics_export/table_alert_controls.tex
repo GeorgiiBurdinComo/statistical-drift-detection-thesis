@@ -1,0 +1,18 @@
+\begin{table}
+\caption{All models evaluated in the same batch as the alerting model}
+\label{tab:table-alert-controls}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+model & n\_pairs & acc\_a & acc\_b & b & c & delta & p\_down & p\_down\_holm\_within\_batch \\
+\midrule
+gpt-4.1-mini & 296 & 0.7872 & 0.6622 & 49 & 12 & -0.1250 & 0.0000 & 0.0000 \\
+gpt-4.1-nano & 299 & 0.7224 & 0.7090 & 22 & 18 & -0.0134 & 0.3179 & 1.0000 \\
+gpt-5-mini & 296 & 0.9189 & 0.9122 & 12 & 10 & -0.0068 & 0.4159 & 1.0000 \\
+gpt-5.2 & 297 & 0.9663 & 0.9663 & 1 & 1 & 0.0000 & 0.7500 & 1.0000 \\
+gpt-5-nano & 296 & 0.8345 & 0.8615 & 17 & 25 & 0.0270 & 0.9179 & 1.0000 \\
+gpt-5.1 & 296 & 0.9561 & 0.9696 & 1 & 5 & 0.0135 & 0.9844 & 1.0000 \\
+gemini-2.5-flash & 298 & 0.7987 & 0.8121 & 0 & 4 & 0.0134 & 1.0000 & 1.0000 \\
+gpt-5 & 298 & 0.9664 & 0.9765 & 0 & 3 & 0.0101 & 1.0000 & 1.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,6 @@
+scenario,R,lambda,rank1,rank2,rank3
+symmetric_R1,1.0,2.25,gpt-5,gpt-5.2,gpt-5.1
+illustrative_R8,8.0,2.25,gpt-5,gpt-5.2,gpt-5.1
+recall_critical_R32,32.0,2.25,gpt-5,gpt-5.2,gpt-5.1
+cheap_errors,8.0,0.1,gpt-5-mini,gpt-5.1,gpt-5
+expensive_errors,8.0,20.0,gpt-5,gpt-5.2,gpt-5.1

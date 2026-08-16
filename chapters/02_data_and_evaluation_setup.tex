@@ -56,6 +56,7 @@ For API configuration \(q\) evaluated at time \(t\), benchmark accuracy is
 This is the proportion of the 1199 benchmark posts classified correctly. Since the benchmark was not obtained through a documented probability sample from production, \(A_N(q,t)\) describes performance on this fixed dataset rather than an unbiased estimate of production accuracy.
 
 The benchmark labels were assigned manually by human annotators. Where initial judgements differed, the final reference label was resolved by discussion and then frozen for all subsequent evaluations.
+The public code repository \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval} stores the frozen reproducibility inputs for this benchmark and for the derived monitoring panel, while the public manuscript repository \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis} stores the rendered tables and figures cited in this chapter.
 
 Repeatedly evaluating every monitored configuration on all \(N=1199\) items is expensive. Monitoring therefore relies on a smaller fixed subset
 \begin{equation}

@@ -1,12 +1,42 @@
-# Official LaTeX Template for Term Papers and Theses
+# Statistical Drift Detection Thesis
 
-Caution: Currently there is no officially available template for the corporate design 2019.
+Manuscript repository for the thesis *Statistical Drift Detection for Non-Stationary Black-Box LLM Classifiers*.
 
-This template is meant to be as a replacement of the [old template](https://git.hs-mittweida.de/hsmw-latex/hsmw-latex/-/tree/oldstyle) as well as a preparation of the hopefully soon to be existing corporate design template 2019.
-Although there could be more structural modularisation, the document is prepared as a single class file so you have everything you need with minimal preparation and setup time.
+This repository owns the manuscript source, the publication-ready figures and tables consumed by the LaTeX build, and the small sync/render scripts that turn frozen evidence into thesis assets. The public code and reproducibility pipeline lives in the separate repository [`GeorgiiBurdinComo/llm-batch-eval`](https://github.com/GeorgiiBurdinComo/llm-batch-eval).
 
-You can take a look at _thesisexample_ which is used for documenting the template.
-To start your own journey you may want to use the minimal working examples (mwe) _mwe-paper_ or _mwe-bachelor_.
+## Repository boundary
 
-Please feel free to visit the primary repository for other templates:
-[git.hs-mittweida.de/hsmw-latex/hsmw-latex](https://git.hs-mittweida.de/hsmw-latex/hsmw-latex)
+This repository contains:
+
+- `thesis.tex` and `chapters/` for the manuscript source
+- `literature.bib` and figure `.tex` sources
+- `assets/evidence/` and `assets/metrics_export/` as committed thesis build inputs
+- `scripts/` for evidence-sync and figure/table regeneration used by the manuscript
+
+This repository does not need temporary audit screenshots, editor metadata, local caches, or duplicate output files for publication.
+
+## Reproducibility assets
+
+The thesis build consumes committed publication-ready assets from this repository, including:
+
+- rendered figures under `assets/evidence/`
+- generated tables/macros under `assets/metrics_export/`
+- prompt excerpts copied into the thesis asset tree
+
+The upstream pipeline code, frozen Langfuse CSV snapshots, prompt-optimisation splits, and canonical evidence export remain in [`GeorgiiBurdinComo/llm-batch-eval`](https://github.com/GeorgiiBurdinComo/llm-batch-eval).
+
+## Build
+
+The project uses `latexmk` with outputs written to `build/`.
+
+```bash
+latexmk -pdf thesis.tex
+```
+
+## Important scripts
+
+- `scripts/sync_canonical_evidence.py` copies frozen evidence and prompt artifacts into the thesis asset tree
+- `scripts/compute_planning_power.py` and `scripts/mcnemar_power.py` support the statistical figures and tables
+- `scripts/regen_*.py` rebuild selected publication figures from committed source data
+
+If the code/repro repository is not checked out as a sibling directory named `benchmark_eval`, set `BENCHMARK_EVAL_ROOT` before running `scripts/sync_canonical_evidence.py`.

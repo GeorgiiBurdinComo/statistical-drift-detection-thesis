@@ -1,0 +1,52 @@
+\begin{tikzpicture}[
+    >=Latex,
+    frame/.style={draw=vizaxis, line width=0.5pt, rounded corners=1.5pt, fill=white, inner sep=4.5pt},
+    panel/.style={draw=vizaxis, line width=0.5pt, rounded corners=1.5pt, fill=vizgrid!14, align=left, inner sep=5.5pt},
+    badge/.style={rounded corners=1.5pt, inner sep=3.2pt, font=\scriptsize\bfseries},
+    callout/.style={draw=vizblue, fill=vizblue!12, rounded corners=1pt, inner sep=2.2pt, font=\tiny\bfseries, text=vizink}
+]
+% Campaign brief
+\node[panel, text width=0.97\linewidth] (campaign) {%
+  \textbf{Campaign:} GOCOMO Effie event\quad
+  {\scriptsize A post is relevant only if it is clearly linked to the Effie event itself.}
+};
+
+% Post A - relevant
+\node[frame, below=5.5mm of campaign.south west, anchor=north west, text width=0.455\linewidth] (posta) {%
+  \textbf{Post A}\\[2.5pt]
+  \includegraphics[width=\linewidth]{assets/examples/thumb_relevant.png}\\[3.5pt]
+  {\scriptsize\texttt{"Finalising the Effie report."}}\\[3pt]
+  {\scriptsize\textbf{Evidence}}\\[0.5pt]
+  {\scriptsize
+  \begin{itemize}\setlength\itemsep{0.4pt}\setlength\parsep{0pt}\setlength\topsep{1pt}\setlength\leftmargini{1.1em}
+  \item Effie submission materials on screen
+  \item GOCOMO mug visible in the workspace
+  \item explicit event-related context
+  \end{itemize}}
+};
+
+% Post B - not relevant
+\node[frame, below=5.5mm of campaign.south east, anchor=north east, text width=0.455\linewidth] (postb) {%
+  \textbf{Post B}\\[2.5pt]
+  \includegraphics[width=\linewidth]{assets/examples/thumb_not_relevant.png}\\[3.5pt]
+  {\scriptsize\texttt{"I love my merch."}}\\[3pt]
+  {\scriptsize\textbf{Evidence}}\\[0.5pt]
+  {\scriptsize
+  \begin{itemize}\setlength\itemsep{0.4pt}\setlength\parsep{0pt}\setlength\topsep{1pt}\setlength\leftmargini{1.1em}
+  \item branded mug visible
+  \item brand merchandise only
+  \item no Effie event link
+  \end{itemize}}
+};
+
+% Callouts constrained to Post A only
+\begin{scope}
+\node[callout] (eventcall) at ($(posta.north)+( -0.55cm,-1.45cm)$) {Effie report};
+\draw[->, draw=vizblue, line width=0.55pt] (eventcall.south) -- ++(0,-0.42);
+\node[callout] (mugcall) at ($(posta.north east)+(-1.35cm,-2.35cm)$) {GOCOMO mug};
+\draw[->, draw=vizblue, line width=0.55pt] (mugcall.south) -- ++(0,-0.42);
+\end{scope}
+
+\node[badge, fill=vizblue!16, draw=vizblue, below=2.8mm of posta] {Decision: Relevant};
+\node[badge, fill=vizorange!18, draw=vizorange, below=2.8mm of postb] {Decision: Not relevant};
+\end{tikzpicture}

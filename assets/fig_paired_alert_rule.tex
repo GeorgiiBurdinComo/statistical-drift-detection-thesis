@@ -1,0 +1,18 @@
+\begin{tikzpicture}[
+    >=Latex,
+    node distance=7mm and 10mm,
+    alertstep/.style={figbox, text width=28mm, minimum height=13mm},
+    decision/.style={figdiamond, minimum width=30mm}
+]
+\node[alertstep, fill=vizgrid!25] (pairs) {Complete pairs\\same \texttt{custom\_id}};
+\node[alertstep, right=of pairs, fill=vizgrid!45] (cells) {Count transitions\\\(b:1\to0,\ c:0\to1\)};
+\node[alertstep, right=of cells, fill=vizgrid!25] (test) {Exact one-sided\\McNemar p-value};
+\node[decision, below=8mm of test, fill=vizgrid!25] (signal) {\(b>c\) and\\\(p_{\mathrm{exact}}\le .05\)?};
+\node[alertstep, left=of signal] (review) {Email and review};
+\node[alertstep, right=of signal] (continue) {No signal\\continue monitoring};
+\draw[figarrow] (pairs) -- (cells);
+\draw[figarrow] (cells) -- (test);
+\draw[figarrow] (test) -- (signal);
+\draw[figarrow] (signal.west) -- node[above, font=\scriptsize]{yes} (review.east);
+\draw[figarrow] (signal.east) -- node[above, font=\scriptsize]{no} (continue.west);
+\end{tikzpicture}

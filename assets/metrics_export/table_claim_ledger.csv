@@ -1,0 +1,8 @@
+claim,evidence,status
+Exact one-sided McNemar with global Holm yields one operational alert,173 comparisons; Holm-significant=1; operational alerts (Holm and delta<=-3pp)=1,supported
+gpt-4.1-mini shows a directional degradation on 22 March that later recovers,drop n=296 b=49 c=12 delta=-0.1250 Holm_p=1.97e-06,supported
+The episode is model-specific in the same scheduled batches,7 other models; largest drop -0.0134,supported
+Provider-side cause of the episode is identified,floating aliases; no snapshot ID recorded,NOT supported
+"Cost-optimal model depends on assumed (R, lambda)","5 distinct winners over the grid; shares={'gpt-5': 0.498, 'gpt-5.2': 0.098, 'gpt-5.1': 0.032, 'gpt-5-mini': 0.258, 'gpt-5-nano': 0.114}",supported
+GEPA is a validated post-alert recovery mechanism,offline runs; test set peeked during search; episode recovered without intervention,NOT supported - exploratory only
+"Pilot n=273 guarantees 80% exact unconditional power at psi=0.114, g=0.05",exact power at n=273 is 0.756; n for 80% is 304; n=300 power=0.795,NOT supported - normal approximation overstated power

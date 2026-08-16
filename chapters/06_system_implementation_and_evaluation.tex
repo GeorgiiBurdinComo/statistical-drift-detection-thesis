@@ -1,11 +1,11 @@
 \chapter{System Implementation}
 \label{chap:system-architecture}
 
-This chapter maps the statistical workflow to a batch system. The implementation keeps item-level outputs, scores, and run identity so that completed runs can be rescored, paired, and audited without calling a model again. Inference is delegated to external providers, while the client side fixes datasets, request construction, scoring, and reporting.
+This chapter describes the batch system that runs the evaluation workflow. The implementation stores item-level outputs, scores, and run identifiers so completed runs can be rescored, paired, and audited without calling a model again. External providers return the model outputs. Local code fixes the datasets, builds requests, scores outputs, and exports the review views.
 
-\section{Pipeline boundary}
+\section{System flow}
 \label{sec:evaluation-pipeline-overview}
-The implemented system has five layers:
+The system has five parts:
 \begin{enumerate}
     \item fixed labelled datasets in Langfuse;
     \item request normalization and orchestration;
@@ -13,16 +13,20 @@ The implemented system has five layers:
     \item retrieval, ingestion, and scoring;
     \item a read-only dashboard for review.
 \end{enumerate}
-The same structure supports three operational run types:
+In this system, Langfuse serves as the persistent evaluation store. It holds the two fixed labelled datasets used in the thesis: the full 1199-item benchmark \texttt{campaign\_relevance\_02e1a68ccb0f} and the fixed 300-item monitoring panel \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}. Each dataset item stores the multimodal input, the expected binary label \texttt{campaign\_relevant}, and stable metadata such as \texttt{custom\_id}. After each run, Langfuse also stores traces and scores for the returned outputs.
+
+The public code repository for this pipeline is \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval}. It contains the batch-evaluation code, workflow automation, prompt-optimisation code, and the frozen reproducibility inputs used to regenerate the published evidence. The public manuscript repository is \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis}; it contains the thesis source and the publication-ready assets consumed by the \LaTeX{} build.
+
+These parts support three run types:
 \begin{itemize}
     \item a routine monitoring run evaluates the frozen \(n=300\) panel;
     \item a full-benchmark run evaluates \(\mathcal{D}_N\) during baseline construction or candidate comparison;
     \item an escalation run is a full-benchmark run requested after a panel signal and diagnostic review.
 \end{itemize}
 
-This separation keeps the low-cost warning stage distinct from the higher-cost decision stage. The panel answers whether a paired change appeared on a fixed sensitivity set. The full benchmark is used only when the broader candidate comparison matters.
+The panel run is the weekly warning step because it is cheap enough to repeat. The full benchmark run is the decision step because candidate ranking requires the broader labelled set. The panel answers whether paired performance changed on a fixed sensitivity set. The full benchmark answers which candidate performs better on the broader comparison set.
 
-Figure~\ref{fig:ga-weekly-pipelines} shows the three scheduled workflows. Submission and retrieval are separate because provider batch APIs are asynchronous; the dashboard export begins only after retrieval and ingestion.
+Figure~\ref{fig:ga-weekly-pipelines} shows the three scheduled workflows. Submission and retrieval run as separate jobs because provider batch APIs are asynchronous. The dashboard export starts only after retrieval and ingestion finish.
 
 \begin{figure}[htbp]
     \centering
@@ -85,21 +89,21 @@ Every invocation receives a UTC \texttt{run\_id}. Submission writes \texttt{data
 
 \section{Retrieval, completeness, and scoring}
 \label{sec:metrics-dashboard}
-\texttt{poll\_and\_ingest.py} restores the manifest, polls each submitted batch, and writes completed JSONL files to \texttt{data/results/}. Failed, cancelled, expired, and timed-out jobs are reported separately. A missing result file is listed in the retrieval summary and leaves the corresponding model--run incomplete. Completeness is therefore part of the review step before a paired panel comparison is interpreted.
+\texttt{poll\_and\_ingest.py} restores the manifest, polls each submitted batch, and writes completed JSONL files to \texttt{data/results/}. Failed, cancelled, expired, and timed-out jobs are reported separately. A missing result file is listed in the retrieval summary and leaves the corresponding model--run incomplete. Reviewers check completeness before reading any paired panel result.
 
 For downloaded rows, \texttt{ingest.py} joins the response to its label by \texttt{custom\_id}, records \texttt{model}, \texttt{provider}, and \texttt{run\_id} in trace metadata, and writes three downstream quantities: binary correctness, the TP/FP/TN/FN error type, and token-derived inference cost. Precision, recall, and F1 are then computed as defined in Section~\ref{sec:classification-metrics}. Results without a matching label receive no accuracy or error-type score.
 
 The implementation distinguishes an absent provider result from a malformed returned result. Absence leaves no scored row. By contrast, the current parser maps a missing or invalid structured boolean in a returned row to \texttt{false}; this deterministic fallback keeps the row, so format failures remain visible through retrieval summaries and trace inspection.
 
-The same scored outputs feed a read-only Streamlit reporting layer used with product stakeholders. Offline Langfuse score and trace snapshots drive:
+The same scored outputs are exported to a read-only Streamlit dashboard used in stakeholder review. Offline Langfuse score and trace snapshots drive:
 \begin{itemize}
     \item an overview of accuracy traces by model and run;
     \item paired McNemar evidence;
     \item expected-cost ranking on common benchmark cases.
 \end{itemize}
-An external email notification informs the responsible engineer about an alert, after which review and escalation continue in the same evidence store.
+An external email notification opens the review step after an alert. The same evidence store then supports the follow-up checks and any later escalation.
 
-The third view implements the expected-cost ranking of Chapter~\ref{ch:cost-deployment-utility} on the common benchmark cases. For each candidate it displays
+The third view implements the expected-cost ranking of Chapter~\ref{ch:cost-deployment-utility} on the common benchmark cases. It uses the common cases so every candidate is scored on the same labelled items. For each candidate it displays
 \begin{equation}
 L_t(m)
 =
@@ -112,16 +116,16 @@ C_{\mathrm{FN}}\,\mathrm{FN}_t(m)
 }{n_t},
 \label{eq:dashboard-expected-cost}
 \end{equation}
-which is Equation~\eqref{eq:expected-cost}. Inference charges \(c_t(m)\) and error counts come from scored traces. The penalties \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) are scenario inputs. A reviewer can change them, or the ratio \(C_{\mathrm{FN}}/C_{\mathrm{FP}}\), and the ranking updates immediately. The highlighted minimiser of \(L_t(m)\) is the current minimum-expected-cost candidate under those prices. Changing the penalties can change which model wins. The dashboard reports that comparison for human review. Any deployment change stays a separate manual decision.
+which is Equation~\eqref{eq:expected-cost}. Here \(c_t(m)\) is the API charge per case for candidate \(m\), \(\mathrm{FP}_t(m)\) and \(\mathrm{FN}_t(m)\) are its false-positive and false-negative counts on the common benchmark cases, and \(n_t\) is the number of those common cases. The penalties \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\) set the review scenario. For example, if \(C_{\mathrm{FP}}=1\), \(C_{\mathrm{FN}}=4\), \(\mathrm{FP}_t(m)=3\), \(\mathrm{FN}_t(m)=5\), and \(n_t=500\), then the penalty term is \((1\cdot 3 + 4\cdot 5)/500 = 0.046\) cost units per case before the API charge \(c_t(m)\) is added. A reviewer can change the penalties, or the ratio \(C_{\mathrm{FN}}/C_{\mathrm{FP}}\), and the ranking updates immediately. The highlighted bar is the candidate with the lowest displayed expected cost under the current settings. The dashboard reports that ranking for review, after which the engineer can recommend a deployment change.
 
 \clearpage
 \begin{figure}[!p]
     \centering
     {\small\bfseries (a)}~{\small Overview --- accuracy traces by model}\\[0.35em]
-    \includegraphics[width=\linewidth]{assets/evidence/fig_dashboard_overview_shot.png}\\[1.1em]
+    \includegraphics[width=0.92\linewidth]{assets/evidence/fig_dashboard_overview_shot.png}\\[1.1em]
     {\small\bfseries (b)}~{\small McNemar --- paired run comparison}\\[0.35em]
-    \includegraphics[width=\linewidth]{assets/evidence/fig_dashboard_mcnemar_shot.png}
-    \caption[Dashboard reporting views]{Streamlit reporting layer: per-model accuracy traces across scheduled runs~(a) and paired McNemar evidence between run dates~(b).}
+    \includegraphics[width=0.92\linewidth]{assets/evidence/fig_dashboard_mcnemar_shot.png}
+    \caption[Dashboard reporting views]{Dashboard views for two review questions: run-level accuracy histories across scheduled runs~(a), and paired counts with the exact McNemar result for one baseline/current panel comparison~(b).}
     \label{fig:dashboard-canonical}
 \end{figure}
 \clearpage
@@ -132,7 +136,7 @@ which is Equation~\eqref{eq:expected-cost}. Inference charges \(c_t(m)\) and err
     \begin{adjustbox}{max width=\linewidth, max height=0.84\textheight, keepaspectratio}
     \includegraphics{assets/evidence/fig_dashboard_expected_cost_shot.png}
     \end{adjustbox}
-    \caption[]{Continued: expected-cost view~(c) on the common benchmark cases. A reviewer sets \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\); the highlighted bar is the current minimiser of \(L_t(m)\). The dashboard reports this ranking for review; deployment stays a separate manual decision.}
+    \caption[]{Continued: expected-cost view~(c) on the common benchmark cases. A reviewer sets \(C_{\mathrm{FP}}\) and \(C_{\mathrm{FN}}\); the highlighted bar is the candidate with the lowest displayed \(L_t(m)\). This view supports candidate ranking after escalation from panel monitoring.}
     \label{fig:dashboard-expected-cost}
 \end{figure}
 \clearpage
@@ -169,9 +173,11 @@ These records keep predictions from different executions separate and pair the s
 
 For the fixed datasets used in this thesis, the persisted benchmark identifier is \texttt{campaign\_relevance\_02e1a68ccb0f} and the persisted monitoring-panel identifier is \texttt{campaign\_relevance\_disagree\_subset\_9d488308aa46}. Langfuse-backed traces, scores, and their export layer preserve these dataset keys so every reported value remains traceable to one fixed benchmark or panel definition.
 
+The public code repository keeps the reproducibility inputs that sit upstream of these stored records, including the evaluation pipeline, the frozen Langfuse CSV snapshots, and the canonical evidence export. The public manuscript repository keeps the rendered figures, tables, prompt excerpts, and \LaTeX{} assets cited in this thesis.
+
 \section{Post-run decision logic}
 \label{sec:decision-logic}
-Figure~\ref{fig:run-decision-logic} keeps monitoring and ranking separate. An alert triggers an audit of completeness and parser errors, comparison with same-batch models, and a manual decision on escalation. A later run can reveal persistence or rebound. If escalation is justified, the next step is full-benchmark evaluation of another model or an optional revised prompt.
+Figure~\ref{fig:run-decision-logic} shows the post-alert procedure. A panel alert first triggers a check of completeness, matched identifiers, missing pairs, and provider or parser failures. The reviewer then checks whether the shift persists in the next run and whether same-batch models moved in the same direction. If the episode remains sustained and actionable, the next step is a full-benchmark evaluation of an alternative model and, optionally, of a revised prompt.
 
 \begin{figure}[htbp]
     \centering
@@ -229,7 +235,7 @@ Figure~\ref{fig:run-decision-logic} keeps monitoring and ranking separate. An al
     \draw[figarrow] (decision) -- node[midway, right, font=\scriptsize]{yes} (switch);
     \end{tikzpicture}
     \end{adjustbox}
-    \caption[Post-run decision logic]{A panel alert opens diagnostic review. Deployment stays manual. For a sustained, actionable episode, the solid path considers an alternative model and the dotted optional path generates a revised prompt. Either candidate must pass full-benchmark evaluation and the same declared acceptance rule.}
+    \caption[Post-run decision logic]{Post-alert procedure from panel signal to recommendation. An alert triggers data-quality checks first, then a persistence review, then optional full-benchmark candidate evaluation. The final output is a recommendation to retain the current setup or recommend a model or prompt change under the declared acceptance rule.}
     \label{fig:run-decision-logic}
 \end{figure}
 \FloatBarrier

@@ -1,0 +1,82 @@
+% APO design space, redrawn from the survey's taxonomy (Ramnath et al., 2025).
+% Section numbers of the original are deliberately omitted: they refer to that
+% paper's structure, not this thesis.
+\begin{forest}
+  for tree={
+    grow'=east,
+    growth parent anchor=east,
+    parent anchor=east,
+    child anchor=west,
+    anchor=west,
+    draw=vizaxis,
+    line width=0.4pt,
+    rounded corners=1pt,
+    align=left,
+    inner sep=2.5pt,
+    font=\scriptsize,
+    edge={vizmuted, line width=0.4pt},
+    edge path={
+      \noexpand\path[\forestoption{edge}]
+        (!u.parent anchor) -- +(4pt,0) |- (.child anchor)\forestoption{edge label};
+    },
+    l sep=20pt,
+    s sep=3.5pt,
+    where level=1{tier=stage}{},
+    where level=2{tier=branch}{},
+    where n children=0{
+      tier=leaf,
+      text width=50mm,
+      minimum width=50mm,
+    }{},
+  }
+  [Automatic prompt\\optimisation, fill=vizgrid, font=\scriptsize\bfseries
+    [Seed prompts, fill=vizgrid!40
+      [manual instructions, fill=vizorange!18, draw=vizorange]
+      [instruction induction via LLMs]
+    ]
+    [Evaluation\\and feedback, fill=vizgrid!40
+      [numeric score
+        [task accuracy, fill=vizorange!18, draw=vizorange]
+        [reward-model score]
+        [entropy-based]
+        [negative log-likelihood]
+      ]
+      [LLM feedback
+        [single candidate, fill=vizorange!18, draw=vizorange]
+        [multiple candidates]
+      ]
+      [human feedback]
+    ]
+    [Candidate\\generation, fill=vizgrid!40
+      [heuristic edits
+        [Monte Carlo sampling]
+        [genetic algorithms]
+        [word / phrase edits]
+        [vocabulary pruning]
+      ]
+      [auxiliary trained network
+        [reinforcement learning]
+        [LLM fine-tuning]
+        [generative adversarial networks]
+      ]
+      [metaprompt design, fill=vizorange!18, draw=vizorange]
+      [coverage-based
+        [single-prompt expansion]
+        [mixture of experts]
+        [ensemble methods]
+      ]
+      [program synthesis]
+    ]
+    [Filter and retain\\candidates, fill=vizgrid!40
+      [TopK greedy search]
+      [Pareto population, fill=vizorange!18, draw=vizorange]
+      [upper confidence bound and variants]
+      [region-based joint search]
+      [metaheuristic ensemble]
+    ]
+    [Iteration depth, fill=vizgrid!40
+      [fixed steps]
+      [variable steps, fill=vizorange!18, draw=vizorange]
+    ]
+  ]
+\end{forest}

@@ -25,6 +25,7 @@ A valid APO experiment also needs separation between search and final evaluation
 \section{Exploratory GEPA runs}
 
 The exploratory trial used GEPA (Genetic--Pareto Evolutionary Prompt Optimisation)~\cite{agrawal2025gepa}. In the present setting, a candidate is simply one version of the campaign-relevance instruction prompt. The seed prompt already specifies the task and required boolean output; GEPA does not invent a new task, but rewrites that instruction after observing where the current prompt misclassifies labelled posts.
+The public code repository \url{https://github.com/GeorgiiBurdinComo/llm-batch-eval} stores the frozen split manifest under \texttt{prompt\_optimization/splits/} and the run-specific prompt artifacts under \texttt{prompt\_optimization/runs/}. The public manuscript repository \url{https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis} stores the prompt excerpts and rendered appendix assets cited here.
 
 Concretely, GEPA evaluates a parent prompt on a minibatch of benchmark items, identifies which posts were classified incorrectly, and turns those failures into textual feedback for a reflection model. The offspring prompt may then sharpen the relevance criterion, reduce over-triggering on weak brand cues, or better state when merchandise-only or context-poor posts should stay negative. Each offspring is therefore another candidate binary classifier for the same task, not a free-form prompt variant judged subjectively.
 

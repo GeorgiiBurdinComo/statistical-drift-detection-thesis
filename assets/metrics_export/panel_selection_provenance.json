@@ -1,0 +1,76 @@
+{
+  "construction_models_and_prediction_counts": {
+    "gemini-2.0-flash": 299,
+    "gemini-2.5-flash": 299,
+    "gemini-2.5-flash-preview-09-2025": 288,
+    "gemini-2.5-pro": 299,
+    "gemini-3-flash-preview": 299,
+    "gemini-3-pro-preview": 1199,
+    "gpt-4.1": 300,
+    "gpt-4.1-mini": 300,
+    "gpt-4.1-nano": 300,
+    "gpt-4o": 300,
+    "gpt-4o-mini": 1197,
+    "gpt-5": 300,
+    "gpt-5-mini": 300,
+    "gpt-5-nano": 300,
+    "gpt-5.1": 300,
+    "gpt-5.2": 300
+  },
+  "earliest_surviving_postselection_matrix": {
+    "complete_14_model_items": 296,
+    "file": "panel_postselection_predictions.csv",
+    "items": 300,
+    "models": 14,
+    "note": "These predictions verify the frozen panel but were recorded after selection and are not substituted for the missing construction matrix.",
+    "rows": 4194,
+    "run_id": "20260308-204344Z"
+  },
+  "historical_sampler": {
+    "final_shuffle": true,
+    "percentile_buckets": {
+      "high": "score >= p80",
+      "low": "score < p50",
+      "medium": "p50 <= score < p80"
+    },
+    "random_generator": "numpy.random.default_rng",
+    "replacement": false,
+    "repository": "benchmark_eval",
+    "score": "population_std(boolean_predictions) * binary_shannon_entropy",
+    "seed": 42,
+    "source_at_commit": "52abcc2^:scripts/sample.py",
+    "source_blob_sha1": "9ca37b38fb94e9e09ab728a26d8bc65068330ef6",
+    "target_counts": {
+      "high": 201,
+      "low": 30,
+      "medium": 69
+    },
+    "top_up_order": [
+      "remaining_scored_rows",
+      "uncovered_rows"
+    ]
+  },
+  "non_recoverable_inputs": [
+    "data/baseline_predictions.json",
+    "the original ordered 1200-row source export"
+  ],
+  "panel": {
+    "identifier_file": "panel_ids.txt",
+    "items": 300,
+    "sha256_sorted_ids_with_final_newline": "bfcfcbb85ab433349f2825616c6baa96d4c2bbbd5a385c82999bac2bb8887e34",
+    "sha256_sorted_ids_without_final_newline": "97a522fc5d564c940834beba7d1b0ee12dbf249232a6b2f29f63e353b8e7185d"
+  },
+  "recovered_execution_diagnostics": {
+    "covered_items": 1199,
+    "high_pool": 349,
+    "low_pool": 0,
+    "medium_pool": 850,
+    "negative_labels": 518,
+    "p50": 0.0,
+    "p80": 0.30005565652885874,
+    "positive_labels": 682,
+    "source_items": 1200,
+    "uncovered_items": 1
+  },
+  "status": "Recovered provenance package. The ignored per-item construction matrix is not present, so the historical random draw cannot be replayed."
+}

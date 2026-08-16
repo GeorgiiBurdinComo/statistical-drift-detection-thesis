@@ -1,0 +1,372 @@
+{
+  "n": 300,
+  "alpha": 0.05,
+  "target_power": 0.8,
+  "note": "MDE requires 0<=delta<=rho; unattainable when max power at delta=rho < 0.80",
+  "models": [
+    {
+      "model": "gpt-4.1-nano",
+      "comparisons": 16,
+      "median_psi": 0.152,
+      "mde_80": 0.0580575589344444,
+      "power_at_rho": 1.0000000000000004,
+      "attainable": true
+    },
+    {
+      "model": "gpt-5-nano",
+      "comparisons": 15,
+      "median_psi": 0.124,
+      "mde_80": 0.05237483492030151,
+      "power_at_rho": 0.9999999999991749,
+      "attainable": true
+    },
+    {
+      "model": "gpt-5-mini",
+      "comparisons": 15,
+      "median_psi": 0.08,
+      "mde_80": 0.042216261689900406,
+      "power_at_rho": 0.9999996960027914,
+      "attainable": true
+    },
+    {
+      "model": "gpt-4.1-mini",
+      "comparisons": 16,
+      "median_psi": 0.062,
+      "mde_80": 0.0370916088260201,
+      "power_at_rho": 0.9999641975133692,
+      "attainable": true
+    },
+    {
+      "model": "claude-haiku-4-5",
+      "comparisons": 14,
+      "median_psi": 0.034,
+      "mde_80": 0.027709446913379,
+      "power_at_rho": 0.9760627894502744,
+      "attainable": true
+    },
+    {
+      "model": "claude-sonnet-4-5",
+      "comparisons": 14,
+      "median_psi": 0.03,
+      "mde_80": 0.025958099297777155,
+      "power_at_rho": 0.9475658680410781,
+      "attainable": true
+    },
+    {
+      "model": "gpt-5.1",
+      "comparisons": 15,
+      "median_psi": 0.02,
+      "mde_80": null,
+      "power_at_rho": 0.7176476540226981,
+      "attainable": false
+    },
+    {
+      "model": "gemini-2.5-flash",
+      "comparisons": 12,
+      "median_psi": 0.017,
+      "mde_80": null,
+      "power_at_rho": 0.5784967715291895,
+      "attainable": false
+    },
+    {
+      "model": "claude-sonnet-4-6",
+      "comparisons": 14,
+      "median_psi": 0.015,
+      "mde_80": null,
+      "power_at_rho": 0.46861284985061646,
+      "attainable": false
+    },
+    {
+      "model": "gpt-5.4",
+      "comparisons": 13,
+      "median_psi": 0.013,
+      "mde_80": null,
+      "power_at_rho": 0.35150368813616617,
+      "attainable": false
+    },
+    {
+      "model": "gpt-5.2",
+      "comparisons": 14,
+      "median_psi": 0.01,
+      "mde_80": null,
+      "power_at_rho": 0.18388883253036337,
+      "attainable": false
+    },
+    {
+      "model": "gpt-5",
+      "comparisons": 15,
+      "median_psi": 0.007,
+      "mde_80": null,
+      "power_at_rho": 0.06146362347631597,
+      "attainable": false
+    }
+  ],
+  "power_grid_n300": [
+    {
+      "n": 300,
+      "rho": 0.01,
+      "delta": 0.0,
+      "power": 0.004449042892629776,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.01,
+      "delta": 0.01,
+      "power": 0.18388883253036337,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.01,
+      "delta": 0.03,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.01,
+      "delta": 0.05,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.01,
+      "delta": 0.07,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.01,
+      "delta": 0.1,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.03,
+      "delta": 0.0,
+      "power": 0.021677448577262233,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.03,
+      "delta": 0.01,
+      "power": 0.15174424606447678,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.03,
+      "delta": 0.03,
+      "power": 0.9475658680410781,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.03,
+      "delta": 0.05,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.03,
+      "delta": 0.07,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.03,
+      "delta": 0.1,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.05,
+      "delta": 0.0,
+      "power": 0.029751059496649957,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.05,
+      "delta": 0.01,
+      "power": 0.13218359339349023,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.05,
+      "delta": 0.03,
+      "power": 0.701054214833662,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.05,
+      "delta": 0.05,
+      "power": 0.9993091660128817,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.05,
+      "delta": 0.07,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.05,
+      "delta": 0.1,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.07,
+      "delta": 0.0,
+      "power": 0.032705075234284495,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.07,
+      "delta": 0.01,
+      "power": 0.11633828319074235,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.07,
+      "delta": 0.03,
+      "power": 0.5610199344822571,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.07,
+      "delta": 0.05,
+      "power": 0.9548206047845138,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.07,
+      "delta": 0.07,
+      "power": 0.99999551340812,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.07,
+      "delta": 0.1,
+      "power": null,
+      "feasible": false
+    },
+    {
+      "n": 300,
+      "rho": 0.1,
+      "delta": 0.0,
+      "power": 0.035326413130939566,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.1,
+      "delta": 0.01,
+      "power": 0.1032537065651194,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.1,
+      "delta": 0.03,
+      "power": 0.4382342690649296,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.1,
+      "delta": 0.05,
+      "power": 0.845193331464483,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.1,
+      "delta": 0.07,
+      "power": 0.9901807324756918,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.1,
+      "delta": 0.1,
+      "power": 0.9999999989296675,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.15,
+      "delta": 0.0,
+      "power": 0.03718615942763033,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.15,
+      "delta": 0.01,
+      "power": 0.09023954599068895,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.15,
+      "delta": 0.03,
+      "power": 0.32934500075356166,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.15,
+      "delta": 0.05,
+      "power": 0.6838909527976321,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.15,
+      "delta": 0.07,
+      "power": 0.9252588243441848,
+      "feasible": true
+    },
+    {
+      "n": 300,
+      "rho": 0.15,
+      "delta": 0.1,
+      "power": 0.9988020631578646,
+      "feasible": true
+    }
+  ],
+  "empirical_type_I_delta0": {
+    "0.01": 0.004449042892629776,
+    "0.03": 0.021677448577262233,
+    "0.05": 0.029751059496649957,
+    "0.07": 0.032705075234284495,
+    "0.1": 0.035326413130939566,
+    "0.15": 0.03718615942763033
+  },
+  "planning_check": {
+    "rho": 0.1143,
+    "delta": 0.05,
+    "power_single_test": 0.7953273301652074,
+    "power_bonferroni_173": 0.1530388693047255
+  }
+}

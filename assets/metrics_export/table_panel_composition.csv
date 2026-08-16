@@ -1,0 +1,5 @@
+quantity,benchmark,panel
+items,1199.0,300.0
+positives,682.0,250.0
+positive_rate,0.5688,0.8333
+mean_images,4.93,5.87

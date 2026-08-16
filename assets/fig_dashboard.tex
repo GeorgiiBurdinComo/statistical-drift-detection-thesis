@@ -1,0 +1,110 @@
+% Dashboard reporting interface: analytical views, not a literal UI screenshot.
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >=Latex,
+  panel/.style={
+    draw=vizaxis, line width=0.45pt, rounded corners=2pt,
+    fill=white, minimum width=51mm, minimum height=55mm, inner sep=0pt
+  },
+  tab/.style={font=\scriptsize\bfseries, text=vizink},
+  label/.style={font=\scriptsize, text=vizmuted},
+  control/.style={
+    draw=vizgrid, rounded corners=1pt, fill=vizgrid!22,
+    minimum height=5mm, inner xsep=1.5mm, font=\scriptsize, text=vizink
+  },
+  card/.style={
+    draw=vizgrid, rounded corners=1pt, fill=vizgrid!18,
+    minimum width=13mm, minimum height=9mm, align=center,
+    font=\scriptsize, text=vizink
+  }
+]
+
+% Outer dashboard shell.
+\node[draw=vizaxis, rounded corners=2.5pt, fill=white,
+      minimum width=166mm, minimum height=79mm, inner sep=0pt] (shell) {};
+\fill[vizink] ($(shell.north west)+(0,-10mm)$) rectangle ($(shell.north east)+(0,0)$);
+\node[anchor=west, text=white, font=\small\bfseries]
+  at ($(shell.north west)+(4mm,-5mm)$) {Model Accuracy Dashboard};
+\node[anchor=east, text=white!75, font=\scriptsize]
+  at ($(shell.north east)+(-4mm,-5mm)$) {read-only reporting layer};
+
+% Tabs.
+\node[tab, text=vizblue] (overviewtab) at ($(shell.north west)+(23mm,-15mm)$) {Overview};
+\node[tab] (mcnemartab) at ($(overviewtab.east)+(21mm,0)$) {McNemar test};
+\node[tab] (costtab) at ($(mcnemartab.east)+(23mm,0)$) {Expected cost};
+\draw[vizblue, line width=1.1pt]
+  ($(overviewtab.south west)+(0,-1.8mm)$) -- ($(overviewtab.south east)+(0,-1.8mm)$);
+\draw[vizgrid, line width=0.45pt]
+  ($(shell.north west)+(4mm,-18mm)$) -- ($(shell.north east)+(-4mm,-18mm)$);
+
+% Filter strip.
+\node[label, anchor=west] at ($(shell.north west)+(5mm,-23mm)$) {Metric};
+\node[control, anchor=west, minimum width=26mm] at ($(shell.north west)+(5mm,-28mm)$) {Accuracy};
+\node[label, anchor=west] at ($(shell.north west)+(37mm,-23mm)$) {Period};
+\node[control, anchor=west, minimum width=39mm] at ($(shell.north west)+(37mm,-28mm)$) {08 Mar -- 27 Jul 2026};
+\node[label, anchor=west] at ($(shell.north west)+(82mm,-23mm)$) {Models};
+\node[control, anchor=west, minimum width=77mm] at ($(shell.north west)+(82mm,-28mm)$)
+  {selected model roster};
+
+% Three views.
+\node[panel, anchor=north west] (overview) at ($(shell.north west)+(5mm,-36mm)$) {};
+\node[panel, anchor=north] (mcnemar) at ($(shell.north)+(0mm,-36mm)$) {};
+\node[panel, anchor=north east] (cost) at ($(shell.north east)+(-5mm,-36mm)$) {};
+
+\node[anchor=west, font=\scriptsize\bfseries, text=vizink]
+  at ($(overview.north west)+(3mm,-4mm)$) {Accuracy trajectory};
+\node[anchor=west, font=\scriptsize\bfseries, text=vizink]
+  at ($(mcnemar.north west)+(3mm,-4mm)$) {Paired alert evidence};
+\node[anchor=west, font=\scriptsize\bfseries, text=vizink]
+  at ($(cost.north west)+(3mm,-4mm)$) {Expected cost on benchmark cases};
+
+% Overview trajectory plot.
+\coordinate (oplotSW) at ($(overview.south west)+(6mm,8mm)$);
+\coordinate (oplotNE) at ($(overview.north east)+(-5mm,-12mm)$);
+\draw[vizaxis, line width=0.35pt] (oplotSW) -- (oplotSW |- oplotNE) -- (oplotNE);
+\foreach \y in {0,1,2,3} {
+  \draw[vizgrid, line width=0.25pt]
+    ($(oplotSW)+(0,\y*7mm)$) -- ($(oplotNE)+(0,\y*7mm)$);
+}
+\draw[vizblue, line width=0.8pt]
+  ($(oplotSW)+(1mm,19mm)$) -- ($(oplotSW)+(8mm,20mm)$) --
+  ($(oplotSW)+(15mm,18mm)$) -- ($(oplotSW)+(22mm,20mm)$) --
+  ($(oplotSW)+(29mm,19mm)$) -- ($(oplotSW)+(36mm,20mm)$);
+\draw[vizorange, line width=0.8pt]
+  ($(oplotSW)+(1mm,16mm)$) -- ($(oplotSW)+(8mm,15mm)$) --
+  ($(oplotSW)+(15mm,16mm)$) -- ($(oplotSW)+(22mm,7mm)$) --
+  ($(oplotSW)+(29mm,15mm)$) -- ($(oplotSW)+(36mm,15mm)$);
+\node[label, anchor=west] at ($(overview.south west)+(6mm,3mm)$)
+  {filterable trajectories by model and date};
+
+% McNemar paired evidence view.
+\node[card, fill=vizblue!10] at ($(mcnemar.north west)+(13mm,-13mm)$)
+  {\(\boldsymbol{b}\)\\regressions};
+\node[card, fill=vizorange!12] at ($(mcnemar.north west)+(31mm,-13mm)$)
+  {\(\boldsymbol{c}\)\\improvements};
+\node[card] at ($(mcnemar.north west)+(46mm,-13mm)$)
+  {\(n_{\mathrm{paired}}\)\\complete pairs};
+\draw[vizgrid, line width=0.45pt]
+  ($(mcnemar.north west)+(4mm,-22mm)$) -- ($(mcnemar.north east)+(-4mm,-22mm)$);
+\node[anchor=west, label] at ($(mcnemar.north west)+(5mm,-28mm)$)
+  {one-sided exact test};
+\node[anchor=west, font=\small\bfseries, text=vizink]
+  at ($(mcnemar.north west)+(5mm,-34mm)$) {\(H_1:b>c\)};
+\node[anchor=west, label] at ($(mcnemar.north west)+(5mm,-41mm)$)
+  {p-value, effect floor, and completeness};
+\node[anchor=west, label] at ($(mcnemar.north west)+(5mm,-47mm)$)
+  {are reported before escalation};
+
+% Cost view.
+\node[anchor=west, label] at ($(cost.north west)+(4mm,-28mm)$)
+  {inference charge + declared FP/FN penalties};
+\coordinate (cbase) at ($(cost.south west)+(7mm,8mm)$);
+\draw[vizaxis, line width=0.35pt] (cbase) -- ($(cbase)+(37mm,0)$);
+\fill[vizblue!65] ($(cbase)+(3mm,0)$) rectangle ($(cbase)+(10mm,9mm)$);
+\fill[vizorange!75] ($(cbase)+(16mm,0)$) rectangle ($(cbase)+(23mm,14mm)$);
+\fill[vizblue] ($(cbase)+(29mm,0)$) rectangle ($(cbase)+(36mm,6mm)$);
+\node[font=\tiny, text=vizink, anchor=north] at ($(cbase)+(6.5mm,-2mm)$) {model A};
+\node[font=\tiny, text=vizink, anchor=north] at ($(cbase)+(19.5mm,-2mm)$) {model B};
+\node[font=\tiny, text=vizink, anchor=north] at ($(cbase)+(32.5mm,-2mm)$) {model C};
+
+\end{tikzpicture}
